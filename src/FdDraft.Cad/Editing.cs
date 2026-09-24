@@ -95,6 +95,58 @@ namespace FdDraft.Cad.Editing
         }
     }
 
+    /// <summary>Reassigns entities to another layer (the toolbar's current-layer picker,
+    /// applied to the selection).</summary>
+    public sealed class ChangeLayerCommand : IEditCommand
+    {
+        private readonly List<(Entity Entity, Layer? Old)> _items;
+        private readonly Layer _new;
+        public string Description { get; }
+
+        public ChangeLayerCommand(IEnumerable<Entity> entities, Layer newLayer, string description)
+        {
+            _items = entities.Select(e => (Entity: e, Old: (Layer?)e.Layer)).ToList();
+            _new = newLayer;
+            Description = description;
+            foreach (var (e, _) in _items) e.Layer = _new;
+        }
+
+        public void Undo() { foreach (var (e, old) in _items) if (old != null) e.Layer = old; }
+        public void Redo() { foreach (var (e, _) in _items) e.Layer = _new; }
+    }
+
+    /// <summary>Retypes a single-line text entity's content (TEXT) or a multiline text
+    /// entity's content (MTEXT) in place.</summary>
+    public sealed class EditTextCommand : IEditCommand
+    {
+        private readonly TextEntity? _text;
+        private readonly MText? _mtext;
+        private readonly string _oldValue;
+        private readonly string _newValue;
+        public string Description { get; }
+
+        public EditTextCommand(TextEntity text, string newValue, string description)
+        {
+            _text = text;
+            _oldValue = text.Value;
+            _newValue = newValue;
+            Description = description;
+            _text.Value = newValue;
+        }
+
+        public EditTextCommand(MText mtext, string newValue, string description)
+        {
+            _mtext = mtext;
+            _oldValue = mtext.Value;
+            _newValue = newValue;
+            Description = description;
+            _mtext.Value = newValue;
+        }
+
+        public void Undo() { if (_text != null) _text.Value = _oldValue; if (_mtext != null) _mtext.Value = _oldValue; }
+        public void Redo() { if (_text != null) _text.Value = _newValue; if (_mtext != null) _mtext.Value = _newValue; }
+    }
+
     /// <summary>Linear undo/redo stack. A new command truncates any redo history past it,
     /// like every other editor.</summary>
     public sealed class UndoStack

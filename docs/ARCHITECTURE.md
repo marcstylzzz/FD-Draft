@@ -117,7 +117,11 @@ it on Windows is the real test.
 - **Codes** panel lists the job's `codes.csv` (key, description, layer).
   **Properties** panel summarises the current selection (layer, handle, and
   type-specific geometry: a line's bearing/distance, an arc or circle's
-  radius, a text's content).
+  radius, a text's content). When exactly one TEXT or MTEXT is selected, its
+  content is also editable right there (Enter or **Apply text**) via
+  `EditTextCommand` - an ordinary undo step. **Set Layer** on the toolbar
+  reassigns the whole selection to the current layer via
+  `ChangeLayerCommand`, also undoable.
 - Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
   Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
   template and standards.
@@ -145,8 +149,14 @@ it on Windows is the real test.
   job) for scale-only changes without re-running the whole pipeline.
 - Real leaders/dimensions as ACadSharp `Leader`/`Dimension` entities instead
   of plain lines, so they read back as leaders in AutoCAD/MSCAD too.
-- A dedicated properties-editing UI (change a layer, retype text) rather
-  than read-only summary.
+- Properties editing so far covers layer and text content; still read-only
+  for everything else (a line's endpoints, an arc/circle's radius, a text's
+  height or rotation).
+- A STRETCH tool to move a single vertex/endpoint (rather than a whole
+  entity) and drag its connected lines with it, which is the actual
+  prerequisite for relabelling courses - today MOVE/ROTATE only transform
+  whole selected entities rigidly, so a course's true bearing/distance
+  never changes under the current toolset and its label never goes stale.
 
 ## After that: the document assistant (hybrid)
 

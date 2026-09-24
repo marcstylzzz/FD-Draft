@@ -53,6 +53,8 @@ namespace FdDraft.App
 
         private readonly ComboBox _layerCombo = new ComboBox { MinWidth = 160 };
         private readonly TextBox _properties = new TextBox { IsReadOnly = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), AcceptsReturn = true };
+        private readonly TextBox _textEdit = new TextBox { IsEnabled = false, Margin = new Thickness(4) };
+        private readonly Button _textEditApply = new Button { Content = "Apply text", IsEnabled = false, Margin = new Thickness(4, 0, 4, 4), Padding = new Thickness(6, 2, 6, 2) };
         private readonly ListView _codes = new ListView();
         private readonly UndoStack _undo = new UndoStack();
 
@@ -107,7 +109,15 @@ namespace FdDraft.App
             left.Items.Add(new TabItem { Header = "Layers", Content = _layers });
             left.Items.Add(new TabItem { Header = "Points", Content = _points });
             left.Items.Add(new TabItem { Header = "Codes", Content = _codes });
-            left.Items.Add(new TabItem { Header = "Properties", Content = _properties });
+            var propsPanel = new DockPanel();
+            var editRow = new StackPanel();
+            editRow.Children.Add(new TextBlock { Text = "Text of the selected label:", Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
+            editRow.Children.Add(_textEdit);
+            editRow.Children.Add(_textEditApply);
+            DockPanel.SetDock(editRow, Dock.Bottom);
+            propsPanel.Children.Add(editRow);
+            propsPanel.Children.Add(_properties);
+            left.Items.Add(new TabItem { Header = "Properties", Content = propsPanel });
             Grid.SetColumn(left, 0); main.Children.Add(left);
             var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brushes.Transparent };
             Grid.SetColumn(splitter, 1); main.Children.Add(splitter);
@@ -133,6 +143,8 @@ namespace FdDraft.App
             _codes.View = codeView;
 
             _points.MouseDoubleClick += (s, e) => { if (_points.SelectedItem is PointRow r) ZoomToPoint(r); };
+            _textEditApply.Click += (s, e) => ApplySelectedTextEdit();
+            _textEdit.KeyDown += (s, e) => { if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift) { ApplySelectedTextEdit(); e.Handled = true; } };
             _canvas.CursorMoved += OnCursor;
             _canvas.Picked += OnPick;
             _canvas.EntityClicked += OnEntityClicked;
@@ -183,6 +195,8 @@ namespace FdDraft.App
             var modify = new MenuItem { Header = "_Modify" };
             modify.Items.Add(Item("_Move", "MOVE", StartMove));
             modify.Items.Add(Item("_Rotate", "ROTATE", StartRotate));
+            modify.Items.Add(new Separator());
+            modify.Items.Add(Item("Set _layer of selection", "", SetSelectionLayer));
             var view = new MenuItem { Header = "_View" };
             view.Items.Add(Item("Zoom _extents", "ZE", () => _canvas.ZoomExtents()));
             view.Items.Add(Item("_Snap on/off", "F3", ToggleSnap));
@@ -220,6 +234,7 @@ namespace FdDraft.App
             bar.Items.Add(new Separator());
             bar.Items.Add(new TextBlock { Text = "Layer:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
             bar.Items.Add(_layerCombo);
+            bar.Items.Add(B("Set Layer", "Reassign the selected entities to the current layer", SetSelectionLayer));
             var tray = new ToolBarTray();
             tray.ToolBars.Add(bar);
             return tray;
@@ -294,6 +309,7 @@ namespace FdDraft.App
                 case "MOVE": case "M": StartMove(); break;
                 case "ROTATE": case "RO": StartRotate(); break;
                 case "ERASE": EraseSelected(); break;
+                case "LAYER": SetSelectionLayer(); break;
                 case "UNDO": case "U": DoUndo(); break;
                 case "REDO": DoRedo(); break;
                 case "CLAYER":
@@ -717,9 +733,58 @@ namespace FdDraft.App
             Log("  redid: " + d);
         }
 
+        private void SetSelectionLayer()
+        {
+            var entities = SelectedEntities();
+            if (entities.Count == 0) { Log("  nothing selected - click an entity first"); return; }
+            var layer = GetOrCreateLayer(CurrentLayer());
+            _undo.Push(new ChangeLayerCommand(entities, layer, "Set layer to " + layer.Name));
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            Log("  moved " + entities.Count + " entit" + (entities.Count == 1 ? "y" : "ies") + " to layer " + layer.Name + "  (Ctrl+Z to undo)");
+        }
+
+        /// <summary>Commits an edit made in the Properties tab's text box to the single
+        /// selected TEXT or MTEXT entity, as an undo step.</summary>
+        private void ApplySelectedTextEdit()
+        {
+            var entities = SelectedEntities();
+            if (entities.Count != 1) return;
+            string value = _textEdit.Text;
+            switch (entities[0])
+            {
+                case TextEntity te when te.Value != value:
+                    _undo.Push(new EditTextCommand(te, value, "Edit text"));
+                    break;
+                case MText mt when mt.Value != value:
+                    _undo.Push(new EditTextCommand(mt, value, "Edit text"));
+                    break;
+                default:
+                    return;
+            }
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            Log("  text updated  (Ctrl+Z to undo)");
+        }
+
         private void UpdateProperties()
         {
             var entities = SelectedEntities();
+            _textEdit.Text = "";
+            _textEdit.IsEnabled = false;
+            _textEditApply.IsEnabled = false;
+            if (entities.Count == 1)
+            {
+                string? content = entities[0] switch { TextEntity te => te.Value, MText mt => mt.Value, _ => null };
+                if (content != null)
+                {
+                    _textEdit.Text = content;
+                    _textEdit.IsEnabled = true;
+                    _textEditApply.IsEnabled = true;
+                }
+            }
             if (entities.Count == 0) { _properties.Text = "(nothing selected)"; return; }
             var sb = new System.Text.StringBuilder();
             foreach (var e in entities.Take(30))

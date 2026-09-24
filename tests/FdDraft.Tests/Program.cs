@@ -456,5 +456,37 @@ namespace FdDraft.Tests
             Assert.Near(10, line2.EndPoint.X, 1e-6, "pivot rotate: end.X"); Assert.Near(10, line2.EndPoint.Y, 1e-6, "pivot rotate: end.Y");
             Assert.Near(10, line2.StartPoint.X, 1e-6, "pivot rotate: start unmoved X"); Assert.Near(0, line2.StartPoint.Y, 1e-6, "pivot rotate: start unmoved Y");
         }
+
+        public static void TestEditCommandsChangeLayerAndText()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var zero = doc.Layers["0"];
+            var boundary = new ACadSharp.Tables.Layer("PLAN-SubjectBoundary");
+            doc.Layers.Add(boundary);
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0)) { Layer = zero };
+            doc.ModelSpace.Entities.Add(line);
+            var undo = new UndoStack();
+
+            undo.Push(new ChangeLayerCommand(new ACadSharp.Entities.Entity[] { line }, boundary, "Set layer"));
+            Assert.True(line.Layer == boundary, "layer changed");
+            undo.Undo();
+            Assert.True(line.Layer == zero, "undo layer change restores the old layer");
+            undo.Redo();
+            Assert.True(line.Layer == boundary, "redo layer change reapplies it");
+
+            var text = new ACadSharp.Entities.TextEntity { Value = "LOT 5" };
+            doc.ModelSpace.Entities.Add(text);
+            undo.Push(new EditTextCommand(text, "LOT 5A", "Edit text"));
+            Assert.True(text.Value == "LOT 5A", "text edited");
+            undo.Undo();
+            Assert.True(text.Value == "LOT 5", "undo text edit restores the old text");
+
+            var mtext = new ACadSharp.Entities.MText { Value = "N45-30-00E" };
+            doc.ModelSpace.Entities.Add(mtext);
+            undo.Push(new EditTextCommand(mtext, "N46-00-00E", "Edit text"));
+            Assert.True(mtext.Value == "N46-00-00E", "mtext edited");
+            undo.Undo();
+            Assert.True(mtext.Value == "N45-30-00E", "undo mtext edit restores the old text");
+        }
     }
 }

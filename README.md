@@ -8,9 +8,10 @@ CAD program is involved.
 
 Status: **v0.4**. The desktop application (**FD-Draft.exe**) opens, drafts,
 views, inverses, saves DWG and plots PDF - and now edits: select, erase,
-move, rotate, undo/redo, and draw lines by bearing and distance, arcs, text
-and leaders. The command-line tool runs the same engine. The document
-assistant (plans, PINs, deeds) comes next. See `docs/ARCHITECTURE.md`.
+move, rotate, retype text, reassign layers, undo/redo, and draw lines by
+bearing and distance, arcs, text and leaders. The command-line tool runs the
+same engine. The document assistant (plans, PINs, deeds) comes next. See
+`docs/ARCHITECTURE.md`.
 
 ```
 FD-Draft/
@@ -70,10 +71,15 @@ FdDraft.App project in Visual Studio).
   place labels (type `height text`, e.g. `0.25 LOT 5`, or just the text for
   the default height). New linework goes on the toolbar's **Layer** box.
 - **Codes** panel lists the job's codes; **Properties** summarises the
-  current selection.
+  current selection and, for a single TEXT or MTEXT, lets you retype its
+  content right there (Enter or **Apply text**). **Set Layer** on the
+  toolbar reassigns the whole selection to the current layer.
+- Opening any DWG logs which sheets actually have a plan drawn on them - a
+  legacy DWG commonly carries several unused blank sheet-size layouts, and
+  they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, ERASE, UNDO,
-  REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, ERASE, LAYER,
+  UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 
