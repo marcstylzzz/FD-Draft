@@ -1,104 +1,111 @@
 # FD-Draft architecture
 
+FD-Draft is a standalone drafting program. Its only borrowed piece is the firm's
+.dwt template, which every firm already maintains. It never runs inside another
+CAD program.
+
 ## Shape
 
 ```
- FD-Pro job folder            firm .dwt            firm standards .ini
- (points, figures, codes)     (layers, blocks,      (code->layer/block, labels,
-          |                    title blocks)         scales, sheet areas, TB rules)
-          v                         |                        |
-   FdJobReader ------> DraftBuilder (geometry, layers, courses, parcels)
-                              |
-                         SheetPicker  <---- sheet areas (frame minus keepouts)
-                              |
-                          Annotator (labels at the chosen scale)
-                              |
-                        DraftDocument  (CAD-neutral, the single source of truth)
-            ______________/   |    \________________
-           v                  v                     v
-   AutoCAD plugin        DxfWriter             SvgPreview
-   (template, viewport,  (R12, any CAD)        (sheet preview)
-    title block, PDF)
+ FD-Pro job folder           firm .dwt              firm standards .ini
+ (points, figures, codes)    (layers, blocks,        (code->layer/block, labels, scales,
+          |                   styles, layouts,        sheet areas, title-block rules)
+          |                   title blocks)                    |
+          v                        |                           |
+   FdJobReader -> DraftBuilder -> SheetPicker -> Annotator     |      FdDraft.Core
+                        \___________________________________/        (no CAD library)
+                                       |
+                                 DraftDocument
+                                       |
+          +----------------------------+-------------------------+
+          v                            v                         v
+   TemplateDrafter (DWG)          SvgPreview               DxfWriter (template-free)
+   opens the .dwt, drafts,                                                  FdDraft.Cad
+   viewport, title block, saves DWG      TemplateInspector (new templates)  (ACadSharp)
+          |
+   desktop app (next) - renders the DWG, edits, re-drafts, plots
 ```
-
-`FdDraft.Core` has no AutoCAD reference and no package dependencies. The same
-`DraftDocument` goes to every writer, so the CLI preview shows what AutoCAD gets.
-It builds for net8.0 and netstandard2.0, which covers AutoCAD 2025+ (.NET 8),
-AutoCAD 2021–2024 (.NET Framework 4.8), and the standalone app to come.
 
 ## Decisions
 
-**Reading FD-Pro.** Formats follow FD-Pro's `storage/format` code exactly:
-columns found by header name, bare PNEZD accepted, skipped rows reported rather
-than silently dropped, `job.ini` escaping, figures split into pieces with the
-same round-199 rule (arc spans in pairs, odd leftover = straight). FD-Pro's
-on-screen spline is a cosmetic curve; FD-Draft draws a real fit-point spline.
+**DWG without a CAD program.** ACadSharp (MIT) reads and writes DWG R14 to 2018
+formats. It reads the example template fully, including its 10 layouts and page
+setups. Objects it doesn't model (display settings, AEC data) are carried
+through untouched. The output keeps the template's DWG version. It is checked
+by reading it back with ACadSharp and with LibreDWG, an independent reader, and
+by rendering the sheet. ACadSharp is a pinned git submodule, so a library update
+can never change a plan silently.
 
-**Layers.** A figure's layer comes from `[line-layers]` (e.g. monument codes to
-`PLAN-SubjectBoundary`), else the code's `LINE LAYER` from the job's
-`codes.csv`. Point layers follow the template's `MSPOINT-/POINTNUMBER-/ELEVATION-
-{feature}` scheme; `{feature}` is the code's layer without dashes, with a
-`[feature-map]` for the template's exceptions. The template wins every tie;
-anything created is listed in the report.
+**Reading FD-Pro.** The formats follow FD-Pro's `storage/format` code exactly:
+columns are found by header name, bare PNEZD files are accepted, skipped rows
+are reported, figures are split into pieces with FD-Pro's own rule (arc spans in
+pairs, an odd leftover span is straight).
 
-**Sheet and scale.** The template's layouts come without a model viewport, so
-each layout is described by its frame and keepouts (title column, schedule box).
-FD-Draft finds the maximal free rectangles, then for every layout the largest
-standard scale at which survey plus label margin fits. It prefers the smallest
-paper where ≥90 % of labelled courses are long enough to hold their bearing, and
-returns the full ranking with reasons.
+**Layers.** A figure's layer comes from `[line-layers]` first (monument codes →
+`PLAN-SubjectBoundary`), otherwise from the code's `LINE LAYER` in the job's
+`codes.csv`. Point layers follow the template's `MSPOINT-` / `POINTNUMBER-` /
+`ELEVATION-{feature}` scheme.
 
-**Labels.** Heights are paper mm; the model height follows from the scale.
-Bearings are quadrant DMS with a whole-second carry (never 60"). A label slides
-along its course when a surveyed point sits under it. Shared courses between
-lots are labelled once. An arc through a monument becomes two curves.
+**Sheet and scale.** Each layout is a frame minus keepouts (the title column and
+the schedule box). FD-Draft finds the maximal free rectangles. For each layout
+it takes the largest standard scale that fits the survey plus a label margin. It
+prefers the smallest paper where at least 90 % of labelled courses are long
+enough to hold their bearing, and returns the full ranking with reasons. The
+template's layouts have no plan viewport, so FD-Draft creates one.
+`fddraft inspect` measures frames and keepouts for a new template.
 
-**Title block.** The template's title blocks are plain TEXT/MTEXT, not
-attributes, so they are filled by regex rules (`[titleblock-replace]`). Scale-bar
-ticks are recomputed from the template's own "SCALE 1:n" text.
+**Labels.** Text heights are set in paper mm. Bearings are quadrant DMS and
+never print 60". A label slides along its course when a point sits under it. A
+course shared by two lots is labelled once.
 
-## Phase 2 — the document assistant (hybrid)
+**Title block.** The example title blocks are plain text, so FD-Draft fills
+them with pattern rules (`#` = a number, `*` = rest of the text). Scale-bar
+ticks are recomputed from the template's "SCALE 1:n" text. The layout that owns
+`*Paper_Space` is kept because the DWG format needs it.
 
-Goal: read the job's research folder (R-plans, registered plans, PIN / parcel
-register pages, deeds / instruments) and help draft.
+## Next: the desktop application
 
-1. **Ingest.** Each PDF or image is split into pages. Text-layer PDFs are read
-   directly. Scans go to local OCR first (Windows' built-in `Windows.Media.Ocr`,
-   offline, no install), with the Claude API (vision) as the optional switch for
-   hard scans and handwritten plans. Per-page results are cached in the job folder.
-2. **Extract** to a research pack (`research.json` next to the job):
-   record courses per plan (P1, P2 ...) with bearing, distance and the monuments
-   at each end; PINs and parts; instrument numbers and easements; lot/concession/
-   township; plan numbers and dates; the bearing reference note.
-3. **Use it in the plan.**
-   - Match record courses to surveyed courses and compute the rotation between
-     record and grid bearings (the template's "FOR BEARING COMPARISONS, A
-     ROTATION OF ..." note) - best-fit through the existing boundary
-     reconciliation method.
-   - Place record labels on `PLAN-BDComparison` (e.g. `N45°12'30"E (P1)`), and
-     flag discrepancies beyond tolerance.
-   - Fill the title block and R-plan parts schedule (lot, concession, PIN, area)
-     and the legend of plans referred to (P1 ... Pn).
-   - Pick the plan type (an R-plan job needs the parts schedule → `rplan`
-     family) and explain the sheet and scale choice. The picker stays
-     deterministic; the assistant explains and overrides it, never replaces it.
-4. **Guardrails.** Every extracted value carries its source page and a
-   confidence value, and nothing extracted goes on a plan without the drafter
-   confirming it. Documents leave the PC only when the cloud switch is on.
+A Windows app on the same engine, playing the role MSCAD plays today:
 
-## Phase 3 — standalone front end
+- **Canvas.** Renders the DWG, both model space and the layouts through their
+  viewports, with zoom, pan and object snaps. Selection shows point and course
+  properties.
+- **Panels.** A layer manager fed from the template, the FD-Pro point table, and
+  the code list.
+- **Draft command.** Picks the job, shows the sheet/scale ranking with a preview,
+  and lets the drafter accept or override it. Re-drafting keeps manual edits on
+  their own layers.
+- **Drafting tools.** Move or flip a label, inverse, and COGO by bearing and
+  distance (reusing FD-Pro's math), plus text, leaders, dimensions and
+  building ties.
+- **Output.** Plots to PDF with the template's page setup, and saves DWG.
+- **UI stack.** WPF on .NET 8: native Windows, mature, and fast enough for survey
+  drawings. It builds on Windows only.
 
-A WPF app on the same core: opens the template through a DWG library (ACadSharp
-to start, ODA Drawings SDK if full fidelity is needed), shows the plan, writes
-DWG and PDF without an AutoCAD licence. The AutoCAD plugin stays as the
-power-user path.
+## After that: the document assistant (hybrid)
 
-## Known limits (v0.1)
+It reads the job's research folder: R-plans, registered plans, parcel register /
+PIN pages, and deeds.
+
+1. **Pages.** Text PDFs are read directly. Scans go through Windows' built-in
+   offline OCR first, with the Claude API (vision) as an opt-in for hard scans.
+2. **Research pack.** Extraction produces record courses per plan (P1, P2 …),
+   monuments, PINs, parts, instruments and easements, and lot/concession.
+3. **Use.** Record courses are matched to surveyed ones and the bearing rotation
+   between them is computed, reusing the boundary-reconciliation fit. Record
+   labels go on `PLAN-BDComparison`, and discrepancies are flagged. The R-plan
+   schedule and the title block are filled, and the plan type is suggested. The
+   assistant explains or overrides the deterministic sheet picker; it never
+   replaces it.
+4. **Guardrails.** Every value carries its source page and a confidence.
+   Nothing reaches a plan without the drafter confirming it. Documents leave the
+   PC only when the cloud switch is on.
+
+## Known limits (v0.2)
 
 - North-up viewports only (no twist to fit a rotated lot).
-- Label collision handling is local (slide along the course), not a full solver.
-- Short courses below `min_labelled_course_mm` are reported, not tabulated yet.
-- A standards file needs `[sheet.*]` areas per layout; a new firm template needs
-  them measured once.
-- The AutoCAD plugin was compiled against a stand-in of the AutoCAD API, not
-  AutoCAD itself - first build on a machine with AutoCAD will confirm it.
+- Splines are written as dense polylines through the fitted curve.
+- Label collisions are handled locally (sliding along the course), not by a full solver.
+- Long MTEXT notes are only rewritten when a rule matches their raw contents.
+- The DWG has been checked with two independent readers; opening it in AutoCAD
+  and MSCAD is the remaining check.

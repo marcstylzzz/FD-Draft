@@ -230,6 +230,8 @@ namespace FdDraft.Core.Standards
         public double MarginPct { get; set; } = 3;
         public double MinLegibleFraction { get; set; } = 0.9;
         public string DefaultFamily { get; set; } = "";
+        /// <summary>Remove the template's other layouts from the finished plan.</summary>
+        public bool DeleteOtherLayouts { get; set; } = true;
         public List<SheetFamily> Families { get; } = new List<SheetFamily>();
         public Dictionary<string, SheetDefinition> Sheets { get; } = new Dictionary<string, SheetDefinition>(StringComparer.OrdinalIgnoreCase);
 
@@ -247,7 +249,7 @@ namespace FdDraft.Core.Standards
         public List<KeyValuePair<string, string>> TitleBlockReplacements { get; } = new List<KeyValuePair<string, string>>();
         // [scalebar]
         public bool ScaleBarRelabel { get; set; } = true;
-        public string ScaleBarAnchor { get; set; } = @"^SCALE 1:\s*[0-9]+";
+        public string ScaleBarAnchor { get; set; } = "SCALE 1:#";
 
         public static FirmStandards Load(string path)
         {
@@ -327,6 +329,7 @@ namespace FdDraft.Core.Standards
             s.MarginPct = ini.GetDouble("sheet", "margin_pct", s.MarginPct);
             s.MinLegibleFraction = ini.GetDouble("sheet", "min_legible_fraction", s.MinLegibleFraction);
             s.DefaultFamily = ini.GetString("sheet", "default_family", s.DefaultFamily);
+            s.DeleteOtherLayouts = ini.GetBool("sheet", "delete_other_layouts", s.DeleteOtherLayouts);
 
             foreach (var section in ini.SectionNames)
             {

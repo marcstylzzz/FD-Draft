@@ -1,86 +1,73 @@
 # FD-Draft
 
-Drafts a survey plan from an **FD-Pro job folder** on the firm's own **.dwt**
-template. It picks the sheet and scale, places bearings, distances, curve data,
-monuments, point numbers, elevations and areas on the template's layers, fills in
-the title block, and saves a DWG and a PDF.
+A Windows survey-drafting program, in the spirit of MicroSurvey CAD, that drafts
+plans from **FD-Pro job folders** onto the firm's own **.dwt** template. Firms
+already have their templates set up, so FD-Draft uses those as they are. It opens
+the .dwt itself, drafts into it and saves a real DWG. No AutoCAD, MSCAD or other
+CAD program is involved.
 
-Status: **v0.1, phase 1** (FD-Pro job → drafted plan). The document assistant
-(plans, PINs, deeds) is phase 2 — see `docs/ARCHITECTURE.md`.
+Status: **v0.2**. The drafting engine and the DWG layer work end to end from the
+command line. The desktop application (canvas, layers, point table, editing
+tools) is the next milestone, and the document assistant (plans, PINs, deeds)
+comes after it. See `docs/ARCHITECTURE.md`.
 
 ```
 FD-Draft/
-  src/FdDraft.Core/       drafting engine - no AutoCAD, no packages; shared by every front end
-  src/FdDraft.AutoCAD/    AutoCAD plugin: FDDRAFT, FDDRAFTSETUP
-  tools/FdDraft.Cli/      fddraft.exe - same engine, writes DXF + SVG preview + report
-  tests/FdDraft.Tests/    21 tests (plain console runner)
-  standards/              provision-2024.standards.ini - firm rules for ProVisionTemplate-2024.dwt
-  samples/demo-lot/       a synthetic FD-Pro job to try it on
-  docs/ARCHITECTURE.md    how it works and what comes next
+  src/FdDraft.Core/        drafting engine: FD-Pro reader, geometry, labels, sheet/scale picker, title-block rules
+  src/FdDraft.Cad/         DWG layer: open the .dwt, draft into it, save DWG; template inspector
+  tools/FdDraft.Cli/       fddraft.exe - the engine from the command line
+  tests/FdDraft.Tests/     plain console test runner
+  external/ACadSharp/      DWG/DXF library (MIT), git submodule at a pinned commit
+  standards/               provision-2024.standards.ini - rules for the example template
+  samples/demo-lot/        a synthetic FD-Pro job
 ```
 
 ## Build
 
-Needs the .NET 8 SDK (and Visual Studio 2022 if you prefer the IDE: open `FD-Draft.sln`).
+Needs the **.NET 10 SDK** (the bundled ACadSharp source uses C# 13). FD-Draft
+itself targets .NET 8.
 
 ```powershell
-# engine, CLI and tests
-dotnet build tools\FdDraft.Cli
+git submodule update --init --recursive     # if you cloned rather than unzipped
+dotnet build FD-Draft.sln
 dotnet run --project tests\FdDraft.Tests
-
-# the AutoCAD plugin - point it at YOUR AutoCAD
-dotnet build src\FdDraft.AutoCAD -c Release -p:AcadYear=2025 -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025"
 ```
 
-`AcadYear` 2025 or later builds for .NET 8; 2024 or earlier builds for .NET
-Framework 4.8 (AutoCAD's own requirement). The plugin references AutoCAD's
-`accoremgd/acdbmgd/acmgd.dll` straight from the install folder.
+Set `FDDRAFT_TEST_DWT` to a template path to include the DWG tests.
 
-## Use in AutoCAD
-
-1. `NETLOAD` → `src\FdDraft.AutoCAD\bin\Release\<framework>\FdDraft.AutoCAD.dll`
-2. `FDDRAFTSETUP` → pick `ProVisionTemplate-2024.dwt`, then `standards\provision-2024.standards.ini` (remembered).
-3. `FDDRAFT` → pick the job's `job.ini` or `points.csv` → plan type `Topo`/`Rplan`
-   → FD-Draft lists every sheet with the scale it fits at and why → `Accept`, or
-   `Layout` / `Scale` to override.
-
-It opens a new drawing from the template and:
-
-- draws linework on the codes' layers (boundary codes go on `PLAN-SubjectBoundary`)
-  with true arcs and splines;
-- inserts the template's symbol blocks (found/set monuments, manholes, hydrants ...)
-  sized for the scale, plus a point node at its true elevation;
-- labels boundary courses with bearing (`PLAN-Bearing`) and distance
-  (`PLAN-Distance`), and curves with R / A / C / chord bearing; an arc through a
-  monument is split in two;
-- adds point numbers and elevations on `POINTNUMBER-*` / `ELEVATION-*`,
-  monument text (`SIB`, `IB` ...) and the lot area;
-- creates the plan viewport in the chosen layout's free area (the template's
-  layouts have none), locked at scale, and adds the north arrow;
-- rewrites the title block (job number, drawing file, scale, intended plot size)
-  and relabels the scale bar ticks;
-- freezes the family's layers (point numbers on topo plans; numbers and
-  elevations on R-plans), removes the unused layouts;
-- saves `<job>\export\fd-draft\<job>.dwg` and plots `<job>.pdf`.
-
-It never writes into the FD-Pro job's own files.
-
-## Without AutoCAD
+## Draft a plan
 
 ```powershell
-fddraft samples\demo-lot --standards standards\provision-2024.standards.ini
-fddraft <job> --standards <ini> --family rplan --layout RPLAN-22X34 --scale 500
+fddraft C:\...\FD-PRO\Project\24-012 --template ProVisionTemplate-2024.dwt --standards standards\provision-2024.standards.ini
 ```
 
-Writes `<job>.dxf` (no template applied — for checking in any CAD program),
-`<job>.svg` (the plan area on the chosen sheet) and `<job>.report.txt`
-(sheet ranking, parcel areas and perimeters, warnings).
+It ranks every sheet in the plan type with the scale that fits and why, then
+writes `<job>\export\fd-draft\`:
 
-## The standards file
+- **`<job>.dwg`** is the plan on a copy of the template:
+  - linework on the codes' layers (boundary codes go on `PLAN-SubjectBoundary`), with true arcs;
+  - the template's own symbol blocks sized for the scale, and a node at each point's elevation;
+  - bearings and distances (`PLAN-Bearing` / `PLAN-Distance`) and curve data; an arc through a monument is split in two;
+  - point numbers, elevations, monument text and the lot area;
+  - a plan viewport in the chosen layout, locked at scale on `Defpoints`, plus the north arrow;
+  - the title block filled in and the scale bar relabelled;
+  - the plan type's layers frozen and the unused layouts removed.
 
-Everything firm-specific that the .dwt doesn't say lives in one INI file:
-which codes are boundary, layer and block mapping, text heights and styles, the
-scale list, where the plan may go on each layout, and the title-block rules.
-`standards/provision-2024.standards.ini` was written from a read of the template
-and FD-Pro's ProVision 2024 code list. Lines marked **VERIFY** are defaults a
-drafter should confirm (monument abbreviations, north-arrow size).
+  The template wins every tie. Anything it lacked is created and listed in the report.
+- **`<job>.svg`** is a preview of the plan area on the chosen sheet.
+- **`<job>.report.txt`** holds the ranking, parcel areas and perimeters, and what was created or missing.
+
+Options: `--family rplan`, `--layout RPLAN-22X34`, `--scale 500`, `--dxf`.
+The .dwt is only read. FD-Pro's job files are never written.
+
+## A new firm's template
+
+```powershell
+fddraft inspect C:\Standards\FirmTemplate.dwt
+```
+
+This lists the template's layouts, paper sizes, drawing frames and title-block
+areas, and prints a starter `[sheet.*]` block for that firm's standards file. A
+drafter checks it once. The rest of the standards file (code→layer/block
+mapping, text styles, which codes are boundary, title-block rules) starts from
+`provision-2024.standards.ini`.

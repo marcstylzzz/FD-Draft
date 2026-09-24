@@ -9,22 +9,19 @@ namespace FdDraft.Core.Layout
 {
     /// <summary>
     /// Fills in a title block that is made of plain text rather than attributes
-    /// (the ProVision template's case): each [titleblock-replace] rule is a regex
-    /// run over every paper-space text of the chosen layout, with tokens in the
-    /// replacement. Also relabels the scale bar for the chosen scale.
+    /// (the ProVision template's case): each [titleblock-replace] rule is a
+    /// <see cref="SimplePattern"/> run over every paper-space text of the chosen
+    /// layout, with tokens in the replacement. The same rules, tokens already
+    /// expanded, are handed to the MSCAD LISP writer. Also relabels the scale bar.
     /// </summary>
     public sealed class TitleBlockFiller
     {
-        private readonly List<KeyValuePair<Regex, string>> _rules = new List<KeyValuePair<Regex, string>>();
+        private readonly List<KeyValuePair<string, string>> _patterns = new List<KeyValuePair<string, string>>();
         private readonly Dictionary<string, string> _tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         public TitleBlockFiller(FirmStandards std, JobSettings job, ScaleOption scale, string layout, string drawingName, DateTime date, double paperWidthMm = 0, double paperHeightMm = 0)
         {
-            foreach (var kv in std.TitleBlockReplacements)
-            {
-                try { _rules.Add(new KeyValuePair<Regex, string>(new Regex(kv.Key, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), kv.Value)); }
-                catch (ArgumentException) { /* a bad pattern is reported by Validate(), not fatal here */ }
-            }
+            foreach (var kv in std.TitleBlockReplacements) _patterns.Add(kv);
             _tokens["job.name"] = job.Name;
             _tokens["job.id"] = job.Id;
             _tokens["job.surveyor"] = job.Surveyor;
@@ -44,28 +41,28 @@ namespace FdDraft.Core.Layout
         {
             var errors = new List<string>();
             foreach (var kv in std.TitleBlockReplacements)
-            {
-                try { new Regex(kv.Key); }
-                catch (ArgumentException e) { errors.Add("[titleblock-replace] '" + kv.Key + "': " + e.Message); }
-            }
+                if (kv.Key.Trim().Length == 0 || kv.Key.Trim() == "*") errors.Add("[titleblock-replace] '" + kv.Key + "' would match every text.");
             return errors;
+        }
+
+        /// <summary>The rules with every token filled in: (pattern, literal replacement).</summary>
+        public List<KeyValuePair<string, string>> ExpandedRules()
+        {
+            var list = new List<KeyValuePair<string, string>>();
+            foreach (var kv in _patterns) list.Add(new KeyValuePair<string, string>(kv.Key, Expand(kv.Value)));
+            return list;
         }
 
         /// <summary>The text with every matching rule applied, or null when nothing matched.</summary>
         public string? Apply(string text)
         {
             string result = text;
-            bool changed = false;
-            foreach (var rule in _rules)
-            {
-                if (!rule.Key.IsMatch(result)) continue;
-                result = rule.Key.Replace(result, Expand(rule.Value));
-                changed = true;
-            }
-            return changed && result != text ? result : null;
+            foreach (var rule in ExpandedRules())
+                if (SimplePattern.IsMatch(rule.Key, result)) result = SimplePattern.Replace(rule.Key, result, rule.Value);
+            return result != text ? result : null;
         }
 
-        private string Expand(string replacement)
+        public string Expand(string replacement)
         {
             foreach (var kv in _tokens) replacement = replacement.Replace("{" + kv.Key + "}", kv.Value);
             return replacement;

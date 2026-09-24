@@ -1,22 +1,23 @@
 <Project>
   <!--
-    Shared settings for every project in FD-Draft.
+    Shared settings for every FD-Draft project.
 
-    FD_OFFLINE=1 is for build machines with no NuGet access (Claude's cloud
-    workspace). There the core library builds for net8.0 and netstandard2.1
-    only, because both reference packs ship with the SDK. On a normal Windows
-    machine with Visual Studio or the .NET SDK, the core also builds for
-    netstandard2.0, which is what an AutoCAD 2024-or-older plugin (.NET
-    Framework 4.8) needs.
+    Needs the .NET 10 SDK: the bundled ACadSharp source uses C# 13 features.
+    FD-Draft itself still targets .NET 8 (net8.0 / net8.0-windows).
+
+    FD_OFFLINE=1 is for machines with no NuGet access (the cloud build box):
+    no apphost is generated (its pack comes from NuGet) - see build-offline.sh.
   -->
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <Company>Vaughan Land Surveyors</Company>
     <Product>FD-Draft</Product>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(FD_OFFLINE)' == '1'">
+    <UseAppHost>false</UseAppHost>
   </PropertyGroup>
 </Project>

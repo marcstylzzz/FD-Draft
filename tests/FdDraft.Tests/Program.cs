@@ -280,6 +280,54 @@ namespace FdDraft.Tests
             Assert.True(f.Apply("ONTARIO LAND SURVEYORS") == null, "untouched text");
         }
 
+        public static void TestSimplePatternLanguage()
+        {
+            Assert.Equal("SCALE 1:250.", SimplePattern.Replace("SCALE 1:#", "SCALE 1:300.", "SCALE 1:250"), "trailing full stop kept");
+            Assert.Equal("JOB NUMBER: 24-012", SimplePattern.Replace("JOB NUMBER:*", "JOB NUMBER: 24-0XX", "JOB NUMBER: 24-012"));
+            Assert.Equal("scale 1:7.5 ok", SimplePattern.Replace("SCALE 1:#", "scale 1:12.25 ok", "scale 1:7.5"), "case-insensitive, decimals");
+            Assert.True(!SimplePattern.IsMatch("SCALE 1:#", "SCALE 1:"), "# needs a digit");
+        }
+
+        // ---- DWG output (needs a template: set FDDRAFT_TEST_DWT to a .dwt path) -----------
+
+        private static string? TestTemplate => Environment.GetEnvironmentVariable("FDDRAFT_TEST_DWT");
+
+        public static void TestDraftsIntoTemplateAndReadsBack()
+        {
+            if (string.IsNullOrEmpty(TestTemplate)) { Console.Write("  (skipped: FDDRAFT_TEST_DWT not set) "); return; }
+            var std = ProVision;
+            var job = FdJobReader.Read(Demo);
+            var result = DraftPipeline.Run(job, std);
+            var def = std.Sheets[result.Chosen!.Sheet.Layout];
+            var filler = new TitleBlockFiller(std, job.Settings, result.Chosen.Scale, result.Chosen.Sheet.Layout, "t.dwg", new DateTime(2026, 9, 24), def.PaperWidth, def.PaperHeight);
+            var drafter = FdDraft.Cad.TemplateDrafter.Open(TestTemplate!, std);
+            drafter.Draft(result, filler);
+            string path = Path.Combine(Path.GetTempPath(), "fdd-test.dwg");
+            drafter.Save(path);
+
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            var layout = back.Layouts.First(l => l.Name == "11X17");
+            var vp = layout.AssociatedBlock.Entities.OfType<ACadSharp.Entities.Viewport>().Single(v => v.Layer.Name == "Defpoints");
+            Assert.Near(0.25, vp.ViewHeight / vp.Height, 1e-9, "viewport at 1:250");
+            Assert.True(layout.AssociatedBlock.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "JOB NUMBER: 24-0DEMO"), "title block filled");
+            var ms = back.ModelSpace.Entities.ToList();
+            Assert.True(ms.OfType<ACadSharp.Entities.Insert>().Any(i => i.Block.Name == "PLAN-FOUND MONUMENT" && Math.Abs(i.XScale - 2.5) < 1e-9), "monument block at 1:250 (10 mm units)");
+            Assert.True(ms.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "S89%%d13'52\"W" && t.Layer.Name == "PLAN-Bearing"), "bearing on PLAN-Bearing");
+            Assert.True(back.Layers["POINTNUMBER-MONUMENT"].Flags.HasFlag(ACadSharp.Tables.LayerFlags.Frozen), "point numbers frozen for topo");
+            Assert.True(!back.Layouts.Any(l => l.Name == "36X48"), "unused layouts removed");
+        }
+
+        public static void TestInspectorFindsTitleColumn()
+        {
+            if (string.IsNullOrEmpty(TestTemplate)) { Console.Write("  (skipped: FDDRAFT_TEST_DWT not set) "); return; }
+            var doc = ACadSharp.IO.DwgReader.Read(TestTemplate!);
+            var g = FdDraft.Cad.TemplateInspector.Guess(doc).First(x => x.Layout == "17X22");
+            Assert.True(g.FrameFound, "frame");
+            Assert.Near(523, g.Frame.Width, 1, "frame width");
+            Assert.True(g.Keepouts.Any(k => Math.Abs(k.X1 - 411) < 6 && Math.Abs(k.Y2 - 417) < 1), "title column from x=411, full height");
+            Assert.Near(558.8, g.PaperWidth, 0.5, "landscape paper width");
+        }
+
         public static void TestScaleBarTicks()
         {
             Assert.Equal("10", TitleBlockFiller.RelabelTick("6", 300, 500));

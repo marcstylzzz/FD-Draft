@@ -1,17 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    The drafting engine. No package dependencies on purpose: it is shared by
-    the AutoCAD plugin (which may be .NET Framework 4.8 or .NET 8 depending on
-    the AutoCAD year), the standalone app that comes later, and the CLI - and
-    it must build on a laptop with no internet.
+    The drafting engine: FD-Pro job reader, geometry, labels, sheet/scale picker,
+    title-block rules. No CAD library and no package dependencies, so it stays
+    unit-testable and every front end (the DWG writer, the app, the CLI) shares it.
   -->
-  <PropertyGroup Condition="'$(FD_OFFLINE)' == '1'">
-    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(FD_OFFLINE)' != '1'">
-    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
-  </PropertyGroup>
   <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>FdDraft.Core</RootNamespace>
     <AssemblyName>FdDraft.Core</AssemblyName>
   </PropertyGroup>

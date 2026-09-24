@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    FD-Draft's own DWG layer: opens the firm's .dwt, drafts the plan into it and
+    saves a DWG - no AutoCAD, MSCAD or other CAD program involved.
+    Built on ACadSharp (MIT), bundled as the git submodule external/ACadSharp
+    at a pinned commit (run: git submodule update, with init and recursive).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FdDraft.Cad</RootNamespace>
+    <AssemblyName>FdDraft.Cad</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FdDraft.Core\FdDraft.Core.csproj" />
+    <ProjectReference Include="..\..\external\ACadSharp\src\ACadSharp\ACadSharp.csproj" SetTargetFramework="TargetFramework=net8.0" />
+  </ItemGroup>
+</Project>
