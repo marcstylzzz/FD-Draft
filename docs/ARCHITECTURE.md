@@ -188,8 +188,14 @@ it on Windows is the real test.
   pick with `VertexEditing.NearestVertex` / `NearestSpan` (the latter
   projects onto the curve itself for an arc); the Properties panel's
   vertex rows grow **Delete vertex** and **Insert after** (at the span's
-  arc-true midpoint) buttons. Polyline2D is left out: ACadSharp's
-  `SeqendCollection` has no insert-at-index.
+  arc-true midpoint) buttons. Polyline2D (v0.4.20) goes through
+  `PolylineVertices`, which swaps in a freshly built Polyline2D with the new
+  vertex list (`ReplacePolyline2DCommand`; undo swaps the untouched original
+  back, and the app moves the selection to the replacement). It can't be
+  edited in place: ACadSharp keeps those vertices in a HashSet with no
+  insert-at-index, and removing and re-adding them reuses the freed slots in
+  reverse, scrambling their order. (Block entity lists are HashSets too, so
+  undo/redo can change draw order - harmless.)
 - **Undo/redo** (Ctrl+Z / Ctrl+Y): a linear `UndoStack` of `IEditCommand`s
   (`FdDraft.Cad.Editing`) - `AddEntitiesCommand`, `RemoveEntitiesCommand`,
   `TransformEntitiesCommand`. New commands truncate any redo history past
@@ -342,9 +348,9 @@ it on Windows is the real test.
   rotation, a Circle/Arc's radius, an Arc's start/end angle, a Line's
   endpoint coordinates, and one LwPolyline/Polyline2D vertex's E,N at a time
   (multi-field edits undo as one step), and LwPolyline vertices can be
-  inserted/deleted (VXADD/VXDEL, or the Properties buttons). Still missing:
-  the same for Polyline2D, and a way to renumber which vertex is which on a
-  closed polyline.
+  inserted/deleted (VXADD/VXDEL, or the Properties buttons) on either
+  polyline kind. Still missing: a way to renumber which vertex is which on
+  a closed polyline.
 
 ## After that: the document assistant (hybrid)
 

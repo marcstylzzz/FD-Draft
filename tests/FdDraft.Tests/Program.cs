@@ -1307,5 +1307,52 @@ namespace FdDraft.Tests
             Assert.True(ab.All(d => d.Text == "90%%d00'00\"" && d.Block != null && d.Block.Entities.OfType<ACadSharp.Entities.Arc>().Any()), "with their text and pictures");
             Assert.Near(Math.PI / 2, ab[0].Measurement, 1e-6, "angle survives");
         }
+            // ---- Polyline2D vertex insert/delete (v0.4.20) ---------------------------------------
+
+        public static void TestPolyline2DVertexInsertDeleteAndDwgRoundTrip()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var p = new ACadSharp.Entities.Polyline2D();
+            p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(0, 0, 0)));
+            p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(5, 0, 0)) { Bulge = Math.Tan(Math.PI / 8) });
+            p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(10, 5, 0)));
+            p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(10, 10, 0)));
+            var layer = new ACadSharp.Tables.Layer("PLAN-Fence"); doc.Layers.Add(layer);
+            p.Layer = layer;
+            doc.ModelSpace.Entities.Add(p);
+            var undo = new UndoStack();
+            ACadSharp.Entities.Polyline2D Current() => doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Polyline2D>().Single();
+
+            var del = PolylineVertices.Delete(p, 3, "Delete vertex");
+            undo.Push(del);
+            var d = Current();
+            Assert.True(d != p && d == ((ReplacePolyline2DCommand)del).Replacement, "a rebuilt polyline is swapped in");
+            Assert.Equal(3, d.Vertices.Count, "vertex removed");
+            Assert.True(d.Layer == layer, "on the same layer");
+            Assert.Near(Math.Tan(Math.PI / 8), d.Vertices[1].Bulge, 1e-12, "the arc before it untouched");
+            undo.Undo();
+            Assert.True(Current() == p && p.Vertices.Count == 4, "undo swaps the untouched original back");
+            Assert.Near(10, p.Vertices[3].Location.Y, 1e-9, "vertices in order");
+
+            // Split the quarter arc (centre (5,5), radius 5) at its midpoint.
+            var mid = Construct.Span.FromBulge(new Vec2(5, 0), new Vec2(10, 5), Math.Tan(Math.PI / 8)).Midpoint;
+            undo.Push(PolylineVertices.Insert(p, 1, mid, "Insert vertex", out int at));
+            var ins = Current();
+            Assert.Equal(2, at, "new vertex index");
+            Assert.Equal(5, ins.Vertices.Count, "vertex added");
+            Assert.Near(mid.X, ins.Vertices[2].Location.X, 1e-9, "at the split point, in order");
+            Assert.Near(10, ins.Vertices[4].Location.Y, 1e-9, "the rest follow in order");
+            Assert.Near(Math.Tan(Math.PI / 16), ins.Vertices[1].Bulge, 1e-12, "first half keeps the curve");
+            Assert.Near(Math.Tan(Math.PI / 16), ins.Vertices[2].Bulge, 1e-12, "second half keeps the curve");
+            Assert.True(!PolylineVertices.CanDelete(new ACadSharp.Entities.LwPolyline()), "an empty polyline can't lose a vertex");
+
+            string path = Path.Combine(Path.GetTempPath(), "fdd-poly2d-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+            var back = ACadSharp.IO.DwgReader.Read(path).ModelSpace.Entities.OfType<ACadSharp.Entities.Polyline2D>().Single();
+            Assert.Equal(5, back.Vertices.Count, "the rebuilt polyline survives a DWG round trip");
+            Assert.Near(mid.X, back.Vertices[2].Location.X, 1e-9, "with the new vertex in place");
+            undo.Undo();
+            Assert.True(Current() == p && p.Vertices.Count == 4, "undo restores the original");
+        }
     }
 }

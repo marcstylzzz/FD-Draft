@@ -419,6 +419,109 @@ namespace FdDraft.Cad.Editing
         }
     }
 
+    /// <summary>
+    /// Replaces a Polyline2D with a freshly built one carrying a new vertex list, in the same
+    /// block. ACadSharp keeps the old-style polyline's vertices in a HashSet with no
+    /// insert-at-index, and taking vertices out and putting them back reuses freed slots in
+    /// reverse, scrambling their order - so an insert or delete builds a new polyline
+    /// instead. Undo swaps the untouched original back.
+    /// </summary>
+    public sealed class ReplacePolyline2DCommand : IEditCommand
+    {
+        private readonly BlockRecord _owner;
+        private readonly Polyline2D _old;
+        public Polyline2D Replacement { get; }
+        public string Description { get; }
+
+        public ReplacePolyline2DCommand(Polyline2D old, IEnumerable<(XYZ Location, double Bulge, double StartWidth, double EndWidth)> vertices, string description)
+        {
+            _owner = old.Owner as BlockRecord ?? throw new InvalidOperationException("the polyline is not in a block");
+            _old = old;
+            var fresh = new Polyline2D(vertices.Select(v => new Vertex2D(v.Location) { Bulge = v.Bulge, StartWidth = v.StartWidth, EndWidth = v.EndWidth }), old.IsClosed)
+            {
+                Layer = old.Layer, LineType = old.LineType, Color = old.Color, LineWeight = old.LineWeight, LineTypeScale = old.LineTypeScale,
+                Elevation = old.Elevation, Normal = old.Normal, Thickness = old.Thickness, StartWidth = old.StartWidth, EndWidth = old.EndWidth,
+            };
+            Replacement = fresh;
+            Description = description;
+            Redo();
+        }
+
+        public void Redo() { _owner.Entities.Remove(_old); _owner.Entities.Add(Replacement); }
+        public void Undo() { _owner.Entities.Remove(Replacement); _owner.Entities.Add(_old); }
+    }
+
+    /// <summary>Vertex insert/delete for either polyline kind: LwPolyline through
+    /// <see cref="DeleteVertexCommand"/>/<see cref="InsertVertexCommand"/>, Polyline2D by
+    /// swapping in a rebuilt polyline (<see cref="ReplacePolyline2DCommand"/> - read its
+    /// <c>Replacement</c> for the entity now in the drawing).</summary>
+    public static class PolylineVertices
+    {
+        public static int Count(Entity e) => e is LwPolyline lp ? lp.Vertices.Count : e is Polyline2D p2 ? p2.Vertices.Count : 0;
+        public static bool IsClosed(Entity e) => e is LwPolyline lp ? lp.IsClosed : e is Polyline2D p2 && p2.IsClosed;
+        public static bool CanDelete(Entity e) => (e is LwPolyline || e is Polyline2D) && Count(e) > (IsClosed(e) ? 3 : 2);
+
+        public static IEditCommand Delete(Entity e, int index, string description)
+        {
+            if (e is LwPolyline lp) return new DeleteVertexCommand(lp, index, description);
+            var p2 = (Polyline2D)e;
+            if (!CanDelete(p2)) throw new InvalidOperationException("too few vertices left to delete one");
+            int n = p2.Vertices.Count;
+            int prev = index > 0 ? index - 1 : p2.IsClosed ? n - 1 : -1;
+            var list = p2.Vertices.Select((v, i) => (v.Location, i == prev ? 0.0 : v.Bulge, v.StartWidth, v.EndWidth)).Where((_, i) => i != index).ToList();
+            return new ReplacePolyline2DCommand(p2, list, description);
+        }
+
+        /// <summary>Adds a vertex on the span after <paramref name="afterIndex"/>; returns the
+        /// command and the new vertex's index.</summary>
+        public static IEditCommand Insert(Entity e, int afterIndex, Vec2 at, string description, out int newIndex)
+        {
+            newIndex = afterIndex + 1;
+            if (e is LwPolyline lp) return new InsertVertexCommand(lp, afterIndex, new XY(at.X, at.Y), description);
+            var p2 = (Polyline2D)e;
+            int n = p2.Vertices.Count;
+            if (afterIndex < 0 || afterIndex >= (p2.IsClosed ? n : n - 1)) throw new ArgumentOutOfRangeException(nameof(afterIndex));
+            var a = p2.Vertices[afterIndex];
+            var b = p2.Vertices[(afterIndex + 1) % n];
+            var span = Construct.Span.FromBulge(new Vec2(a.Location.X, a.Location.Y), new Vec2(b.Location.X, b.Location.Y), a.Bulge);
+            var (first, second) = span.SplitBulges(at);
+            var list = new List<(XYZ, double, double, double)>();
+            for (int i = 0; i < n; i++)
+            {
+                var v = p2.Vertices[i];
+                list.Add((v.Location, i == afterIndex ? first : v.Bulge, v.StartWidth, v.EndWidth));
+                if (i == afterIndex) list.Add((new XYZ(at.X, at.Y, a.Location.Z), second, a.StartWidth, a.EndWidth));
+            }
+            return new ReplacePolyline2DCommand(p2, list, description);
+        }
+
+        public static int NearestVertex(Entity e, Vec2 pick, out double distance)
+        {
+            if (e is LwPolyline lp) return VertexEditing.NearestVertex(lp, pick, out distance);
+            var p2 = (Polyline2D)e;
+            int best = -1; distance = double.MaxValue;
+            for (int i = 0; i < p2.Vertices.Count; i++)
+            {
+                double d = Vec2.Distance(pick, new Vec2(p2.Vertices[i].Location.X, p2.Vertices[i].Location.Y));
+                if (d < distance) { distance = d; best = i; }
+            }
+            return best;
+        }
+
+        public static int NearestSpan(Entity e, Vec2 pick, out Vec2 onSpan, out double distance)
+        {
+            var spans = EntityOps.SpansOf(e).ToList();
+            int best = -1; distance = double.MaxValue; onSpan = pick;
+            for (int i = 0; i < spans.Count; i++)
+            {
+                var q = spans[i].Project(pick);
+                double d = Vec2.Distance(q, pick);
+                if (d < distance) { distance = d; best = i; onSpan = q; }
+            }
+            return best;
+        }
+    }
+
     /// <summary>Linear undo/redo stack. A new command truncates any redo history past it,
     /// like every other editor.</summary>
     public sealed class UndoStack

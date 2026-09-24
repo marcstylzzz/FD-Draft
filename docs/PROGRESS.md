@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.19 (`Directory.Build.props`).
+- **Current version:** 0.4.20 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  61 tests as of v0.4.19, all passing.
+  62 tests as of v0.4.20, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -149,9 +149,13 @@ on Windows; that's still Marc's job when he runs a build.
   typed angle) and DIMRAD (radius of an arc/circle), both through the
   generalised `DimensionBuilder` (IsOurs / DrawPicture / Transform /
   Remapped). DWG round-trip tested.
-- **v0.4.19** (current): DIMDIA (diameter) and DIMANG (3-point angle in
+- **v0.4.19**: DIMDIA (diameter) and DIMANG (3-point angle in
   D°MM'SS", arc placement picks the angle). All five dimension kinds share
   `DimensionBuilder`. DWG round-trip tested.
+- **v0.4.20** (current): VXDEL/VXADD and the Properties vertex buttons now
+  work on Polyline2D too, by swapping in a rebuilt polyline
+  (`ReplacePolyline2DCommand`) - ACadSharp's HashSet-backed vertex
+  collection scrambles order if vertices are removed and re-added.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -168,7 +172,7 @@ on Windows; that's still Marc's job when he runs a build.
   No ordinate or 2-line angular (pick two lines) yet.
 - No sheet-size/layout change without re-drafting (scale-only changes
   are VPSCALE since v0.4.14). Vertex
-  insert/delete covers LwPolyline only (not Polyline2D).
+  insert/delete covers both polyline kinds since v0.4.20.
 - **North-up viewports only** (no twist for a rotated lot); splines written
   as dense polylines; label collisions handled by local sliding, not a
   solver; long MTEXT notes only rewritten when a rule matches their raw

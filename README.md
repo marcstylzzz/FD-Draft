@@ -102,7 +102,7 @@ FdDraft.App project in Visual Studio).
   to lengthen. **Fillet** rounds the corner between two lines with a typed
   radius (a corner rounding or daylighting curve), cutting both back to
   their tangent points; radius 0 closes them to a sharp corner.
-- **VXDEL** removes one polyline vertex (pick it) without erasing the
+- **VXDEL** removes one polyline vertex (either polyline type) (pick it) without erasing the
   whole polyline; **VXADD** adds one where you pick on a span - on an arc
   it lands on the curve and splits the arc exactly.
 - **Line** draws by bearing and distance: pick or type an E,N start point,

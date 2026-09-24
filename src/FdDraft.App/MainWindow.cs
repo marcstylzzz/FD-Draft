@@ -973,50 +973,51 @@ namespace FdDraft.App
             var p = vref.Get();
             AddNumberRow("Vertex E:", p.X, v => vref.Set(new XYZ(v, vref.Get().Y, 0)), "Set vertex position");
             AddNumberRow("Vertex N:", p.Y, v => vref.Set(new XYZ(vref.Get().X, v, 0)), "Set vertex position");
-            if (vref.Entity is LwPolyline lp)
+            if (vref.Entity is LwPolyline || vref.Entity is Polyline2D)
             {
+                var lp = vref.Entity;
                 int idx = vref.Index;
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
-                var del = new Button { Content = "Delete vertex", Margin = new Thickness(4, 0, 4, 0), Padding = new Thickness(6, 2, 6, 2), IsEnabled = DeleteVertexCommand.CanDelete(lp), ToolTip = "Remove this vertex; its two spans become one straight span (VXDEL picks one instead)" };
-                bool hasSpan = lp.IsClosed || idx < count - 1;
+                var del = new Button { Content = "Delete vertex", Margin = new Thickness(4, 0, 4, 0), Padding = new Thickness(6, 2, 6, 2), IsEnabled = PolylineVertices.CanDelete(lp), ToolTip = "Remove this vertex; its two spans become one straight span (VXDEL picks one instead)" };
+                bool hasSpan = PolylineVertices.IsClosed(lp) || idx < count - 1;
                 var ins = new Button { Content = "Insert after", Margin = new Thickness(0, 0, 4, 0), Padding = new Thickness(6, 2, 6, 2), IsEnabled = hasSpan, ToolTip = "Add a vertex halfway along the span after this one - an arc is split on its curve (VXADD picks the spot instead)" };
                 del.Click += (s, e) => DeletePolylineVertex(lp, idx);
-                ins.Click += (s, e) =>
-                {
-                    var a = lp.Vertices[idx]; var b = lp.Vertices[(idx + 1) % lp.Vertices.Count];
-                    var mid = Construct.Span.FromBulge(new Vec2(a.Location.X, a.Location.Y), new Vec2(b.Location.X, b.Location.Y), a.Bulge).Midpoint;
-                    InsertPolylineVertex(lp, idx, mid);
-                };
+                ins.Click += (s, e) => InsertPolylineVertex(lp, idx, EntityOps.SpansOf(lp).ElementAt(idx).Midpoint);
                 row.Children.Add(del); row.Children.Add(ins);
                 _numberFields.Children.Add(row);
             }
         }
 
-        private void DeletePolylineVertex(LwPolyline lp, int idx)
+        private void DeletePolylineVertex(Entity poly, int idx)
         {
-            if (!DeleteVertexCommand.CanDelete(lp)) { Log("  that polyline is down to its minimum vertices - erase the whole entity instead (Del)"); return; }
-            var at = lp.Vertices[idx].Location;
-            _undo.Push(new DeleteVertexCommand(lp, idx, "Delete vertex"));
-            _propertiesVertexIndex = Math.Max(0, idx - 1);
-            _dirty = true; UpdateTitle();
-            Rebuild(fit: false);
-            UpdateProperties();
+            if (!PolylineVertices.CanDelete(poly)) { Log("  that polyline is down to its minimum vertices - erase the whole entity instead (Del)"); return; }
+            var at = new VertexRef(poly, idx).Get();
+            var cmd = PolylineVertices.Delete(poly, idx, "Delete vertex");
+            AfterVertexEdit(poly, cmd, Math.Max(0, idx - 1));
             Log("  deleted vertex " + idx + " at " + NE(new Vec2(at.X, at.Y)) + "  (Ctrl+Z to undo)");
         }
 
-        private void InsertPolylineVertex(LwPolyline lp, int afterIndex, Vec2 at)
+        private void InsertPolylineVertex(Entity poly, int afterIndex, Vec2 at)
         {
-            var cmd = new InsertVertexCommand(lp, afterIndex, new XY(at.X, at.Y), "Insert vertex");
+            var cmd = PolylineVertices.Insert(poly, afterIndex, at, "Insert vertex", out int newIndex);
+            AfterVertexEdit(poly, cmd, newIndex);
+            Log("  inserted vertex " + newIndex + " at " + NE(at) + "  (Ctrl+Z to undo)");
+        }
+
+        /// <summary>Records a vertex edit and keeps the polyline selected - a Polyline2D edit
+        /// swaps in a rebuilt entity, so the selection moves to that.</summary>
+        private void AfterVertexEdit(Entity poly, IEditCommand cmd, int showIndex)
+        {
             _undo.Push(cmd);
-            _propertiesVertexIndex = cmd.Index;
+            if (cmd is ReplacePolyline2DCommand r && _canvas.Selected.Remove(poly.Handle)) _canvas.Selected.Add(r.Replacement.Handle);
+            _propertiesVertexIndex = showIndex;
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
             UpdateProperties();
-            Log("  inserted vertex " + cmd.Index + " at " + NE(at) + "  (Ctrl+Z to undo)");
         }
 
-        /// <summary>The selected LwPolylines, for VXDEL/VXADD.</summary>
-        private List<LwPolyline> SelectedPolylines() => SelectedEntities().OfType<LwPolyline>().ToList();
+        /// <summary>The selected polylines (either kind), for VXDEL/VXADD.</summary>
+        private List<Entity> SelectedPolylines() => SelectedEntities().Where(e => e is LwPolyline || e is Polyline2D).ToList();
 
         private void StartVertexDelete()
         {
@@ -1031,14 +1032,16 @@ namespace FdDraft.App
                 var model = _canvas.Scene!.ModelAt(p);
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 double tol = Math.Max(6 / _canvas.View.Zoom, 1e-6);
-                LwPolyline? best = null; int bestIdx = -1; double bestD = double.MaxValue;
-                foreach (var lp in polys)
+                Entity? best = null; int bestIdx = -1; double bestD = double.MaxValue;
+                foreach (var lp in polys.ToList())
                 {
-                    int i = VertexEditing.NearestVertex(lp, model.Value, out double d);
+                    if (lp.Owner == null) continue; // swapped out by an earlier Polyline2D edit
+                    int i = PolylineVertices.NearestVertex(lp, model.Value, out double d);
                     if (i >= 0 && d < bestD) { bestD = d; best = lp; bestIdx = i; }
                 }
                 if (best == null || bestD > tol) { Log("  no vertex of the selected polyline there - pick closer, or snap (F3)"); return; }
                 DeletePolylineVertex(best, bestIdx);
+                polys = SelectedPolylines(); // a Polyline2D was replaced by a rebuilt one
                 // Stays active for the next vertex.
             };
         }
@@ -1056,14 +1059,16 @@ namespace FdDraft.App
                 var model = _canvas.Scene!.ModelAt(p);
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 double tol = Math.Max(10 / _canvas.View.Zoom, 1e-6);
-                LwPolyline? best = null; int bestSpan = -1; double bestD = double.MaxValue; Vec2 at = model.Value;
+                Entity? best = null; int bestSpan = -1; double bestD = double.MaxValue; Vec2 at = model.Value;
                 foreach (var lp in polys)
                 {
-                    int i = VertexEditing.NearestSpan(lp, model.Value, out var on, out double d);
+                    if (lp.Owner == null) continue;
+                    int i = PolylineVertices.NearestSpan(lp, model.Value, out var on, out double d);
                     if (i >= 0 && d < bestD) { bestD = d; best = lp; bestSpan = i; at = on; }
                 }
                 if (best == null || bestD > tol) { Log("  that's not on the selected polyline - pick on one of its spans"); return; }
                 InsertPolylineVertex(best, bestSpan, at);
+                polys = SelectedPolylines();
             };
         }
 
