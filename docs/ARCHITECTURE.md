@@ -85,14 +85,54 @@ The app cannot be built on the Linux build box, so
 API, with warnings treated as errors. That catches C# and API mistakes; running
 it on Windows is the real test.
 
+### Editing and drafting tools (v0.4)
+
+- **Select**: click an entity to select it (its DWG handle drives it, from
+  `Prim.Handle`); Ctrl+click adds or removes. Highlighted in the canvas and
+  summarised in the **Properties** panel.
+- **Erase** (Del, or the ERASE command) and **MOVE** / **ROTATE** transform
+  the selected entities in place via `ACadSharp.Entities.Entity.ApplyTransform`.
+  ROTATE takes the pivot by pick and the angle by typing degrees, clockwise
+  (survey convention); the entity math is verified in
+  `tests/FdDraft.Tests` against a real `CadDocument`, both about the origin
+  and about an arbitrary pivot.
+- **Undo/redo** (Ctrl+Z / Ctrl+Y): a linear `UndoStack` of `IEditCommand`s
+  (`FdDraft.Cad.Editing`) - `AddEntitiesCommand`, `RemoveEntitiesCommand`,
+  `TransformEntitiesCommand`. New commands truncate any redo history past
+  them, like every other editor. This lives in `FdDraft.Cad`, not the WPF
+  app, precisely so it can be unit-tested on the Linux build box.
+- **LINE**: pick or type an E,N start point, then type `BEARING DISTANCE`
+  legs (`N45-30-00E 125.50`, DMS or decimal, or a plain azimuth) - it chains
+  like a data collector; blank ends it. Each leg is its own undo step.
+- **ARC**: pick three points on the arc (start, a point on it, end); fit via
+  the same `Arc.ThroughThreePoints` the drafting engine itself uses.
+- **TEXT** / **LEADER**: pick a point (LEADER: two - the feature, then the
+  text), then type the text, optionally prefixed with a height
+  (`"0.25 LOT 5"`; default 0.2). LEADER draws a shaft, a small arrowhead
+  aimed back along it, and the text as one undo step.
+- New entities pick up the toolbar's **current layer**, created on the fly
+  if the template doesn't have it yet.
+- Bearing/leg parsing (`Cogo`) lives in `FdDraft.Core.Geometry` for the same
+  testability reason as the edit commands.
+- **Codes** panel lists the job's `codes.csv` (key, description, layer).
+  **Properties** panel summarises the current selection (layer, handle, and
+  type-specific geometry: a line's bearing/distance, an arc or circle's
+  radius, a text's content).
+- Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
+  Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
+  template and standards.
+
 ### Next in the app
 
-- Editing: move, rotate and flip labels; erase; undo. Relabel courses after a
-  point moves.
-- Drafting tools: line/arc by bearing and distance, text, leaders, building
-  ties, dimensions.
-- A sheet setup panel that re-runs the sheet/scale choice on an open plan.
-- Properties panel for the selected entity; a code list panel.
+- Relabel courses after a point moves (MOVE currently moves the linework;
+  bearing/distance/area labels are not yet re-derived).
+- Flip labels; multi-point (not just Del-all) partial erase of a polyline
+  vertex; a dedicated sheet setup panel (rather than reusing Draft FD-Pro
+  job) for scale-only changes without re-running the whole pipeline.
+- Real leaders/dimensions as ACadSharp `Leader`/`Dimension` entities instead
+  of plain lines, so they read back as leaders in AutoCAD/MSCAD too.
+- A dedicated properties-editing UI (change a layer, retype text) rather
+  than read-only summary.
 
 ## After that: the document assistant (hybrid)
 

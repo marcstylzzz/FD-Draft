@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using FdDraft.Cad.Editing;
 using FdDraft.Core;
 using FdDraft.Core.Drafting;
 using FdDraft.Core.Geometry;
@@ -386,6 +387,74 @@ namespace FdDraft.Tests
             Assert.Equal("2.5", TitleBlockFiller.RelabelTick("7.5", 750, 250));
             Assert.True(TitleBlockFiller.RelabelTick("SCALE 1:300", 300, 500) == null, "not a tick");
             Assert.Near(750, TitleBlockFiller.DenominatorIn("SCALE 1:750")!.Value, 1e-9);
+        }
+
+        // ---- the app's editing tools: COGO parsing, undo/redo, move/rotate/erase --------
+
+        public static void TestBearingParsing()
+        {
+            Assert.Near(45.0, Cogo.ParseBearing("N45E") * 180 / Math.PI, 1e-9, "N45E");
+            Assert.Near(135.0, Cogo.ParseBearing("S45E") * 180 / Math.PI, 1e-9, "S45E");
+            Assert.Near(225.0, Cogo.ParseBearing("S45W") * 180 / Math.PI, 1e-9, "S45W");
+            Assert.Near(315.0, Cogo.ParseBearing("N45W") * 180 / Math.PI, 1e-9, "N45W");
+            Assert.Near(45.5, Cogo.ParseBearing("N45-30-00E") * 180 / Math.PI, 1e-9, "DMS with dashes");
+            Assert.Near(45.5, Cogo.ParseBearing("N45d30m00sE") * 180 / Math.PI, 1e-6, "DMS with letters");
+            Assert.Near(125.5, Cogo.ParseBearing("125.5") * 180 / Math.PI, 1e-9, "plain azimuth");
+
+            Assert.True(Cogo.TryParseLeg("N45-30-00E 125.50", out double az, out double dist), "leg parses");
+            Assert.Near(45.5, az * 180 / Math.PI, 1e-9, "leg azimuth");
+            Assert.Near(125.50, dist, 1e-9, "leg distance");
+            Assert.True(!Cogo.TryParseLeg("just one word", out _, out _), "one word is not a leg");
+            Assert.True(!Cogo.TryParseLeg("N45E 0", out _, out _), "zero distance is rejected");
+
+            Assert.True(Cogo.TryParseCoordinate("500.25,1200.75", out double e, out double n), "coordinate parses");
+            Assert.Near(500.25, e, 1e-9, "coordinate E"); Assert.Near(1200.75, n, 1e-9, "coordinate N");
+        }
+
+        public static void TestEditCommandsAddEraseUndoRedo()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0));
+
+            undo.Push(new AddEntitiesCommand(doc.ModelSpace, new ACadSharp.Entities.Entity[] { line }, "Line"));
+            Assert.True(doc.ModelSpace.Entities.Any(x => x == line), "added to model space");
+            Assert.True(line.Handle != 0, "handle assigned");
+
+            var erase = new RemoveEntitiesCommand(new ACadSharp.Entities.Entity[] { line }, "Erase");
+            undo.Push(erase);
+            Assert.True(!doc.ModelSpace.Entities.Any(x => x == line), "erased");
+            undo.Undo();
+            Assert.True(doc.ModelSpace.Entities.Any(x => x == line), "undo erase puts it back");
+            undo.Redo();
+            Assert.True(!doc.ModelSpace.Entities.Any(x => x == line), "redo erase removes it again");
+            undo.Undo(); // leave it in place for the transform tests below
+        }
+
+        public static void TestEditCommandsMoveAndRotate()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0));
+            doc.ModelSpace.Entities.Add(line);
+            var undo = new UndoStack();
+
+            undo.Push(TransformEntitiesCommand.Move(new ACadSharp.Entities.Entity[] { line }, 5, 3, "Move"));
+            Assert.Near(5, line.StartPoint.X, 1e-9, "move start.X"); Assert.Near(3, line.StartPoint.Y, 1e-9, "move start.Y");
+            Assert.Near(15, line.EndPoint.X, 1e-9, "move end.X"); Assert.Near(3, line.EndPoint.Y, 1e-9, "move end.Y");
+            undo.Undo();
+            Assert.Near(0, line.StartPoint.X, 1e-9, "undo move start.X"); Assert.Near(10, line.EndPoint.X, 1e-9, "undo move end.X");
+
+            // +90 degrees about the origin (standard math convention: counter-clockwise).
+            undo.Push(TransformEntitiesCommand.Rotate(new ACadSharp.Entities.Entity[] { line }, new CSMath.XYZ(0, 0, 0), Math.PI / 2, "Rotate"));
+            Assert.Near(0, line.EndPoint.X, 1e-6, "rotate 90: end.X"); Assert.Near(10, line.EndPoint.Y, 1e-6, "rotate 90: end.Y");
+            undo.Undo();
+            Assert.Near(10, line.EndPoint.X, 1e-6, "undo rotate: end.X back"); Assert.Near(0, line.EndPoint.Y, 1e-6, "undo rotate: end.Y back");
+
+            // Rotation about a pivot away from the origin - the real MOVE/ROTATE use case.
+            var line2 = new ACadSharp.Entities.Line(new CSMath.XYZ(10, 0, 0), new CSMath.XYZ(20, 0, 0));
+            var rot = TransformEntitiesCommand.Rotate(new ACadSharp.Entities.Entity[] { line2 }, new CSMath.XYZ(10, 0, 0), Math.PI / 2, "Rotate about pivot");
+            Assert.Near(10, line2.EndPoint.X, 1e-6, "pivot rotate: end.X"); Assert.Near(10, line2.EndPoint.Y, 1e-6, "pivot rotate: end.Y");
+            Assert.Near(10, line2.StartPoint.X, 1e-6, "pivot rotate: start unmoved X"); Assert.Near(0, line2.StartPoint.Y, 1e-6, "pivot rotate: start unmoved Y");
         }
     }
 }

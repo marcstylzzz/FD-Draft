@@ -6,10 +6,11 @@ already have their templates set up, so FD-Draft uses those as they are. It open
 the .dwt itself, drafts into it and saves a real DWG. No AutoCAD, MSCAD or other
 CAD program is involved.
 
-Status: **v0.3**. The desktop application (**FD-Draft.exe**) opens, drafts,
-views, inverses, saves DWG and plots PDF. The command-line tool runs the same
-engine. Editing tools and the document assistant (plans, PINs, deeds) come next.
-See `docs/ARCHITECTURE.md`.
+Status: **v0.4**. The desktop application (**FD-Draft.exe**) opens, drafts,
+views, inverses, saves DWG and plots PDF - and now edits: select, erase,
+move, rotate, undo/redo, and draw lines by bearing and distance, arcs, text
+and leaders. The command-line tool runs the same engine. The document
+assistant (plans, PINs, deeds) comes next. See `docs/ARCHITECTURE.md`.
 
 ```
 FD-Draft/
@@ -60,8 +61,19 @@ FdDraft.App project in Visual Studio).
   are shown greyed.
 - **Save** (Ctrl+S) writes the DWG. **PDF** (Ctrl+P) plots the current sheet as
   a true-scale vector PDF.
+- **Select**: click an entity (Ctrl+click adds); **Del** erases; **Ctrl+Z** /
+  **Ctrl+Y** undo/redo. **Move** and **Rotate** act on the selection (Rotate
+  picks the pivot, then type the angle in degrees, clockwise).
+- **Line** draws by bearing and distance: pick or type an E,N start point,
+  then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
+  blank ends it. **Arc** fits three picked points. **Text** and **Leader**
+  place labels (type `height text`, e.g. `0.25 LOT 5`, or just the text for
+  the default height). New linework goes on the toolbar's **Layer** box.
+- **Codes** panel lists the job's codes; **Properties** summarises the
+  current selection.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, ERASE, UNDO,
+  REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

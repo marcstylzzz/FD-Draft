@@ -37,10 +37,19 @@ namespace FdDraft.App
         public bool SnapEnabled { get; set; } = true;
         /// <summary>First point of a two-point tool (inverse): a rubber band is drawn from it.</summary>
         public Vec2? RubberFrom { get; set; }
+        /// <summary>True while a command is waiting for a point (Inverse, Line, Move's pick steps,
+        /// and so on): a click is a point pick, not a selection click.</summary>
+        public bool ToolActive { get; set; }
+        /// <summary>DWG handles of the selected entities, highlighted in the canvas.</summary>
+        public HashSet<ulong> Selected { get; } = new HashSet<ulong>();
 
         /// <summary>Scene point under the cursor (snapped if a snap is active) and the snap, if any.</summary>
         public event Action<Vec2, SnapPoint?>? CursorMoved;
+        /// <summary>A point picked while <see cref="ToolActive"/> is true.</summary>
         public event Action<Vec2>? Picked;
+        /// <summary>The entity handle clicked while not tool-active (null on an empty click), and
+        /// whether Ctrl was held (add/remove from the existing selection rather than replace it).</summary>
+        public event Action<ulong?, bool>? EntityClicked;
 
         public DrawingCanvas()
         {
@@ -127,9 +136,30 @@ namespace FdDraft.App
                 foreach (var prim in g.Prims)
                 {
                     if (!Overlaps(prim.Bounds, visible) && prim.Kind != PrimKind.Text) continue;
-                    DrawPrim(dc, prim, dip, visible);
+                    DrawPrim(dc, prim, dip, visible, highlight: false);
                 }
                 if (g.Clip.HasValue) dc.Pop();
+            }
+
+            // Selected entities are redrawn on top in a highlight colour so they always show,
+            // even under other linework.
+            if (Selected.Count > 0)
+            {
+                foreach (var g in _scene.Groups)
+                {
+                    if (g.Clip.HasValue)
+                    {
+                        var c = g.Clip.Value;
+                        var a = S(new Vec2(c.X1, c.Y2)); var b = S(new Vec2(c.X2, c.Y1));
+                        dc.PushClip(new RectangleGeometry(new WRect(a, b)));
+                    }
+                    foreach (var prim in g.Prims)
+                    {
+                        if (prim.Handle == 0 || !Selected.Contains(prim.Handle)) continue;
+                        DrawPrim(dc, prim, dip, visible, highlight: true);
+                    }
+                    if (g.Clip.HasValue) dc.Pop();
+                }
             }
 
             if (RubberFrom.HasValue)
@@ -141,7 +171,9 @@ namespace FdDraft.App
             if (_snap.HasValue) DrawSnapMarker(dc, _snap.Value);
         }
 
-        private void DrawPrim(DrawingContext dc, Prim p, double dip, FdDraft.Core.Standards.Rect visible)
+        private static readonly Color HighlightColor = Color.FromRgb(0xFF, 0x00, 0xC8);
+
+        private void DrawPrim(DrawingContext dc, Prim p, double dip, FdDraft.Core.Standards.Rect visible, bool highlight)
         {
             switch (p.Kind)
             {
@@ -152,13 +184,14 @@ namespace FdDraft.App
                     var geo = new StreamGeometry();
                     using (var ctx = geo.Open())
                     {
-                        ctx.BeginFigure(S(p.Points[0]), p.Kind == PrimKind.Fill, p.Closed || p.Kind == PrimKind.Fill);
+                        ctx.BeginFigure(S(p.Points[0]), p.Kind == PrimKind.Fill && !highlight, p.Closed || p.Kind == PrimKind.Fill);
                         var pts = new List<WPoint>(p.Points.Count - 1);
                         for (int i = 1; i < p.Points.Count; i++) pts.Add(S(p.Points[i]));
                         ctx.PolyLineTo(pts, true, false);
                     }
                     geo.Freeze();
-                    if (p.Kind == PrimKind.Fill) dc.DrawGeometry(BrushFor(p.Rgb), null, geo);
+                    if (highlight) dc.DrawGeometry(null, HighlightPen(), geo);
+                    else if (p.Kind == PrimKind.Fill) dc.DrawGeometry(BrushFor(p.Rgb), null, geo);
                     else dc.DrawGeometry(null, PenFor(p.Rgb), geo);
                     break;
                 }
@@ -166,13 +199,14 @@ namespace FdDraft.App
                 {
                     double r = p.Radius * View.Zoom;
                     if (r < 0.3) return;
-                    dc.DrawEllipse(null, PenFor(p.Rgb), S(p.Center), r, r);
+                    dc.DrawEllipse(null, highlight ? HighlightPen() : PenFor(p.Rgb), S(p.Center), r, r);
                     break;
                 }
                 case PrimKind.Node:
                 {
                     var c = S(p.Center);
-                    dc.DrawRectangle(BrushFor(p.Rgb), null, new WRect(c.X - 1, c.Y - 1, 2, 2));
+                    if (highlight) dc.DrawEllipse(null, HighlightPen(), c, 5, 5);
+                    else dc.DrawRectangle(BrushFor(p.Rgb), null, new WRect(c.X - 1, c.Y - 1, 2, 2));
                     break;
                 }
                 case PrimKind.Text:
@@ -181,6 +215,11 @@ namespace FdDraft.App
                     if (capPx < 1.5) return; // unreadable at this zoom; skip rather than smear
                     var at = S(p.Center);
                     if (at.X < -2000 || at.Y < -2000 || at.X > ActualWidth + 2000 || at.Y > ActualHeight + 2000) return;
+                    if (highlight)
+                    {
+                        var hb = new WRect(at.X - 2, at.Y - p.Height * View.Zoom - 2, Math.Max(4, p.Text.Length * p.Height * View.Zoom * 0.6) + 4, p.Height * View.Zoom + 4);
+                        dc.DrawRectangle(null, HighlightPen(), hb);
+                    }
                     if (!_texts.TryGetValue(p, out var ft))
                     {
                         ft = new FormattedText(p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface, EmSize, BrushFor(p.Rgb), dip);
@@ -239,6 +278,17 @@ namespace FdDraft.App
         private static bool Overlaps(FdDraft.Core.Standards.Rect a, FdDraft.Core.Standards.Rect b) =>
             a.X1 <= b.X2 && b.X1 <= a.X2 && a.Y1 <= b.Y2 && b.Y1 <= a.Y2;
 
+        private Pen? _highlightPen;
+        private Pen HighlightPen()
+        {
+            if (_highlightPen == null)
+            {
+                _highlightPen = new Pen(new SolidColorBrush(HighlightColor), 2.5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                _highlightPen.Freeze();
+            }
+            return _highlightPen;
+        }
+
         private Pen PenFor(uint rgb)
         {
             if (_pens.TryGetValue(rgb, out var pen)) return pen;
@@ -283,10 +333,83 @@ namespace FdDraft.App
             if (e.ChangedButton == MouseButton.Left && _scene != null)
             {
                 var p = e.GetPosition(this);
-                var world = _snap.HasValue ? _snap.Value.Point : View.ToScene(p.X, p.Y);
-                Picked?.Invoke(world);
+                if (ToolActive)
+                {
+                    var world = _snap.HasValue ? _snap.Value.Point : View.ToScene(p.X, p.Y);
+                    Picked?.Invoke(world);
+                }
+                else
+                {
+                    var hit = HitTest(p);
+                    EntityClicked?.Invoke(hit?.Handle is ulong h && h != 0 ? h : null, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+                    InvalidateVisual();
+                }
                 e.Handled = true;
             }
+        }
+
+        /// <summary>The prim nearest the screen point, within a small pixel tolerance - used to
+        /// pick an entity to select when no tool is waiting for a point.</summary>
+        private Prim? HitTest(WPoint screenPt, double tolerancePx = 6)
+        {
+            if (_scene == null) return null;
+            Prim? best = null;
+            double bestD = tolerancePx;
+            foreach (var g in _scene.Groups)
+            {
+                foreach (var prim in g.Prims)
+                {
+                    if (prim.Handle == 0) continue;
+                    double d = DistanceToPrim(prim, screenPt);
+                    if (d < bestD) { bestD = d; best = prim; }
+                }
+            }
+            return best;
+        }
+
+        private double DistanceToPrim(Prim p, WPoint pt)
+        {
+            switch (p.Kind)
+            {
+                case PrimKind.Polyline:
+                case PrimKind.Fill:
+                {
+                    if (p.Points.Count == 0) return double.MaxValue;
+                    if (p.Points.Count == 1) { var c0 = S(p.Points[0]); return Distance(pt, c0); }
+                    double best = double.MaxValue;
+                    int segs = p.Points.Count - (p.Closed || p.Kind == PrimKind.Fill ? 0 : 1);
+                    for (int i = 0; i < segs; i++)
+                    {
+                        var a = S(p.Points[i]);
+                        var b = S(p.Points[(i + 1) % p.Points.Count]);
+                        best = Math.Min(best, DistanceToSegment(pt, a, b));
+                    }
+                    return best;
+                }
+                case PrimKind.Circle:
+                {
+                    var c = S(p.Center);
+                    double r = p.Radius * View.Zoom;
+                    return Math.Abs(Distance(pt, c) - r);
+                }
+                case PrimKind.Text:
+                case PrimKind.Node:
+                    return Distance(pt, S(p.Center));
+                default:
+                    return double.MaxValue;
+            }
+        }
+
+        private static double Distance(WPoint a, WPoint b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+        private static double DistanceToSegment(WPoint p, WPoint a, WPoint b)
+        {
+            double dx = b.X - a.X, dy = b.Y - a.Y;
+            double len2 = dx * dx + dy * dy;
+            if (len2 < 1e-9) return Distance(p, a);
+            double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / len2;
+            t = Math.Max(0, Math.Min(1, t));
+            return Distance(p, new WPoint(a.X + t * dx, a.Y + t * dy));
         }
 
         protected override void OnMouseUp(MouseButtonEventArgs e)
