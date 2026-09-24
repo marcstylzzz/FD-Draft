@@ -158,6 +158,18 @@ it on Windows is the real test.
 - **LINE**: pick or type an E,N start point, then type `BEARING DISTANCE`
   legs (`N45-30-00E 125.50`, DMS or decimal, or a plain azimuth) - it chains
   like a data collector; blank ends it. Each leg is its own undo step.
+- **LINE closure**: LINE keeps the list of points the traverse visited.
+  `C` runs `FdDraft.Core.Geometry.ClosureReport.Of` over them - misclosure
+  (end minus start, as dN/dE and a distance), precision 1:(traverse length
+  ÷ misclosure), and the area once closed - then draws the closing course
+  as an ordinary leg. `U` pops the last leg off both that list and the undo
+  stack, like a data collector's "back up one".
+- **AREA**: `FigureMeasure.Area/Perimeter` over a closed LwPolyline or
+  Polyline2D's spans (arc segments included, via `Polygon.SignedArea` and
+  `Construct.Spans`), or a circle; with no closed figure selected it is a
+  pick-the-corners tool with a running total. Areas are printed the way the
+  plan's own area labels are (`Annotator.FormatArea`, so a feet job gets
+  ft² and acres).
 - **ARC**: pick three points on the arc (start, a point on it, end); fit via
   the same `Arc.ThroughThreePoints` the drafting engine itself uses.
 - **TEXT** / **LEADER**: pick a point (LEADER: two - the feature, then the

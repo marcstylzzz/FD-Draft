@@ -885,5 +885,29 @@ namespace FdDraft.Tests
             var far = Label("LOT 5", 50, 50, ACadSharp.Entities.TextVerticalAlignmentType.Middle);
             Assert.True(LabelFlip.Flip(new ACadSharp.Entities.Entity[] { far }, new ACadSharp.Entities.Entity[] { course }, 2.0, out _) == null, "a label nowhere near a course is left alone");
         }
+            // ---- traverse closure and AREA (v0.4.11) ----------------------------------------------
+
+        public static void TestTraverseClosureReportsMisclosurePrecisionAndArea()
+        {
+            // Four 100 m legs around a square that come back 0.03 E, 0.04 N off the start.
+            var pts = new List<Vec2> { new Vec2(0, 0), new Vec2(100, 0), new Vec2(100, 100), new Vec2(0, 100), new Vec2(0.03, 0.04) };
+            var r = ClosureReport.Of(pts);
+            Assert.Near(0.05, r.Misclosure, 1e-9, "linear misclosure");
+            Assert.Near(0.03, r.DeltaE, 1e-9, "dE"); Assert.Near(0.04, r.DeltaN, 1e-9, "dN");
+            Assert.Near(300 + Math.Sqrt(0.03 * 0.03 + 99.96 * 99.96), r.TraverseLength, 1e-9, "traverse length as run");
+            Assert.Equal("1:7,999", ClosureReport.FormatPrecision(r.Precision), "precision ratio");
+            Assert.Near(10000, r.Area, 3, "closed area");
+            Assert.Near(Angles.Azimuth(new Vec2(0.03, 0.04), new Vec2(0, 0)), r.ClosingAzimuth, 1e-12, "closing course runs back to the start");
+            Assert.Equal("perfect closure", ClosureReport.FormatPrecision(ClosureReport.Of(new List<Vec2> { new Vec2(0, 0), new Vec2(1, 0), new Vec2(0, 0) }).Precision));
+        }
+
+        public static void TestFigureMeasureCountsArcs()
+        {
+            // A half-disc of radius 5: diameter along X, then a CCW semicircle back (bulge 1).
+            var pts = new List<Vec2> { new Vec2(5, 0), new Vec2(-5, 0) };
+            var bulges = new List<double> { 0, 1 };
+            Assert.Near(Math.PI * 25 / 2, FigureMeasure.Area(pts, bulges), 1e-9, "half-disc area");
+            Assert.Near(10 + Math.PI * 5, FigureMeasure.Perimeter(pts, bulges, true), 1e-9, "diameter plus half circumference");
+        }
     }
 }

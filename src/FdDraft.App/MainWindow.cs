@@ -194,6 +194,7 @@ namespace FdDraft.App
             var survey = new MenuItem { Header = "_Survey" };
             survey.Items.Add(Item("_Draft FD-Pro job…", "Ctrl+D", DraftJob));
             survey.Items.Add(Item("_Inverse", "INV", StartInverse));
+            survey.Items.Add(Item("_Area", "AREA", StartArea));
             var edit = new MenuItem { Header = "_Edit" };
             edit.Items.Add(Item("_Undo", "Ctrl+Z", DoUndo));
             edit.Items.Add(Item("_Redo", "Ctrl+Y", DoRedo));
@@ -237,6 +238,7 @@ namespace FdDraft.App
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Extents", "Zoom extents (ZE, or double-click the wheel)", () => _canvas.ZoomExtents()));
             bar.Items.Add(B("Inverse", "Bearing and distance between two points (INV)", StartInverse));
+            bar.Items.Add(B("Area", "Area and perimeter of the selected closed figure, or of picked corners (AREA)", StartArea));
             bar.Items.Add(B("Snap", "Snap to points and line ends on/off (F3)", ToggleSnap));
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Undo", "Undo the last change (Ctrl+Z)", DoUndo));
@@ -336,6 +338,7 @@ namespace FdDraft.App
                 case "COPY": case "CO": case "CP": StartCopy(); break;
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
+                case "AREA": case "AA": StartArea(); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
                 case "OFFSET": case "O": StartOffset(); break;
@@ -369,6 +372,8 @@ namespace FdDraft.App
             Log("  OFFSET  select lines/arcs/circles/polylines, OFFSET, type the distance, pick the side");
             Log("  LAYER   select entities, LAYER, moves them to the toolbar's current layer   · or the Set Layer button");
             Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
+            Log("          C closes back to the start and reports misclosure, precision and area; U undoes the last leg");
+            Log("  AREA    area and perimeter of the selected closed polylines/circles, or pick corners (blank ends)");
             Log("  ARC     pick three points on the arc: start, a point on it, end");
             Log("  TEXT    pick a point, then type the text (or \"height text\", e.g. \"0.25 LOT 5\")");
             Log("  LEADER  pick the feature point then the text position, then type the text");
@@ -1108,9 +1113,12 @@ namespace FdDraft.App
             if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
             string layer = CurrentLayer();
             BeginTool("LINE");
-            Log("LINE  on layer " + layer + " - pick the start point, or type E,N (blank/Esc ends)");
+            Log("LINE  on layer " + layer + " - pick the start point, or type E,N (blank/Esc ends; C closes back to the start with a closure report; U undoes the last leg)");
             _prompt.Text = "Line - start point:";
             Vec2? cur = null;
+            // Every point the traverse has visited, start first - for C (close) and U (undo leg).
+            var visited = new List<Vec2>();
+            const string nextPrompt = "Line - next bearing distance (C close, U undo, blank ends):";
 
             void Leg(Vec2 to)
             {
@@ -1118,11 +1126,12 @@ namespace FdDraft.App
                 var line = new Line(new XYZ(from.X, from.Y, 0), new XYZ(to.X, to.Y, 0)) { Layer = GetOrCreateLayer(layer) };
                 _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { line }, "Line"));
                 cur = to;
+                visited.Add(to);
                 _canvas.RubberFrom = to;
                 _dirty = true; UpdateTitle();
                 Rebuild(fit: false);
                 Log("  " + InverseResult.Between(from, to, _std?.BearingRotationDeg ?? 0));
-                _prompt.Text = "Line - next bearing distance (blank ends):";
+                _prompt.Text = nextPrompt;
             }
 
             _awaitingPoint = p =>
@@ -1131,9 +1140,9 @@ namespace FdDraft.App
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 if (cur == null)
                 {
-                    cur = model.Value; _canvas.RubberFrom = p; _canvas.ToolActive = false;
+                    cur = model.Value; visited.Add(model.Value); _canvas.RubberFrom = p; _canvas.ToolActive = false;
                     Log("  start " + NE(model.Value));
-                    _prompt.Text = "Line - next bearing distance (blank ends):";
+                    _prompt.Text = nextPrompt;
                 }
                 else Leg(model.Value);
             };
@@ -1144,13 +1153,37 @@ namespace FdDraft.App
                     if (Cogo.TryParseCoordinate(s, out double e, out double n))
                     {
                         cur = new Vec2(e, n);
+                        visited.Add(cur.Value);
                         Log("  start " + NE(cur.Value));
-                        _prompt.Text = "Line - next bearing distance (blank ends):";
+                        _prompt.Text = nextPrompt;
                     }
                     else Log("  type E,N or click a start point");
                     return;
                 }
                 if (s.Length == 0) { EndTool(); Log("  *line complete*"); return; }
+                if (s.Equals("U", StringComparison.OrdinalIgnoreCase) || s.Equals("UNDO", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (visited.Count < 2) { Log("  no leg to undo yet"); return; }
+                    _undo.Undo();
+                    visited.RemoveAt(visited.Count - 1);
+                    cur = visited[visited.Count - 1];
+                    _dirty = true; UpdateTitle();
+                    Rebuild(fit: false);
+                    Log("  last leg removed - back at " + NE(cur.Value));
+                    return;
+                }
+                if (s.Equals("C", StringComparison.OrdinalIgnoreCase) || s.Equals("CLOSE", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (visited.Count < 3) { Log("  a closure needs at least two legs"); return; }
+                    var report = ClosureReport.Of(visited);
+                    var start = visited[0];
+                    Log(string.Format(CultureInfo.InvariantCulture, "  misclosure {0:F3}  (dN {1:F3}  dE {2:F3})  over {3:F3} of traverse - precision {4}",
+                        report.Misclosure, report.DeltaN, report.DeltaE, report.TraverseLength, ClosureReport.FormatPrecision(report.Precision)));
+                    if (report.Misclosure > 1e-9) Leg(start); // the closing course itself, logged as an inverse
+                    Log("  closed figure: area " + AreaText(report.Area) + ", perimeter " + (report.TraverseLength + report.Misclosure).ToString("F3", CultureInfo.InvariantCulture));
+                    EndTool();
+                    return;
+                }
                 if (!Cogo.TryParseLeg(s, out double az, out double dist))
                 {
                     Log("  type BEARING DISTANCE, e.g. N45-30-00E 125.50 (blank ends)");
@@ -1510,6 +1543,77 @@ namespace FdDraft.App
                 Rebuild(fit: false);
                 Log("  offset " + Plural(pairs.Count, "entity", "entities") + " by " + dist.ToString("0.###", CultureInfo.InvariantCulture)
                     + (pairs.Count < entities.Count ? "  (" + (entities.Count - pairs.Count) + " skipped: unsupported type or collapsed curve)" : ""));
+            };
+        }
+
+        /// <summary>An area in the drawing's units as a plan would state it: m² and ha for a metric
+        /// job, ft² and acres for a feet job (the drawing is assumed metric with no job open).</summary>
+        private string AreaText(double area)
+        {
+            var units = _job?.Settings.Units ?? JobUnits.Meters;
+            string format = units == JobUnits.Meters ? "{m2} m² ({ha} ha)" : "{ft2} ft² ({ac} ac)";
+            return FdDraft.Core.Drafting.Annotator.FormatArea(format, area, units);
+        }
+
+        /// <summary>AREA: reports the area and perimeter of each selected closed polyline or
+        /// circle; with nothing closed selected, measures a figure picked point by point.</summary>
+        private void StartArea()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var figures = new List<(string What, double Area, double Perimeter)>();
+            foreach (var e in SelectedEntities())
+            {
+                switch (e)
+                {
+                    case LwPolyline lp when lp.IsClosed && lp.Vertices.Count >= 3:
+                    {
+                        var pts = lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList();
+                        var bl = lp.Vertices.Select(v => v.Bulge).ToList();
+                        figures.Add(("polyline on " + (lp.Layer?.Name ?? "0"), FigureMeasure.Area(pts, bl), FigureMeasure.Perimeter(pts, bl, true)));
+                        break;
+                    }
+                    case Polyline2D p2 when p2.IsClosed && p2.Vertices.Count >= 3:
+                    {
+                        var pts = p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList();
+                        var bl = p2.Vertices.Select(v => v.Bulge).ToList();
+                        figures.Add(("polyline on " + (p2.Layer?.Name ?? "0"), FigureMeasure.Area(pts, bl), FigureMeasure.Perimeter(pts, bl, true)));
+                        break;
+                    }
+                    case Arc:
+                        break;
+                    case Circle c:
+                        figures.Add(("circle on " + (c.Layer?.Name ?? "0"), Math.PI * c.Radius * c.Radius, 2 * Math.PI * c.Radius));
+                        break;
+                }
+            }
+            if (figures.Count > 0)
+            {
+                foreach (var f in figures)
+                    Log("  " + f.What + ": area " + AreaText(f.Area) + ", perimeter " + f.Perimeter.ToString("F3", CultureInfo.InvariantCulture));
+                if (figures.Count > 1) Log("  total area " + AreaText(figures.Sum(f => f.Area)));
+                return;
+            }
+            BeginTool("AREA");
+            _prompt.Text = "Area - first corner:";
+            Log("AREA  no closed polyline selected - pick the corners in order (snap helps); blank ends and reports");
+            var corners = new List<Vec2>();
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                corners.Add(model.Value);
+                _canvas.RubberFrom = p;
+                _prompt.Text = "Area - next corner (blank ends):";
+                if (corners.Count >= 3)
+                    Log("  corner " + corners.Count + " " + NE(model.Value) + " - running area " + AreaText(FigureMeasure.Area(corners, null)));
+                else Log("  corner " + corners.Count + " " + NE(model.Value));
+            };
+            _awaitingLine = s =>
+            {
+                if (s.Length > 0) { Log("  pick the next corner, or blank to finish"); return; }
+                EndTool();
+                if (corners.Count < 3) { Log("  *cancelled - an area needs at least three corners*"); return; }
+                Log("  area " + AreaText(FigureMeasure.Area(corners, null)) + ", perimeter " + FigureMeasure.Perimeter(corners, null, true).ToString("F3", CultureInfo.InvariantCulture) + " (" + corners.Count + " corners)");
             };
         }
 

@@ -76,6 +76,10 @@ FdDraft.App project in Visual Studio).
   of lines, arcs, circles and polylines at a typed distance toward a picked
   side - polyline corners are mitred and curves stay concentric, so an
   offset boundary or road allowance comes out right.
+- **Area** reports the area (m² and ha, or ft² and acres for a feet job)
+  and perimeter of each selected closed polyline or circle, arcs included;
+  with nothing closed selected, pick the corners and it keeps a running
+  total.
 - **Flip** moves the selected bearing/distance (or curve-data) labels to
   the other side of their course, at the same gap and still reading the
   same way - select both labels of a course to swap them.
@@ -84,7 +88,10 @@ FdDraft.App project in Visual Studio).
   it lands on the curve and splits the arc exactly.
 - **Line** draws by bearing and distance: pick or type an E,N start point,
   then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
-  blank ends it. **Arc** fits three picked points. **Text** and **Leader**
+  blank ends it. Type **C** to close back to the start: it draws the
+  closing course and reports the misclosure (dN, dE), the precision
+  (1:n over the traverse length) and the closed area; **U** takes back
+  the last leg. **Arc** fits three picked points. **Text** and **Leader**
   place labels (type `height text`, e.g. `0.25 LOT 5`, or just the text for
   the default height) - Leader places a real DWG leader entity, with an
   arrowhead, not just plain lines, so it reads back as one in AutoCAD/MSCAD
@@ -106,7 +113,7 @@ FdDraft.App project in Visual Studio).
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
+  SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
   COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
