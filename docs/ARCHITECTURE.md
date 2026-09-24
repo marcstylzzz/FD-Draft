@@ -104,6 +104,28 @@ it on Windows is the real test.
   together, so lines that meet at a survey point stay joined. This is the
   actual "grip edit" a course correction needs, as opposed to MOVE/ROTATE
   which only ever transform whole entities rigidly.
+- **COPY / MIRROR / OFFSET** build brand-new entities with
+  `FdDraft.Cad.Editing.EntityOps` and add them beside their sources
+  (`AddBesideSources`: same owner block - Model or a paper-native sheet - as
+  one undo step), so undo is just removing them; the source is never touched
+  (MIRROR's optional "erase originals" is a `RemoveEntitiesCommand` in the
+  same `CompositeCommand`). `EntityOps.Duplicate` re-points ACadSharp's
+  cloned Layer/LineType back at the document's own table entries. MIRROR
+  reflects each type exactly rather than through `ApplyTransform` with a
+  reflection matrix, because a reflected Arc would come back with a -Z
+  normal that nothing downstream (FD-Draft's own renderer included) reads:
+  arcs keep their centre and swap ends, bulges change sign, a block gets
+  rotation 2·axis − r and a negative Y scale. TEXT/MTEXT follow AutoCAD's
+  MIRRTEXT 0 - anchor reflected, top/bottom anchoring swapped, and turned
+  180° with left/right swapped if it would otherwise read upside down, so it
+  covers the mirrored area but still reads forwards. OFFSET's math is
+  `FdDraft.Core.Geometry.Construct.OffsetPolyline`: each span is shifted
+  (lines) or made concentric (arcs, radius ∓ d by bulge sign), then
+  consecutive spans are re-joined at their carriers' intersection nearest
+  the naive joint (line-line, line-circle, circle-circle) - a mitred survey
+  corner, and a tangent curve stays tangent. The side comes from the span
+  nearest the pick. Dimensions are left out of COPY for now (their picture
+  block is per-dimension).
 - **Undo/redo** (Ctrl+Z / Ctrl+Y): a linear `UndoStack` of `IEditCommand`s
   (`FdDraft.Cad.Editing`) - `AddEntitiesCommand`, `RemoveEntitiesCommand`,
   `TransformEntitiesCommand`. New commands truncate any redo history past

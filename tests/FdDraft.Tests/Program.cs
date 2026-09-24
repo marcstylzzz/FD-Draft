@@ -680,5 +680,105 @@ namespace FdDraft.Tests
             Assert.Near(p.X, result!.Value.X, 1e-9, "paper point used directly (X)");
             Assert.Near(p.Y, result.Value.Y, 1e-9, "paper point used directly (Y)");
         }
+            // ---- COPY / MIRROR / OFFSET (v0.4.8) ------------------------------------------------
+
+        public static void TestCopyAddsTranslatedCopiesBesideTheirSource()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var layer = new ACadSharp.Tables.Layer("PLAN-Fence");
+            doc.Layers.Add(layer);
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0)) { Layer = layer };
+            doc.ModelSpace.Entities.Add(line);
+            var undo = new UndoStack();
+
+            var pairs = EntityOps.Copies(new ACadSharp.Entities.Entity[] { line }, 5, 7);
+            undo.Push(EntityOps.AddBesideSources(pairs, "Copy")!);
+            var copy = (ACadSharp.Entities.Line)pairs[0].Copy;
+            Assert.True(doc.ModelSpace.Entities.Contains(copy), "copy lands in the source's block");
+            Assert.True(copy.Layer == layer, "copy keeps the document's own layer, not a detached clone");
+            Assert.Near(5, copy.StartPoint.X, 1e-9, "copy moved E"); Assert.Near(7, copy.EndPoint.Y, 1e-9, "copy moved N");
+            Assert.Near(0, line.StartPoint.X, 1e-9, "source untouched");
+            undo.Undo();
+            Assert.True(!doc.ModelSpace.Entities.Contains(copy), "undo removes the copy");
+        }
+
+        public static void TestMirrorReflectsGeometryAndKeepsTextReadable()
+        {
+            // Mirror across the north-south axis E = 0.
+            var a = new Vec2(0, 0); var b = new Vec2(0, 10);
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(2, 1, 0), new CSMath.XYZ(5, 3, 0));
+            var ml = (ACadSharp.Entities.Line)EntityOps.Mirrored(line, a, b)!;
+            Assert.Near(-2, ml.StartPoint.X, 1e-9, "line start reflected"); Assert.Near(1, ml.StartPoint.Y, 1e-9, "N unchanged");
+            Assert.Near(-5, ml.EndPoint.X, 1e-9, "line end reflected");
+
+            // Quarter arc centred (5,0) from east (0 rad) to north (90 deg), CCW.
+            var arc = new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(5, 0, 0), Radius = 2, StartAngle = 0, EndAngle = Math.PI / 2 };
+            var ma = (ACadSharp.Entities.Arc)EntityOps.Mirrored(arc, a, b)!;
+            Assert.Near(-5, ma.Center.X, 1e-9, "arc centre reflected");
+            Assert.Near(Math.PI / 2, ma.StartAngle, 1e-9, "mirrored arc runs from north ..."); Assert.Near(Math.PI, ma.EndAngle, 1e-9, "... to west");
+
+            var poly = new ACadSharp.Entities.LwPolyline();
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(1, 0)) { Bulge = 0.5 });
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(3, 0)));
+            var mp = (ACadSharp.Entities.LwPolyline)EntityOps.Mirrored(poly, a, b)!;
+            Assert.Near(-1, mp.Vertices[0].Location.X, 1e-9, "vertex reflected"); Assert.Near(-0.5, mp.Vertices[0].Bulge, 1e-9, "bulge changes sign");
+            Assert.Near(1, poly.Vertices[0].Location.X, 1e-9, "source polyline untouched");
+
+            // A label reading east, sitting above its anchor: mirrored it must still read
+            // left-to-right (rotation 0, not 180) and still sit above, now anchored at its right end.
+            var text = new ACadSharp.Entities.TextEntity
+            {
+                Value = "N90°E 10.000", InsertPoint = new CSMath.XYZ(2, 1, 0), AlignmentPoint = new CSMath.XYZ(2, 1, 0), Height = 0.2, Rotation = 0,
+                HorizontalAlignment = ACadSharp.Entities.TextHorizontalAlignment.Left, VerticalAlignment = ACadSharp.Entities.TextVerticalAlignmentType.Bottom,
+            };
+            var mt = (ACadSharp.Entities.TextEntity)EntityOps.Mirrored(text, a, b)!;
+            Assert.Near(0, mt.Rotation, 1e-9, "mirrored text still reads forwards");
+            Assert.Near(-2, mt.AlignmentPoint.X, 1e-9, "anchor reflected");
+            Assert.True(mt.HorizontalAlignment == ACadSharp.Entities.TextHorizontalAlignment.Right, "now anchored at its right end, so it extends away from the axis like the mirror image");
+            Assert.True(mt.VerticalAlignment == ACadSharp.Entities.TextVerticalAlignmentType.Bottom, "still sits above its anchor");
+        }
+
+        public static void TestConstructOffsetPolylineMitresCornersAndKeepsArcsConcentric()
+        {
+            // A 10 x 10 square, counter-clockwise; offset 1 to the left (inside) -> 8 x 8.
+            var sq = new List<Vec2> { new Vec2(0, 0), new Vec2(10, 0), new Vec2(10, 10), new Vec2(0, 10) };
+            var inside = Construct.OffsetPolyline(sq, null, true, 1)!.Value;
+            Assert.Near(1, inside.Points[0].X, 1e-9, "corner 0 E"); Assert.Near(1, inside.Points[0].Y, 1e-9, "corner 0 N");
+            Assert.Near(9, inside.Points[2].X, 1e-9, "corner 2 E"); Assert.Near(9, inside.Points[2].Y, 1e-9, "corner 2 N");
+            Assert.Near(64, Polygon.SignedArea(inside.Points, inside.Bulges), 1e-9, "offset square area");
+            Assert.Equal(1, Construct.SideOfPolyline(sq, null, true, new Vec2(5, 5)), "a pick inside a CCW square is on its left");
+
+            // An open line then a tangent quarter arc (a road allowance corner): (0,0)->(10,0),
+            // then CCW about (10,5) up to (15,5). Offsetting 1 to the right (outside the curve)
+            // gives radius 6 and keeps the joint tangent at (10,-1).
+            var pts = new List<Vec2> { new Vec2(0, 0), new Vec2(10, 0), new Vec2(15, 5) };
+            var bulges = new List<double> { 0, Math.Tan(Math.PI / 8), 0 };
+            var outside = Construct.OffsetPolyline(pts, bulges, false, -1)!.Value;
+            Assert.Near(0, outside.Points[0].X, 1e-9, "start E"); Assert.Near(-1, outside.Points[0].Y, 1e-9, "start N");
+            Assert.Near(10, outside.Points[1].X, 1e-9, "tangent joint E"); Assert.Near(-1, outside.Points[1].Y, 1e-9, "tangent joint N");
+            Assert.Near(16, outside.Points[2].X, 1e-9, "arc end on radius 6"); Assert.Near(5, outside.Points[2].Y, 1e-9, "arc end N");
+            Assert.Near(Math.Tan(Math.PI / 8), outside.Bulges[1], 1e-9, "still a quarter arc");
+        }
+
+        public static void TestOffsetEntitiesTowardThePickedSide()
+        {
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0));
+            var up = (ACadSharp.Entities.Line)EntityOps.Offset(line, 2, new Vec2(4, 5))!;
+            Assert.Near(2, up.StartPoint.Y, 1e-9, "offset toward the pick (north)");
+            var down = (ACadSharp.Entities.Line)EntityOps.Offset(line, 2, new Vec2(4, -5))!;
+            Assert.Near(-2, down.EndPoint.Y, 1e-9, "offset toward the pick (south)");
+
+            var circle = new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(0, 0, 0), Radius = 5 };
+            Assert.Near(4, ((ACadSharp.Entities.Circle)EntityOps.Offset(circle, 1, new Vec2(1, 0))!).Radius, 1e-9, "pick inside shrinks");
+            Assert.Near(6, ((ACadSharp.Entities.Circle)EntityOps.Offset(circle, 1, new Vec2(9, 0))!).Radius, 1e-9, "pick outside grows");
+            Assert.True(EntityOps.Offset(circle, 6, new Vec2(1, 0)) == null, "offset past the centre is refused");
+
+            var poly = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0) })
+                poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            var grown = (ACadSharp.Entities.LwPolyline)EntityOps.Offset(poly, 1, new Vec2(20, 5))!;
+            Assert.Near(-1, grown.Vertices[0].Location.X, 1e-9, "outside offset corner E"); Assert.Near(-1, grown.Vertices[0].Location.Y, 1e-9, "outside offset corner N");
+            Assert.Near(11, grown.Vertices[2].Location.X, 1e-9, "opposite corner E");
+        }
     }
 }

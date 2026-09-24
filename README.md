@@ -69,6 +69,13 @@ FdDraft.App project in Visual Studio).
   moves just one vertex - select the line(s) or polyline sharing it, pick
   the vertex (snap helps) then its new spot, and every one of them stays
   joined there, like a grip edit.
+- **Copy** repeats the selection from a base point to as many destinations
+  as you pick. **Mirror** reflects it across a picked line (optionally
+  erasing the originals) - text is mirrored the way a plan needs it: in the
+  right place, but still reading forwards. **Offset** makes a parallel copy
+  of lines, arcs, circles and polylines at a typed distance toward a picked
+  side - polyline corners are mitred and curves stay concentric, so an
+  offset boundary or road allowance comes out right.
 - **Line** draws by bearing and distance: pick or type an E,N start point,
   then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
   blank ends it. **Arc** fits three picked points. **Text** and **Leader**
@@ -93,7 +100,7 @@ FdDraft.App project in Visual Studio).
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
-  ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

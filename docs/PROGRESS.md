@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.7 (`Directory.Build.props`).
+- **Current version:** 0.4.8 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  38 -> 39 tests as of v0.4.7, all passing.
+  43 tests as of v0.4.8, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -97,10 +97,20 @@ on Windows; that's still Marc's job when he runs a build.
   writing `AlignmentPoint = (cos v, sin v, 0)`), and Line endpoint E/N.
   Added `CompositeCommand` so editing several fields at once and clicking
   Apply undoes them together as one step, not one Ctrl+Z per field.
-- **v0.4.7** (current): added a type-in vertex field to Properties for
+- **v0.4.7**: added a type-in vertex field to Properties for
   LwPolyline/Polyline2D - a "Vertex #" box picks which vertex, then E/N
   fields edit it via the same `VertexRef` type STRETCH uses. This is the
   type-in alternative to STRETCH's pick-and-drag.
+- **Build box note**: the Linux sandbox may not have .NET preinstalled and
+  dot.net / Microsoft CDNs may be blocked. Ubuntu 24.04's own archive carries
+  it: `apt-get install dotnet-sdk-10.0 dotnet-runtime-8.0
+  dotnet-targeting-pack-8.0 aspnetcore-targeting-pack-8.0` is enough for
+  both scripts.
+- **v0.4.8** (current): COPY (multi-destination), MIRROR (exact per-type
+  reflection, plan-readable text, optional erase of originals) and OFFSET
+  (lines, arcs, circles, LwPolylines with mitred corners and concentric
+  curves). Entity construction in `FdDraft.Cad.Editing.EntityOps`, the math
+  in `FdDraft.Core.Geometry.Construct`.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

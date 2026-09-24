@@ -208,6 +208,9 @@ namespace FdDraft.App
             modify.Items.Add(Item("_Move", "MOVE", StartMove));
             modify.Items.Add(Item("_Rotate", "ROTATE", StartRotate));
             modify.Items.Add(Item("_Stretch vertex", "STRETCH", StartStretch));
+            modify.Items.Add(Item("_Copy", "COPY", StartCopy));
+            modify.Items.Add(Item("M_irror", "MIRROR", StartMirror));
+            modify.Items.Add(Item("_Offset", "OFFSET", StartOffset));
             modify.Items.Add(new Separator());
             modify.Items.Add(Item("Set _layer of selection", "", SetSelectionLayer));
             var view = new MenuItem { Header = "_View" };
@@ -245,6 +248,9 @@ namespace FdDraft.App
             bar.Items.Add(B("Move", "Move the selected entities (MOVE)", StartMove));
             bar.Items.Add(B("Rotate", "Rotate the selected entities (ROTATE)", StartRotate));
             bar.Items.Add(B("Stretch", "Move one shared vertex, keeping connected lines joined (STRETCH)", StartStretch));
+            bar.Items.Add(B("Copy", "Copy the selected entities (COPY)", StartCopy));
+            bar.Items.Add(B("Mirror", "Mirror the selected entities across a line (MIRROR)", StartMirror));
+            bar.Items.Add(B("Offset", "Parallel copy of lines, arcs, circles and polylines at a distance (OFFSET)", StartOffset));
             bar.Items.Add(new Separator());
             bar.Items.Add(new TextBlock { Text = "Layer:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
             bar.Items.Add(_layerCombo);
@@ -323,6 +329,9 @@ namespace FdDraft.App
                 case "MOVE": case "M": StartMove(); break;
                 case "ROTATE": case "RO": StartRotate(); break;
                 case "STRETCH": case "S": StartStretch(); break;
+                case "COPY": case "CO": case "CP": StartCopy(); break;
+                case "MIRROR": case "MI": StartMirror(); break;
+                case "OFFSET": case "O": StartOffset(); break;
                 case "ERASE": EraseSelected(); break;
                 case "LAYER": SetSelectionLayer(); break;
                 case "UNDO": case "U": DoUndo(); break;
@@ -346,6 +355,9 @@ namespace FdDraft.App
             Log("  MOVE    select entities, MOVE, pick base point then destination");
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
+            Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
+            Log("  MIRROR  select entities, MIRROR, pick two points on the mirror line, then Y/N to erase the originals");
+            Log("  OFFSET  select lines/arcs/circles/polylines, OFFSET, type the distance, pick the side");
             Log("  LAYER   select entities, LAYER, moves them to the toolbar's current layer   · or the Set Layer button");
             Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
             Log("  ARC     pick three points on the arc: start, a point on it, end");
@@ -1268,6 +1280,139 @@ namespace FdDraft.App
                 Log("  stretched to " + NE(model.Value));
             };
         }
+
+        private void StartCopy()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var entities = SelectedEntities();
+            if (entities.Count == 0) { Log("  select entities to copy first, then type COPY"); return; }
+            BeginTool("COPY");
+            _prompt.Text = "Copy - base point:";
+            Log("COPY  " + Plural(entities.Count, "entity", "entities") + " - pick the base point, then each destination (blank/Esc ends)");
+            Vec2? basePt = null;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                if (basePt == null)
+                {
+                    basePt = model.Value; _canvas.RubberFrom = p; _prompt.Text = "Copy - destination (blank ends):";
+                    Log("  base " + NE(model.Value));
+                    return;
+                }
+                double dx = model.Value.X - basePt.Value.X, dy = model.Value.Y - basePt.Value.Y;
+                var pairs = EntityOps.Copies(entities, dx, dy);
+                var cmd = EntityOps.AddBesideSources(pairs, "Copy " + pairs.Count);
+                if (cmd == null) { Log("  nothing copyable in the selection"); return; }
+                _undo.Push(cmd);
+                _dirty = true; UpdateTitle();
+                Rebuild(fit: false);
+                Log(string.Format(CultureInfo.InvariantCulture, "  copied {0}  dN {1:F3}  dE {2:F3}", pairs.Count, dy, dx)
+                    + (pairs.Count < entities.Count ? "  (" + (entities.Count - pairs.Count) + " dimension(s) skipped)" : ""));
+                // Stays active for more copies from the same base point, like AutoCAD's COPY.
+            };
+            _awaitingLine = s => { if (s.Length == 0) { EndTool(); Log("  *copy complete*"); } else Log("  pick a destination, or blank to end"); };
+        }
+
+        private void StartMirror()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var entities = SelectedEntities();
+            if (entities.Count == 0) { Log("  select entities to mirror first, then type MIRROR"); return; }
+            BeginTool("MIRROR");
+            _prompt.Text = "Mirror - first point of the mirror line:";
+            Log("MIRROR  " + Plural(entities.Count, "entity", "entities") + " - pick two points on the mirror line (Esc to cancel)");
+            Vec2? first = null;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                if (first == null)
+                {
+                    first = model.Value; _canvas.RubberFrom = p; _prompt.Text = "Mirror - second point of the mirror line:";
+                    Log("  from " + NE(model.Value));
+                    return;
+                }
+                var a = first.Value; var b = model.Value;
+                if (Vec2.Distance(a, b) < 1e-9) { Log("  the two points coincide - pick a different second point"); return; }
+                var pairs = new List<(Entity Source, Entity Copy)>();
+                foreach (var e in entities)
+                {
+                    var m = EntityOps.Mirrored(e, a, b);
+                    if (m != null) pairs.Add((e, m));
+                }
+                if (pairs.Count == 0) { EndTool(); Log("  nothing in the selection can be mirrored"); return; }
+                _canvas.ToolActive = false; _canvas.RubberFrom = null;
+                _prompt.Text = "Mirror - erase the source objects? [Y/N] <N>:";
+                Log("  mirror line " + InverseResult.Between(a, b, _std?.BearingRotationDeg ?? 0) + " - erase the originals? Y/N (Enter = N)");
+                _awaitingPoint = null;
+                _awaitingLine = s =>
+                {
+                    bool erase = s.Trim().StartsWith("Y", StringComparison.OrdinalIgnoreCase);
+                    var add = EntityOps.AddBesideSources(pairs, "Mirror " + pairs.Count)!;
+                    IEditCommand cmd = add;
+                    if (erase) cmd = new CompositeCommand(new[] { add, new RemoveEntitiesCommand(pairs.Select(x => x.Source).ToList(), "Erase") }, "Mirror " + pairs.Count);
+                    _undo.Push(cmd);
+                    _dirty = true; UpdateTitle();
+                    EndTool();
+                    _canvas.Selected.Clear();
+                    Rebuild(fit: false);
+                    UpdateProperties();
+                    Log("  mirrored " + Plural(pairs.Count, "entity", "entities") + (erase ? ", originals erased" : "")
+                        + (pairs.Count < entities.Count ? "  (" + (entities.Count - pairs.Count) + " not a mirrorable type, left out)" : ""));
+                };
+            };
+        }
+
+        private double _lastOffset = 1.0;
+
+        private void StartOffset()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var entities = SelectedEntities();
+            if (entities.Count == 0) { Log("  select the line(s), arc(s), circle(s) or polyline(s) to offset first, then type OFFSET"); return; }
+            BeginTool("OFFSET");
+            _canvas.ToolActive = false;
+            string def = _lastOffset.ToString("0.###", CultureInfo.InvariantCulture);
+            _prompt.Text = "Offset - distance <" + def + ">:";
+            Log("OFFSET  " + Plural(entities.Count, "entity", "entities") + " - type the distance (Enter = " + def + "), then pick the side to offset toward");
+            double dist = 0;
+            _awaitingLine = s =>
+            {
+                if (s.Length == 0) dist = _lastOffset;
+                else if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out dist) || dist <= 0)
+                {
+                    Log("  type a positive distance");
+                    return;
+                }
+                _lastOffset = dist;
+                _awaitingLine = null;
+                _canvas.ToolActive = true;
+                _prompt.Text = "Offset - pick the side to offset toward:";
+                Log("  distance " + dist.ToString("0.###", CultureInfo.InvariantCulture) + " - pick a point on the side to offset toward");
+            };
+            _awaitingPoint = p =>
+            {
+                if (dist <= 0) { Log("  type the distance first"); return; }
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                var pairs = new List<(Entity Source, Entity Copy)>();
+                foreach (var e in entities)
+                {
+                    var o = EntityOps.Offset(e, dist, model.Value);
+                    if (o != null) pairs.Add((e, o));
+                }
+                EndTool();
+                if (pairs.Count == 0) { Log("  nothing offset - OFFSET handles lines, arcs, circles and lightweight polylines (and won't collapse a curve past its centre)"); return; }
+                _undo.Push(EntityOps.AddBesideSources(pairs, "Offset " + pairs.Count)!);
+                _dirty = true; UpdateTitle();
+                Rebuild(fit: false);
+                Log("  offset " + Plural(pairs.Count, "entity", "entities") + " by " + dist.ToString("0.###", CultureInfo.InvariantCulture)
+                    + (pairs.Count < entities.Count ? "  (" + (entities.Count - pairs.Count) + " skipped: unsupported type or collapsed curve)" : ""));
+            };
+        }
+
+        private static string Plural(int n, string one, string many) => n + " " + (n == 1 ? one : many);
 
         private void OnCursor(Vec2 p, SnapPoint? snap)
         {
