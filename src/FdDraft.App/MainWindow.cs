@@ -195,6 +195,7 @@ namespace FdDraft.App
             var modify = new MenuItem { Header = "_Modify" };
             modify.Items.Add(Item("_Move", "MOVE", StartMove));
             modify.Items.Add(Item("_Rotate", "ROTATE", StartRotate));
+            modify.Items.Add(Item("_Stretch vertex", "STRETCH", StartStretch));
             modify.Items.Add(new Separator());
             modify.Items.Add(Item("Set _layer of selection", "", SetSelectionLayer));
             var view = new MenuItem { Header = "_View" };
@@ -231,6 +232,7 @@ namespace FdDraft.App
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Move", "Move the selected entities (MOVE)", StartMove));
             bar.Items.Add(B("Rotate", "Rotate the selected entities (ROTATE)", StartRotate));
+            bar.Items.Add(B("Stretch", "Move one shared vertex, keeping connected lines joined (STRETCH)", StartStretch));
             bar.Items.Add(new Separator());
             bar.Items.Add(new TextBlock { Text = "Layer:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
             bar.Items.Add(_layerCombo);
@@ -308,6 +310,7 @@ namespace FdDraft.App
                 case "LEADER": case "LE": StartLeader(); break;
                 case "MOVE": case "M": StartMove(); break;
                 case "ROTATE": case "RO": StartRotate(); break;
+                case "STRETCH": case "S": StartStretch(); break;
                 case "ERASE": EraseSelected(); break;
                 case "LAYER": SetSelectionLayer(); break;
                 case "UNDO": case "U": DoUndo(); break;
@@ -330,6 +333,8 @@ namespace FdDraft.App
             Log("  Click an entity to select it (Ctrl+click adds); Del erases; Ctrl+Z/Ctrl+Y undo/redo");
             Log("  MOVE    select entities, MOVE, pick base point then destination");
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
+            Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
+            Log("  LAYER   select entities, LAYER, moves them to the toolbar's current layer   · or the Set Layer button");
             Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
             Log("  ARC     pick three points on the arc: start, a point on it, end");
             Log("  TEXT    pick a point, then type the text (or \"height text\", e.g. \"0.25 LOT 5\")");
@@ -1086,6 +1091,40 @@ namespace FdDraft.App
                     Rebuild(fit: false);
                     Log("  rotated " + deg.ToString("F2", CultureInfo.InvariantCulture) + "°");
                 };
+            };
+        }
+
+        private void StartStretch()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var entities = SelectedEntities();
+            if (entities.Count == 0) { Log("  select the line(s)/polyline sharing the vertex first, then type STRETCH"); return; }
+            BeginTool("STRETCH");
+            _prompt.Text = "Stretch - pick the vertex to move:";
+            Log("STRETCH  " + entities.Count + " entit" + (entities.Count == 1 ? "y" : "ies") + " selected - pick the shared vertex (snap on helps), then its new position (Esc to cancel)");
+            List<VertexRef>? verts = null;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                var pt = new XYZ(model.Value.X, model.Value.Y, 0);
+                if (verts == null)
+                {
+                    // 6 screen pixels of slack for an unsnapped click; an exact snap already lands on it.
+                    double tol = Math.Max(6 / _canvas.View.Zoom, 1e-6);
+                    verts = VertexEditing.FindCoincident(entities, pt, tol);
+                    if (verts.Count == 0) { Log("  no endpoint of the selection is there - pick closer, or snap (F3)"); verts = null; return; }
+                    _canvas.RubberFrom = p;
+                    _prompt.Text = "Stretch - new position:";
+                    Log("  vertex " + NE(model.Value) + " (" + verts.Count + " endpoint" + (verts.Count == 1 ? "" : "s") + ") - pick its new position");
+                    return;
+                }
+                _undo.Push(new StretchVertexCommand(verts, pt, "Stretch"));
+                _dirty = true; UpdateTitle();
+                EndTool();
+                _canvas.Selected.Clear();
+                Rebuild(fit: false);
+                Log("  stretched to " + NE(model.Value));
             };
         }
 

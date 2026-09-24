@@ -10,6 +10,7 @@ using FdDraft.Core.Geometry;
 using FdDraft.Core.Job;
 using FdDraft.Core.Layout;
 using FdDraft.Core.Standards;
+using FdDraft.View;
 
 namespace FdDraft.Tests
 {
@@ -487,6 +488,68 @@ namespace FdDraft.Tests
             Assert.True(mtext.Value == "N46-00-00E", "mtext edited");
             undo.Undo();
             Assert.True(mtext.Value == "N45-30-00E", "undo mtext edit restores the old text");
+        }
+
+        public static void TestStretchVertexKeepsConnectedLinesTogether()
+        {
+            var doc = new ACadSharp.CadDocument();
+            // Two lines sharing a corner at (10,0), like two lot lines meeting at a survey point.
+            var a = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0));
+            var b = new ACadSharp.Entities.Line(new CSMath.XYZ(10, 0, 0), new CSMath.XYZ(10, 10, 0));
+            var unrelated = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(0, -10, 0));
+            doc.ModelSpace.Entities.Add(a); doc.ModelSpace.Entities.Add(b); doc.ModelSpace.Entities.Add(unrelated);
+
+            var hits = VertexEditing.FindCoincident(new ACadSharp.Entities.Entity[] { a, b, unrelated }, new CSMath.XYZ(10, 0, 0), 1e-6);
+            Assert.True(hits.Count == 2, "finds both lines' shared endpoint, not the unrelated line");
+
+            var undo = new UndoStack();
+            undo.Push(new StretchVertexCommand(hits, new CSMath.XYZ(12, 1, 0), "Stretch"));
+            Assert.Near(12, a.EndPoint.X, 1e-9, "a's end moved"); Assert.Near(1, a.EndPoint.Y, 1e-9, "a's end moved");
+            Assert.Near(12, b.StartPoint.X, 1e-9, "b's start moved with it"); Assert.Near(1, b.StartPoint.Y, 1e-9, "b's start moved with it");
+            Assert.Near(0, a.StartPoint.X, 1e-9, "a's other end untouched");
+            Assert.Near(0, unrelated.StartPoint.X, 1e-9, "unrelated line untouched");
+
+            undo.Undo();
+            Assert.Near(10, a.EndPoint.X, 1e-9, "undo restores a's end"); Assert.Near(0, a.EndPoint.Y, 1e-9, "undo restores a's end");
+            Assert.Near(10, b.StartPoint.X, 1e-9, "undo restores b's start"); Assert.Near(0, b.StartPoint.Y, 1e-9, "undo restores b's start");
+            undo.Redo();
+            Assert.Near(12, b.StartPoint.X, 1e-9, "redo re-applies the stretch");
+        }
+
+        public static void TestStretchVertexOnPolyline()
+        {
+            var poly = new ACadSharp.Entities.LwPolyline();
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(0, 0)));
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(10, 0)));
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(10, 10)));
+
+            var hits = VertexEditing.FindCoincident(new ACadSharp.Entities.Entity[] { poly }, new CSMath.XYZ(10, 0, 0), 1e-6);
+            Assert.True(hits.Count == 1, "finds the one polyline vertex at that point");
+            var undo = new UndoStack();
+            undo.Push(new StretchVertexCommand(hits, new CSMath.XYZ(11, -1, 0), "Stretch"));
+            Assert.Near(11, poly.Vertices[1].Location.X, 1e-9, "polyline vertex moved"); Assert.Near(-1, poly.Vertices[1].Location.Y, 1e-9, "polyline vertex moved");
+            Assert.Near(0, poly.Vertices[0].Location.X, 1e-9, "adjacent vertex untouched");
+            undo.Undo();
+            Assert.Near(10, poly.Vertices[1].Location.X, 1e-9, "undo restores the polyline vertex");
+        }
+
+        public static void TestModelAtFallsBackToPaperWhenNoViewport()
+        {
+            // A sheet with a real, working viewport: outside it, a pick is ambiguous (null).
+            var withVp = new Scene { IsPaper = true };
+            withVp.Groups.Add(new SceneGroup { Clip = new Rect(0, 0, 100, 100), ToModel = Affine.Translate(5, 5) });
+            Assert.True(withVp.ModelAt(new Vec2(50, 50)).HasValue, "inside the real viewport resolves");
+            Assert.True(withVp.ModelAt(new Vec2(150, 150)) == null, "outside every real viewport on a sheet that has one is ambiguous");
+
+            // A sheet with only the DWG-mandated background viewport (SceneBuilder skips it, so no
+            // clipped group at all) - a real MSCAD job commonly draws its plan straight onto paper.
+            var noVp = new Scene { IsPaper = true };
+            noVp.Groups.Add(new SceneGroup());
+            var p = new Vec2(42, 7);
+            var result = noVp.ModelAt(p);
+            Assert.True(result.HasValue, "no working viewport at all: the paper point is still usable");
+            Assert.Near(p.X, result!.Value.X, 1e-9, "paper point used directly (X)");
+            Assert.Near(p.Y, result.Value.Y, 1e-9, "paper point used directly (Y)");
         }
     }
 }

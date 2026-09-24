@@ -64,7 +64,10 @@ FdDraft.App project in Visual Studio).
   a true-scale vector PDF.
 - **Select**: click an entity (Ctrl+click adds); **Del** erases; **Ctrl+Z** /
   **Ctrl+Y** undo/redo. **Move** and **Rotate** act on the selection (Rotate
-  picks the pivot, then type the angle in degrees, clockwise).
+  picks the pivot, then type the angle in degrees, clockwise). **Stretch**
+  moves just one vertex - select the line(s) or polyline sharing it, pick
+  the vertex (snap helps) then its new spot, and every one of them stays
+  joined there, like a grip edit.
 - **Line** draws by bearing and distance: pick or type an E,N start point,
   then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
   blank ends it. **Arc** fits three picked points. **Text** and **Leader**
@@ -78,8 +81,8 @@ FdDraft.App project in Visual Studio).
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, ERASE, LAYER,
-  UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
+  ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

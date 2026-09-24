@@ -147,6 +147,90 @@ namespace FdDraft.Cad.Editing
         public void Redo() { if (_text != null) _text.Value = _newValue; if (_mtext != null) _mtext.Value = _newValue; }
     }
 
+    /// <summary>One endpoint of a Line, or one vertex of an LwPolyline/Polyline2D, that
+    /// <see cref="StretchVertexCommand"/> can move independently of the rest of the entity.
+    /// Found by <see cref="VertexEditing.FindCoincident"/>.</summary>
+    public readonly struct VertexRef
+    {
+        public Entity Entity { get; }
+        /// <summary>-1 = a Line's StartPoint, -2 = a Line's EndPoint, otherwise an
+        /// LwPolyline/Polyline2D vertex index.</summary>
+        public int Index { get; }
+        public VertexRef(Entity entity, int index) { Entity = entity; Index = index; }
+
+        public XYZ Get() => Entity switch
+        {
+            Line l when Index == -1 => l.StartPoint,
+            Line l when Index == -2 => l.EndPoint,
+            LwPolyline p => new XYZ(p.Vertices[Index].Location.X, p.Vertices[Index].Location.Y, 0),
+            Polyline2D p => p.Vertices[Index].Location,
+            _ => XYZ.Zero,
+        };
+
+        public void Set(XYZ p)
+        {
+            switch (Entity)
+            {
+                case Line l when Index == -1: l.StartPoint = p; break;
+                case Line l when Index == -2: l.EndPoint = p; break;
+                case LwPolyline lp: lp.Vertices[Index].Location = new XY(p.X, p.Y); break;
+                case Polyline2D p2: p2.Vertices[Index].Location = p; break;
+            }
+        }
+    }
+
+    /// <summary>Finds every entity endpoint/vertex that sits at (or very near) a picked point,
+    /// so a STRETCH can drag a shared survey vertex and keep every line meeting there connected -
+    /// the CAD-standard "grip edit", as opposed to MOVE/ROTATE which transform whole entities.</summary>
+    public static class VertexEditing
+    {
+        public static List<VertexRef> FindCoincident(IEnumerable<Entity> entities, XYZ point, double tolerance)
+        {
+            var found = new List<VertexRef>();
+            bool Near(XYZ p) => Math.Abs(p.X - point.X) <= tolerance && Math.Abs(p.Y - point.Y) <= tolerance;
+            foreach (var e in entities)
+            {
+                switch (e)
+                {
+                    case Line l:
+                        if (Near(l.StartPoint)) found.Add(new VertexRef(l, -1));
+                        if (Near(l.EndPoint)) found.Add(new VertexRef(l, -2));
+                        break;
+                    case LwPolyline p:
+                        for (int i = 0; i < p.Vertices.Count; i++)
+                            if (Near(new XYZ(p.Vertices[i].Location.X, p.Vertices[i].Location.Y, 0))) found.Add(new VertexRef(p, i));
+                        break;
+                    case Polyline2D p2:
+                        for (int i = 0; i < p2.Vertices.Count; i++)
+                            if (Near(new XYZ(p2.Vertices[i].Location.X, p2.Vertices[i].Location.Y, 0))) found.Add(new VertexRef(p2, i));
+                        break;
+                }
+            }
+            return found;
+        }
+    }
+
+    /// <summary>Moves one shared vertex - every Line endpoint and polyline vertex that sits at
+    /// it - to a new position, keeping the entities that meet there connected (STRETCH).
+    /// Anything else about the entities (their other endpoint, bulge, layer) is untouched.</summary>
+    public sealed class StretchVertexCommand : IEditCommand
+    {
+        private readonly List<(VertexRef Ref, XYZ Old)> _items;
+        private readonly XYZ _new;
+        public string Description { get; }
+
+        public StretchVertexCommand(IEnumerable<VertexRef> vertices, XYZ newPosition, string description)
+        {
+            _items = vertices.Select(v => (Ref: v, Old: v.Get())).ToList();
+            _new = newPosition;
+            Description = description;
+            foreach (var (r, _) in _items) r.Set(_new);
+        }
+
+        public void Undo() { foreach (var (r, old) in _items) r.Set(old); }
+        public void Redo() { foreach (var (r, _) in _items) r.Set(_new); }
+    }
+
     /// <summary>Linear undo/redo stack. A new command truncates any redo history past it,
     /// like every other editor.</summary>
     public sealed class UndoStack

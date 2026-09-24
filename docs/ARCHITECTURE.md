@@ -96,6 +96,14 @@ it on Windows is the real test.
   (survey convention); the entity math is verified in
   `tests/FdDraft.Tests` against a real `CadDocument`, both about the origin
   and about an arbitrary pivot.
+- **STRETCH** moves one vertex - a Line endpoint or an LwPolyline/Polyline2D
+  vertex - rather than a whole entity. Select the line(s)/polyline sharing
+  it, pick the vertex (a snap lands on it exactly; otherwise within 6 screen
+  pixels), then its new position: `VertexEditing.FindCoincident` finds every
+  matching endpoint among the selection and `StretchVertexCommand` moves them
+  together, so lines that meet at a survey point stay joined. This is the
+  actual "grip edit" a course correction needs, as opposed to MOVE/ROTATE
+  which only ever transform whole entities rigidly.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y): a linear `UndoStack` of `IEditCommand`s
   (`FdDraft.Cad.Editing`) - `AddEntitiesCommand`, `RemoveEntitiesCommand`,
   `TransformEntitiesCommand`. New commands truncate any redo history past
@@ -139,11 +147,20 @@ it on Windows is the real test.
   FD-Draft's own prior output (`<job>\export\fd-draft\<job>.dwg`), its job
   folder is picked up automatically so Ctrl+D re-drafts that same job
   rather than whatever was drafted last.
+- **`Scene.ModelAt`** falls back to the paper point itself on a layout with
+  no working viewport at all, rather than returning null - a real MSCAD job
+  commonly draws its plan directly onto paper space on the one sheet it
+  actually used (the mandatory background "represents paper" viewport is
+  never a real one; see the empty-layout note above), and without this
+  fallback none of INV/LINE/ARC/TEXT/LEADER/MOVE/ROTATE/STRETCH could pick a
+  point on that content at all. A sheet that does have a real viewport is
+  unaffected: a pick outside it is still ambiguous and stays null.
 
 ### Next in the app
 
-- Relabel courses after a point moves (MOVE currently moves the linework;
-  bearing/distance/area labels are not yet re-derived).
+- Relabel courses after a STRETCH (the vertex moves and connected lines stay
+  joined, but their bearing/distance/area labels are not yet re-derived -
+  there is still no persisted link between a course and its label text).
 - Flip labels; multi-point (not just Del-all) partial erase of a polyline
   vertex; a dedicated sheet setup panel (rather than reusing Draft FD-Pro
   job) for scale-only changes without re-running the whole pipeline.
@@ -152,11 +169,6 @@ it on Windows is the real test.
 - Properties editing so far covers layer and text content; still read-only
   for everything else (a line's endpoints, an arc/circle's radius, a text's
   height or rotation).
-- A STRETCH tool to move a single vertex/endpoint (rather than a whole
-  entity) and drag its connected lines with it, which is the actual
-  prerequisite for relabelling courses - today MOVE/ROTATE only transform
-  whole selected entities rigidly, so a course's true bearing/distance
-  never changes under the current toolset and its label never goes stale.
 
 ## After that: the document assistant (hybrid)
 

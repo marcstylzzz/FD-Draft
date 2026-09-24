@@ -164,18 +164,24 @@ namespace FdDraft.View
 
         /// <summary>
         /// The model coordinate under a scene point: itself in model space; through the
-        /// viewport it falls in on a layout; null on bare paper.
+        /// viewport it falls in on a layout; the paper point itself on a layout that has no
+        /// working viewport at all (the plan is drawn directly in paper space - a real MSCAD
+        /// job commonly does this on the sheet it actually used, leaving the rest of the
+        /// paper-space viewport machinery as the DWG-mandated background only); otherwise null,
+        /// since a pick outside every real viewport on a sheet that does have one is ambiguous.
         /// </summary>
         public Vec2? ModelAt(Vec2 p)
         {
             if (!IsPaper) return p;
+            bool anyViewport = false;
             foreach (var g in Groups)
             {
                 if (!g.Clip.HasValue || !g.ToModel.HasValue) continue;
+                anyViewport = true;
                 var c = g.Clip.Value;
                 if (p.X >= c.X1 && p.X <= c.X2 && p.Y >= c.Y1 && p.Y <= c.Y2) return g.ToModel.Value.Apply(p);
             }
-            return null;
+            return anyViewport ? null : p;
         }
 
         /// <summary>Snap candidates collected by the builder: vertices, midpoints of straight
