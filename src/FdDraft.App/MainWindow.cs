@@ -213,7 +213,9 @@ namespace FdDraft.App
             draw.Items.Add(Item("_Leader", "LEADER", StartLeader));
             draw.Items.Add(Item("_Dimension (aligned)", "DIM", () => StartDimension()));
             draw.Items.Add(Item("Dimension (li_near)", "DIMLIN", () => StartDimension(linear: true)));
-            draw.Items.Add(Item("Dimension (_radius)", "DIMRAD", StartRadiusDimension));
+            draw.Items.Add(Item("Dimension (_radius)", "DIMRAD", () => StartRadiusDimension()));
+            draw.Items.Add(Item("Dimension (d_iameter)", "DIMDIA", () => StartRadiusDimension(diameter: true)));
+            draw.Items.Add(Item("Dimension (an_gle)", "DIMANG", StartAngularDimension));
             var modify = new MenuItem { Header = "_Modify" };
             modify.Items.Add(Item("_Move", "MOVE", StartMove));
             modify.Items.Add(Item("_Rotate", "ROTATE", StartRotate));
@@ -357,6 +359,8 @@ namespace FdDraft.App
                 case "DIM": case "DIMALIGNED": case "DAL": StartDimension(); break;
                 case "DIMLIN": case "DLI": StartDimension(linear: true); break;
                 case "DIMRAD": case "DRA": StartRadiusDimension(); break;
+                case "DIMDIA": case "DDI": StartRadiusDimension(diameter: true); break;
+                case "DIMANG": case "DAN": StartAngularDimension(); break;
                 case "MOVE": case "M": StartMove(); break;
                 case "ROTATE": case "RO": StartRotate(); break;
                 case "STRETCH": case "S": StartStretch(); break;
@@ -420,7 +424,8 @@ namespace FdDraft.App
             Log("  LEADER  pick the feature point then the text position, then type the text");
             Log("  DIM     aligned dimension: pick two points, then the dimension line's position, then the text height");
             Log("  DIMLIN  linear dimension: as DIM, measuring dE or dN by where you place it (or type H, V or an angle)");
-            Log("  DIMRAD  radius dimension: pick on an arc or circle, then the text height");
+            Log("  DIMRAD / DIMDIA   radius / diameter dimension: pick on an arc or circle, then the text height");
+            Log("  DIMANG  angle dimension: pick the vertex, a point on each leg, then the arc location (it picks which angle)");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
             Log("  VPSCALE [1:n]   change the current sheet's scale: viewport, title-block scale, scale bar, and label sizes");
@@ -1465,13 +1470,14 @@ namespace FdDraft.App
 
         /// <summary>DIMRAD: pick an arc or circle where the radius line should point, then the
         /// text height.</summary>
-        private void StartRadiusDimension()
+        private void StartRadiusDimension(bool diameter = false)
         {
             if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
             string layer = CurrentLayer();
-            BeginTool("DIMRAD");
-            _prompt.Text = "Radius dimension - pick the arc or circle:";
-            Log("DIMRAD  pick on an arc or circle, where the radius line should point (Esc to cancel)");
+            string name = diameter ? "DIMDIA" : "DIMRAD";
+            BeginTool(name);
+            _prompt.Text = (diameter ? "Diameter" : "Radius") + " dimension - pick the arc or circle:";
+            Log(name + "  pick on an arc or circle, where the " + (diameter ? "diameter" : "radius") + " line should point (Esc to cancel)");
             _awaitingPoint = p =>
             {
                 var model = _canvas.Scene!.ModelAt(p);
@@ -1488,7 +1494,33 @@ namespace FdDraft.App
                 double radius = best.Radius;
                 var toward = model.Value;
                 Log("  " + (best is Arc ? "arc" : "circle") + " R " + radius.ToString("F3", CultureInfo.InvariantCulture) + " centred " + NE(center));
-                AskDimensionHeightThen(() => DimensionBuilder.Radius(center, radius, toward, _std?.DistanceDecimals ?? 3), layer);
+                int dec = _std?.DistanceDecimals ?? 3;
+                AskDimensionHeightThen(() => diameter ? DimensionBuilder.Diameter(center, radius, toward, dec) : DimensionBuilder.Radius(center, radius, toward, dec), layer);
+            };
+        }
+
+        /// <summary>DIMANG: pick the vertex, a point on each leg, then where the arc goes (which
+        /// also chooses which of the two angles is measured), then the text height.</summary>
+        private void StartAngularDimension()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            string layer = CurrentLayer();
+            BeginTool("DIMANG");
+            _prompt.Text = "Angle dimension - vertex:";
+            Log("DIMANG  pick the vertex, a point on each leg (snap helps), then where the arc goes (Esc to cancel)");
+            var pts = new List<Vec2>();
+            string[] prompts = { "Angle dimension - point on the first leg:", "Angle dimension - point on the second leg:", "Angle dimension - arc location (inside the angle you want):" };
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                if (pts.Count >= 1 && pts.Count <= 2 && Vec2.Distance(pts[0], model.Value) < 1e-9) { Log("  that's the vertex - pick a point along the leg"); return; }
+                pts.Add(model.Value);
+                if (pts.Count == 1) { _canvas.RubberFrom = p; Log("  vertex " + NE(model.Value)); }
+                if (pts.Count < 4) { _prompt.Text = prompts[pts.Count - 1]; return; }
+                var (_, sweep) = DimensionBuilder.AngularSweep(pts[0], pts[1], pts[2], pts[3]);
+                Log("  angle " + DimensionBuilder.Dms(sweep).Replace("%%d", "°"));
+                AskDimensionHeightThen(() => DimensionBuilder.Angular(pts[0], pts[1], pts[2], pts[3]), layer);
             };
         }
 

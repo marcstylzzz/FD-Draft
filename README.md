@@ -119,8 +119,10 @@ FdDraft.App project in Visual Studio).
   measured distance with extension lines and arrowheads, and reads back as
   a dimension in AutoCAD/MSCAD. **DimLin** measures just the dE or dN
   (horizontal when you place it above/below the points, vertical beside
-  them, or type H, V or an angle), and **DimRad** labels an arc's or
-  circle's radius. New linework goes on the toolbar's **Layer** box, and lands on the
+  them, or type H, V or an angle), **DimRad** / **DimDia** label an arc's
+  or circle's radius / diameter, and **DimAng** dimensions an angle in
+  degrees, minutes and seconds (where you place its arc picks which of the
+  two angles). New linework goes on the toolbar's **Layer** box, and lands on the
   current sheet correctly even when that sheet has no real viewport of its
   own (a real MSCAD job commonly draws straight onto paper on the sheet it
   actually used).
@@ -144,7 +146,7 @@ FdDraft.App project in Visual Studio).
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, ID, AREA, JOIN, LINE, ARC, TEXT, LEADER, DIM, DIMLIN, DIMRAD, MOVE, ROTATE, STRETCH,
+  SAVE, SAVEAS, PDF, INV, ID, AREA, JOIN, LINE, ARC, TEXT, LEADER, DIM, DIMLIN, DIMRAD, DIMDIA, DIMANG, MOVE, ROTATE, STRETCH,
   COPY, MIRROR, OFFSET, TRIM, EXTEND, FILLET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line

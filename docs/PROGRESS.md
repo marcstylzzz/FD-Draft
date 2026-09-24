@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.18 (`Directory.Build.props`).
+- **Current version:** 0.4.19 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  60 tests as of v0.4.18, all passing.
+  61 tests as of v0.4.19, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -145,10 +145,13 @@ on Windows; that's still Marc's job when he runs a build.
 - **v0.4.17**: JOIN (lines/arcs/open polylines meeting end to
   end -> one LwPolyline, closed when it closes) and ID (pick-to-read N/E,
   with the survey point's number/elevation when snapped to one).
-- **v0.4.18** (current): DIMLIN (linear: auto horizontal/vertical, or H/V/
+- **v0.4.18**: DIMLIN (linear: auto horizontal/vertical, or H/V/
   typed angle) and DIMRAD (radius of an arc/circle), both through the
   generalised `DimensionBuilder` (IsOurs / DrawPicture / Transform /
   Remapped). DWG round-trip tested.
+- **v0.4.19** (current): DIMDIA (diameter) and DIMANG (3-point angle in
+  D°MM'SS", arc placement picks the angle). All five dimension kinds share
+  `DimensionBuilder`. DWG round-trip tested.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -161,8 +164,8 @@ on Windows; that's still Marc's job when he runs a build.
   `internal` to ACadSharp, not reachable from FD-Draft. The leader's text is
   a separate, unassociated TEXT entity next to a real Leader. Likely not
   solvable without a change on the ACadSharp side.
-- **Dimensions**: aligned, linear and radius (DIM/DIMLIN/DIMRAD). No
-  angular or diameter DIMENSION yet.
+- **Dimensions**: aligned, linear, radius, diameter and 3-point angular.
+  No ordinate or 2-line angular (pick two lines) yet.
 - No sheet-size/layout change without re-drafting (scale-only changes
   are VPSCALE since v0.4.14). Vertex
   insert/delete covers LwPolyline only (not Polyline2D).
@@ -178,7 +181,7 @@ on Windows; that's still Marc's job when he runs a build.
 3. ~~Scale-only sheet setup~~ - VPSCALE in v0.4.14. Still open: moving a
    plan to a different sheet size/layout without re-drafting.
 4. ~~A real DIMENSION entity~~ - aligned (v0.4.13), linear and radius
-   (v0.4.18). Angular/diameter would follow the same `DrawPicture` pattern.
+   (v0.4.18). Angular and diameter in v0.4.19 - done.
 5. The course-relabeling-after-STRETCH problem - but only once a real
    course<->label link is designed; don't guess at this with heuristics.
 6. **Phase 2**: the in-app document assistant (reads R-plans, registered

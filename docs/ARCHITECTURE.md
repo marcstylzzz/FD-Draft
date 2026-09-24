@@ -245,8 +245,14 @@ it on Windows is the real test.
   horizontal/vertical by where the line is placed, as CAD programs do) and
   `DimensionRadius` (DIMRAD: centre as DefinitionPoint, the point on the
   curve as AngleVertex; one arrow on the curve, "R…" text).
-  `DimensionBuilder.IsOurs` is the exact-type test for those three; a
-  template's angular/diameter/ordinate dimensions keep their own picture.
+  v0.4.19 adds `DimensionDiameter` (DIMDIA: the two ends of a diameter,
+  arrow at each, "Ø" as %%c) and `DimensionAngular3Pt` (DIMANG: vertex, a
+  point on each leg, and the arc point as DefinitionPoint - which of the two
+  angles between the rays is measured is the one the arc point lies in,
+  `AngularSweep`; text in D°MM'SS" via `Dms`, seconds carried so 60" never
+  prints; ACadSharp has no picture generator for this kind at all).
+  `DimensionBuilder.IsOurs` is the exact-type test for these five; a
+  template's ordinate and 2-line angular dimensions keep their own picture.
   `DimensionBuilder.Transform` turns a linear dimension's `Rotation` with
   a ROTATE (ACadSharp leaves it alone) before redrawing, and `Remapped`
   rebuilds any of the three through a point map for COPY/MIRROR. Covered by
@@ -329,8 +335,9 @@ it on Windows is the real test.
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
   `internal` to ACadSharp - not reachable from FD-Draft) or an MTEXT with a
-  real dimension-style-driven landing gap. Aligned, linear and radius
-  DIMENSIONs exist (DIM, DIMLIN, DIMRAD); angular and diameter don't yet.
+  real dimension-style-driven landing gap. Aligned, linear, radius,
+  diameter and angular DIMENSIONs exist (DIM, DIMLIN, DIMRAD, DIMDIA,
+  DIMANG).
 - Properties editing now covers layer, text content, a text's height and
   rotation, a Circle/Arc's radius, an Arc's start/end angle, a Line's
   endpoint coordinates, and one LwPolyline/Polyline2D vertex's E,N at a time

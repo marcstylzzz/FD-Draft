@@ -1265,5 +1265,47 @@ namespace FdDraft.Tests
             Assert.True(rb.All(d => d.Text == "R7.500" && d.Block != null && d.Block.Entities.Any()), "with their text and pictures");
             Assert.True(lb.All(d => Math.Abs(d.Measurement - 5) < 1e-6), "linear measurement survives");
         }
+            // ---- angular and diameter dimensions (v0.4.19) ---------------------------------------
+
+        public static void TestAngularAndDiameterDimensions()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            var v = new Vec2(0, 0); var east = new Vec2(10, 0); var north = new Vec2(0, 10);
+            // Arc placed in the north-east quadrant: the 90° angle; in the south-west: the 270° one.
+            var ang = DimensionBuilder.Angular(v, east, north, new Vec2(4, 4));
+            Assert.Equal("90%%d00'00\"", ang.Text, "interior angle in DMS");
+            Assert.Equal("270%%d00'00\"", DimensionBuilder.Angular(v, east, north, new Vec2(-4, -4)).Text, "the other way round");
+            Assert.Equal("45%%d30'15\"", DimensionBuilder.Dms((45 + 30 / 60.0 + 15 / 3600.0) * Math.PI / 180), "DMS formatting");
+            Assert.Equal("13%%d00'00\"", DimensionBuilder.Dms((12 + 59 / 60.0 + 59.6 / 3600.0) * Math.PI / 180), "seconds carry, never 60\"");
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, ang, 0.2, "Dimension"));
+            var arc = ang.Block.Entities.OfType<ACadSharp.Entities.Arc>().Single();
+            Assert.Near(Math.Sqrt(32), arc.Radius, 1e-9, "arc through the placed point");
+            Assert.Near(0, arc.StartAngle, 1e-9, "from the east ray"); Assert.Near(Math.PI / 2, arc.EndAngle, 1e-9, "to the north ray");
+            Assert.Equal(2, ang.Block.Entities.OfType<ACadSharp.Entities.Solid>().Count(), "an arrow at each end of the arc");
+
+            var dia = DimensionBuilder.Diameter(new Vec2(20, 0), 3, new Vec2(20, 9));
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, dia, 0.2, "Dimension"));
+            Assert.Equal("%%c6.000", dia.Text, "diameter text");
+            Assert.Near(6, dia.Measurement, 1e-9, "measures the diameter");
+            Assert.Near(3, dia.AngleVertex.Y, 1e-9, "runs toward the pick"); Assert.Near(-3, dia.DefinitionPoint.Y, 1e-9, "and right across");
+
+            // MOVE redraws; COPY rebuilds the same kinds.
+            undo.Push(TransformEntitiesCommand.Move(new ACadSharp.Entities.Entity[] { ang }, 5, 5, "Move"));
+            Assert.Near(5, ang.Block.Entities.OfType<ACadSharp.Entities.Arc>().Single().Center.X, 1e-9, "angular picture followed the move");
+            var pairs = EntityOps.Copies(new ACadSharp.Entities.Entity[] { ang, dia }, 0, 50);
+            undo.Push(EntityOps.AddBesideSources(pairs, "Copy")!);
+            Assert.True(pairs[0].Copy is ACadSharp.Entities.DimensionAngular3Pt && pairs[1].Copy is ACadSharp.Entities.DimensionDiameter, "copied as the same kinds");
+
+            string path = Path.Combine(Path.GetTempPath(), "fdd-dim3-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            var ab = back.ModelSpace.Entities.OfType<ACadSharp.Entities.DimensionAngular3Pt>().ToList();
+            var db = back.ModelSpace.Entities.OfType<ACadSharp.Entities.DimensionDiameter>().ToList();
+            Assert.Equal(2, ab.Count, "angular dimensions survive the DWG round trip");
+            Assert.Equal(2, db.Count, "diameter dimensions survive");
+            Assert.True(ab.All(d => d.Text == "90%%d00'00\"" && d.Block != null && d.Block.Entities.OfType<ACadSharp.Entities.Arc>().Any()), "with their text and pictures");
+            Assert.Near(Math.PI / 2, ab[0].Measurement, 1e-6, "angle survives");
+        }
     }
 }

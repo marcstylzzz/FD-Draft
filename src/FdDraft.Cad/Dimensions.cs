@@ -31,7 +31,8 @@ namespace FdDraft.Cad.Editing
         public static bool IsOurs(Entity e)
         {
             var t = e.GetType();
-            return t == typeof(DimensionAligned) || t == typeof(DimensionLinear) || t == typeof(DimensionRadius);
+            return t == typeof(DimensionAligned) || t == typeof(DimensionLinear) || t == typeof(DimensionRadius)
+                || t == typeof(DimensionDiameter) || t == typeof(DimensionAngular3Pt);
         }
 
         /// <summary>The text height of a dimension's current picture (or the default).</summary>
@@ -98,6 +99,52 @@ namespace FdDraft.Cad.Editing
             return dim;
         }
 
+        /// <summary>A diameter dimension across a circle/arc centred at <paramref name="center"/>,
+        /// running through it in the direction of <paramref name="toward"/>; text "Ø" and the
+        /// diameter.</summary>
+        public static DimensionDiameter Diameter(Vec2 center, double radius, Vec2 toward, int decimals = 3)
+        {
+            var dir = (toward - center).Normalized();
+            if (dir.Length < 1e-12) dir = new Vec2(1, 0);
+            var dim = Prepare(new DimensionDiameter { DefinitionPoint = W(center - dir * radius), AngleVertex = W(center + dir * radius) });
+            dim.Text = "%%c" + Fmt(2 * radius, decimals);
+            return dim;
+        }
+
+        /// <summary>
+        /// An angular dimension at <paramref name="vertex"/> between the rays through
+        /// <paramref name="p1"/> and <paramref name="p2"/>, its arc through
+        /// <paramref name="arcPoint"/> - which also picks which of the two angles between the
+        /// rays is measured (the one the arc point lies in). Text is degrees, minutes and
+        /// seconds, as a surveyor writes an angle.
+        /// </summary>
+        public static DimensionAngular3Pt Angular(Vec2 vertex, Vec2 p1, Vec2 p2, Vec2 arcPoint)
+        {
+            var dim = Prepare(new DimensionAngular3Pt { AngleVertex = W(vertex), FirstPoint = W(p1), SecondPoint = W(p2), DefinitionPoint = W(arcPoint) });
+            var (_, sweep) = AngularSweep(vertex, p1, p2, arcPoint);
+            dim.Text = Dms(sweep);
+            return dim;
+        }
+
+        /// <summary>The start angle and CCW sweep of an angular dimension's arc: from ray 1 to
+        /// ray 2 if the arc point lies that way round, otherwise from ray 2 to ray 1.</summary>
+        public static (double Start, double Sweep) AngularSweep(Vec2 vertex, Vec2 p1, Vec2 p2, Vec2 arcPoint)
+        {
+            double a1 = Math.Atan2(p1.Y - vertex.Y, p1.X - vertex.X);
+            double a2 = Math.Atan2(p2.Y - vertex.Y, p2.X - vertex.X);
+            double ap = Math.Atan2(arcPoint.Y - vertex.Y, arcPoint.X - vertex.X);
+            double s12 = Angles.Normalize2Pi(a2 - a1);
+            return Angles.Normalize2Pi(ap - a1) <= s12 ? (a1, s12) : (a2, Angles.TwoPi - s12);
+        }
+
+        /// <summary>An angle as D°MM'SS" (degrees as %%d for SHX fonts), seconds carried so
+        /// 60" never prints.</summary>
+        public static string Dms(double radians)
+        {
+            long total = (long)Math.Round(Math.Abs(radians) * 180 / Math.PI * 3600, MidpointRounding.AwayFromZero);
+            return (total / 3600).ToString(CultureInfo.InvariantCulture) + "%%d" + (total % 3600 / 60).ToString("00", CultureInfo.InvariantCulture) + "'" + (total % 60).ToString("00", CultureInfo.InvariantCulture) + "\"";
+        }
+
         /// <summary>
         /// A new dimension of the same kind with every definition point sent through
         /// <paramref name="map"/> (a translation for COPY, a reflection for MIRROR), text and
@@ -124,6 +171,16 @@ namespace FdDraft.Cad.Editing
                     break;
                 case DimensionRadius r:
                     dim = Prepare(new DimensionRadius { DefinitionPoint = W(map(V(r.DefinitionPoint))), AngleVertex = W(map(V(r.AngleVertex))) });
+                    break;
+                case DimensionDiameter d:
+                    dim = Prepare(new DimensionDiameter { DefinitionPoint = W(map(V(d.DefinitionPoint))), AngleVertex = W(map(V(d.AngleVertex))) });
+                    break;
+                case DimensionAngular3Pt g:
+                    dim = Prepare(new DimensionAngular3Pt
+                    {
+                        AngleVertex = W(map(V(g.AngleVertex))), FirstPoint = W(map(V(g.FirstPoint))),
+                        SecondPoint = W(map(V(g.SecondPoint))), DefinitionPoint = W(map(V(g.DefinitionPoint))),
+                    });
                     break;
                 default:
                     throw new ArgumentException("not an FD-Draft dimension kind", nameof(source));
@@ -182,7 +239,65 @@ namespace FdDraft.Cad.Editing
                 case DimensionRadius r:
                     DrawRadiusPicture(r, h);
                     break;
+                case DimensionDiameter d:
+                    DrawDiameterPicture(d, h);
+                    break;
+                case DimensionAngular3Pt g:
+                    DrawAngularPicture(g, h);
+                    break;
             }
+        }
+
+        /// <summary>The picture for a diameter: a line right across the curve with an arrowhead
+        /// on it at each end, the "Ø…" text above its middle.</summary>
+        private static void DrawDiameterPicture(DimensionDiameter dim, double h)
+        {
+            var a = V(dim.DefinitionPoint); var b = V(dim.AngleVertex);
+            if (Vec2.Distance(a, b) < 1e-12) b = a + new Vec2(1e-9, 0);
+            double rot = Angles.ReadableRotation(a, b);
+            var up = new Vec2(-Math.Sin(rot), Math.Cos(rot));
+            var textAt = (a + b) * 0.5 + up * (h * 0.5 + h * 0.6);
+            dim.TextMiddlePoint = W(textAt);
+            dim.TextRotation = 0;
+            var block = FreshBlock(dim);
+            block.Entities.Add(new Line(W(a), W(b)));
+            var along = (b - a).Normalized();
+            block.Entities.Add(Arrow(a, along, h));
+            block.Entities.Add(Arrow(b, along * -1, h));
+            block.Entities.Add(Label(dim, textAt, rot, h, "%%c" + Fmt(Vec2.Distance(a, b), 3)));
+            AddDefpoints(dim, block, a, b);
+        }
+
+        /// <summary>The picture for an angle: an arc about the vertex through the placed point,
+        /// between the two rays, with an arrowhead at each end and the angle's text just
+        /// outside its middle; extension lines where the arc lies beyond a leg's picked point.</summary>
+        private static void DrawAngularPicture(DimensionAngular3Pt dim, double h)
+        {
+            var v = V(dim.AngleVertex); var p1 = V(dim.FirstPoint); var p2 = V(dim.SecondPoint); var ap = V(dim.DefinitionPoint);
+            double r = Math.Max(Vec2.Distance(v, ap), 1e-9);
+            var (start, sweep) = AngularSweep(v, p1, p2, ap);
+            var block = FreshBlock(dim);
+            block.Entities.Add(new ACadSharp.Entities.Arc { Center = W(v), Radius = r, StartAngle = Angles.Normalize2Pi(start), EndAngle = Angles.Normalize2Pi(start + sweep) });
+            Vec2 On(double a) => new Vec2(v.X + r * Math.Cos(a), v.Y + r * Math.Sin(a));
+            var e1 = On(start); var e2 = On(start + sweep);
+            // Arrow bodies run back along the arc's tangent, into the arc.
+            block.Entities.Add(Arrow(e1, new Vec2(-Math.Sin(start), Math.Cos(start)), h));
+            block.Entities.Add(Arrow(e2, new Vec2(Math.Sin(start + sweep), -Math.Cos(start + sweep)), h));
+            double gap = h * 0.3, overshoot = h * 0.6;
+            foreach (var (leg, end) in new[] { (p1, Vec2.Distance(e1, p1) < Vec2.Distance(e2, p1) ? e1 : e2), (p2, Vec2.Distance(e1, p2) < Vec2.Distance(e2, p2) ? e1 : e2) })
+            {
+                var dir = (end - v).Normalized();
+                double legLen = Vec2.Distance(v, leg);
+                if (legLen + gap < r) block.Entities.Add(new Line(W(leg + dir * gap), W(end + dir * overshoot)));
+            }
+            double mid = start + sweep / 2;
+            var outward = new Vec2(Math.Cos(mid), Math.Sin(mid));
+            double rot = Angles.ReadableRotation(On(mid), On(mid) + outward.Left());
+            var textAt = On(mid) + outward * (h * 0.5 + h * 0.6);
+            dim.TextMiddlePoint = W(textAt);
+            dim.TextRotation = 0;
+            block.Entities.Add(Label(dim, textAt, rot, h, Dms(sweep)));
+            AddDefpoints(dim, block, v, p1, p2, ap);
         }
 
         /// <summary>The picture for a distance: extension lines from the measured points to the
