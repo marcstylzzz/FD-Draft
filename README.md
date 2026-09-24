@@ -76,6 +76,9 @@ FdDraft.App project in Visual Studio).
   of lines, arcs, circles and polylines at a typed distance toward a picked
   side - polyline corners are mitred and curves stay concentric, so an
   offset boundary or road allowance comes out right.
+- **VXDEL** removes one polyline vertex (pick it) without erasing the
+  whole polyline; **VXADD** adds one where you pick on a span - on an arc
+  it lands on the curve and splits the arc exactly.
 - **Line** draws by bearing and distance: pick or type an E,N start point,
   then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
   blank ends it. **Arc** fits three picked points. **Text** and **Leader**
@@ -92,7 +95,8 @@ FdDraft.App project in Visual Studio).
   entity, its text height, rotation, a Circle/Arc's radius, an Arc's start
   and end angle, a Line's endpoint coordinates, or - for an
   LwPolyline/Polyline2D - one vertex's E,N, picked by typing its number
-  (**Apply**). Editing several fields at once and clicking Apply undoes
+  (**Apply**), with **Delete vertex** / **Insert after** buttons beside
+  it for a polyline. Editing several fields at once and clicking Apply undoes
   them together as one step. **Set Layer** on the toolbar reassigns the
   whole selection to the current layer.
 - Opening any DWG logs which sheets actually have a plan drawn on them - a
@@ -100,7 +104,7 @@ FdDraft.App project in Visual Studio).
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
-  COPY, MIRROR, OFFSET, ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, VXDEL, VXADD, ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

@@ -157,6 +157,41 @@ namespace FdDraft.Core.Geometry
                 return Math.Min(Vec2.Distance(p, A), Vec2.Distance(p, B));
             }
 
+            /// <summary>The point on this span nearest <paramref name="p"/> (an arc's own
+            /// endpoint when p is off the ends of its sweep).</summary>
+            public Vec2 Project(Vec2 p)
+            {
+                if (!IsArc) { DistanceToSegment(p, A, B, out var c); return c; }
+                if (!OnSweep(p)) return Vec2.Distance(p, A) <= Vec2.Distance(p, B) ? A : B;
+                var dir = (p - Center).Normalized();
+                return Center + dir * Radius;
+            }
+
+            /// <summary>Halfway along the span (the arc's midpoint, not the chord's).</summary>
+            public Vec2 Midpoint
+            {
+                get
+                {
+                    if (!IsArc) return (A + B) * 0.5;
+                    double a0 = Math.Atan2(A.Y - Center.Y, A.X - Center.X) + Sweep / 2;
+                    return new Vec2(Center.X + Radius * Math.Cos(a0), Center.Y + Radius * Math.Sin(a0));
+                }
+            }
+
+            /// <summary>
+            /// The bulges of the two pieces when this span is split at <paramref name="p"/>: an
+            /// arc split at a point on it keeps its curve exactly; a straight span, or a point off
+            /// the arc, gives two straight pieces.
+            /// </summary>
+            public (double First, double Second) SplitBulges(Vec2 p)
+            {
+                if (!IsArc || Math.Abs(Vec2.Distance(p, Center) - Radius) > 1e-6 * Math.Max(1, Radius) || !OnSweep(p)) return (0, 0);
+                double a0 = Math.Atan2(A.Y - Center.Y, A.X - Center.X);
+                double ap = Math.Atan2(p.Y - Center.Y, p.X - Center.X);
+                double s1 = Sweep > 0 ? Angles.Normalize2Pi(ap - a0) : -Angles.Normalize2Pi(a0 - ap);
+                return (Math.Tan(s1 / 4), Math.Tan((Sweep - s1) / 4));
+            }
+
             private bool OnSweep(Vec2 p)
             {
                 double a0 = Math.Atan2(A.Y - Center.Y, A.X - Center.X);

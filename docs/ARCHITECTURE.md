@@ -126,6 +126,18 @@ it on Windows is the real test.
   corner, and a tangent curve stays tangent. The side comes from the span
   nearest the pick. Dimensions are left out of COPY for now (their picture
   block is per-dimension).
+- **Polyline vertex insert/delete** (LwPolyline): `DeleteVertexCommand`
+  removes one vertex and straightens the span that arrived at it (merging
+  two arcs has no exact answer, and a straight join is what a drafter
+  expects), restoring both the vertex and that bulge on undo;
+  `InsertVertexCommand` splits the span after a vertex - a point on an arc
+  span keeps the curve exactly (`Construct.Span.SplitBulges` gives each
+  piece its own bulge), anything else gives two straight pieces. VXDEL/VXADD
+  pick with `VertexEditing.NearestVertex` / `NearestSpan` (the latter
+  projects onto the curve itself for an arc); the Properties panel's
+  vertex rows grow **Delete vertex** and **Insert after** (at the span's
+  arc-true midpoint) buttons. Polyline2D is left out: ACadSharp's
+  `SeqendCollection` has no insert-at-index.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y): a linear `UndoStack` of `IEditCommand`s
   (`FdDraft.Cad.Editing`) - `AddEntitiesCommand`, `RemoveEntitiesCommand`,
   `TransformEntitiesCommand`. New commands truncate any redo history past
@@ -209,8 +221,7 @@ it on Windows is the real test.
 - Relabel courses after a STRETCH (the vertex moves and connected lines stay
   joined, but their bearing/distance/area labels are not yet re-derived -
   there is still no persisted link between a course and its label text).
-- Flip labels; multi-point (not just Del-all) partial erase of a polyline
-  vertex; a dedicated sheet setup panel (rather than reusing Draft FD-Pro
+- Flip labels; a dedicated sheet setup panel (rather than reusing Draft FD-Pro
   job) for scale-only changes without re-running the whole pipeline.
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
@@ -221,9 +232,10 @@ it on Windows is the real test.
 - Properties editing now covers layer, text content, a text's height and
   rotation, a Circle/Arc's radius, an Arc's start/end angle, a Line's
   endpoint coordinates, and one LwPolyline/Polyline2D vertex's E,N at a time
-  (multi-field edits undo as one step). Still missing: inserting or deleting
-  a vertex from Properties (STRETCH and this both only move an existing
-  one), and a way to renumber which vertex is which on a closed polyline.
+  (multi-field edits undo as one step), and LwPolyline vertices can be
+  inserted/deleted (VXADD/VXDEL, or the Properties buttons). Still missing:
+  the same for Polyline2D, and a way to renumber which vertex is which on a
+  closed polyline.
 
 ## After that: the document assistant (hybrid)
 

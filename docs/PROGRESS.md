@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.8 (`Directory.Build.props`).
+- **Current version:** 0.4.9 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  43 tests as of v0.4.8, all passing.
+  45 tests as of v0.4.9, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -106,11 +106,15 @@ on Windows; that's still Marc's job when he runs a build.
   it: `apt-get install dotnet-sdk-10.0 dotnet-runtime-8.0
   dotnet-targeting-pack-8.0 aspnetcore-targeting-pack-8.0` is enough for
   both scripts.
-- **v0.4.8** (current): COPY (multi-destination), MIRROR (exact per-type
+- **v0.4.8**: COPY (multi-destination), MIRROR (exact per-type
   reflection, plan-readable text, optional erase of originals) and OFFSET
   (lines, arcs, circles, LwPolylines with mitred corners and concentric
   curves). Entity construction in `FdDraft.Cad.Editing.EntityOps`, the math
   in `FdDraft.Core.Geometry.Construct`.
+- **v0.4.9** (current): polyline vertex insert/delete - VXDEL (pick a
+  vertex to remove; the joined span goes straight), VXADD (pick a spot on a
+  span; an arc is split on its curve exactly), and matching Delete vertex /
+  Insert after buttons in Properties. LwPolyline only.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -125,9 +129,9 @@ on Windows; that's still Marc's job when he runs a build.
   solvable without a change on the ACadSharp side.
 - **No true DIMENSION entity** yet (distance/angle dimensioning, as opposed
   to a leader).
-- **No flip labels**, no partial (single-vertex) polyline erase (only
-  whole-entity Del), no dedicated sheet-setup panel (scale-only changes
-  currently mean re-running the whole Draft FD-Pro job flow).
+- **No flip labels**, no dedicated sheet-setup panel (scale-only changes
+  currently mean re-running the whole Draft FD-Pro job flow). Vertex
+  insert/delete covers LwPolyline only (not Polyline2D).
 - **North-up viewports only** (no twist for a rotated lot); splines written
   as dense polylines; label collisions handled by local sliding, not a
   solver; long MTEXT notes only rewritten when a rule matches their raw
@@ -137,9 +141,7 @@ on Windows; that's still Marc's job when he runs a build.
 
 1. Flip labels (mirror a bearing/distance label to the other side of its
    course) - self-contained, no new data model needed.
-2. Partial polyline-vertex erase (delete one vertex rather than the whole
-   entity) - natural extension of the STRETCH/VertexRef machinery already
-   in place.
+2. ~~Partial polyline-vertex erase~~ - done in v0.4.9 (LwPolyline).
 3. A dedicated sheet-setup panel (scale/layout changes without re-running
    the full Draft FD-Pro job pipeline).
 4. A real DIMENSION entity.

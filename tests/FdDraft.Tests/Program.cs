@@ -780,5 +780,70 @@ namespace FdDraft.Tests
             Assert.Near(-1, grown.Vertices[0].Location.X, 1e-9, "outside offset corner E"); Assert.Near(-1, grown.Vertices[0].Location.Y, 1e-9, "outside offset corner N");
             Assert.Near(11, grown.Vertices[2].Location.X, 1e-9, "opposite corner E");
         }
+            // ---- polyline vertex insert / delete (v0.4.9) ---------------------------------------
+
+        private static ACadSharp.Entities.LwPolyline Poly(bool closed, params (double X, double Y, double Bulge)[] v)
+        {
+            var p = new ACadSharp.Entities.LwPolyline { IsClosed = closed };
+            foreach (var (x, y, b) in v) p.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)) { Bulge = b });
+            return p;
+        }
+
+        public static void TestDeleteVertexJoinsItsNeighboursAndUndoes()
+        {
+            // Open: (0,0) -arc-> (10,0) -> (10,10). Deleting vertex 1 leaves one straight span.
+            var p = Poly(false, (0, 0, 0.3), (10, 0, 0), (10, 10, 0));
+            var undo = new UndoStack();
+            undo.Push(new DeleteVertexCommand(p, 1, "Delete vertex"));
+            Assert.Equal(2, p.Vertices.Count, "one vertex gone");
+            Assert.Near(10, p.Vertices[1].Location.Y, 1e-9, "joined straight to the next vertex");
+            Assert.Near(0, p.Vertices[0].Bulge, 1e-9, "the merged span is straight");
+            undo.Undo();
+            Assert.Equal(3, p.Vertices.Count, "undo puts it back");
+            Assert.Near(10, p.Vertices[1].Location.X, 1e-9, "at its old index");
+            Assert.Near(0.3, p.Vertices[0].Bulge, 1e-9, "and the previous span's arc");
+            Assert.True(!DeleteVertexCommand.CanDelete(Poly(false, (0, 0, 0), (1, 0, 0))), "a 2-vertex open polyline can't lose one");
+
+            // Closed: deleting vertex 0 straightens the span arriving from the last vertex.
+            var sq = Poly(true, (0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0.2));
+            undo.Push(new DeleteVertexCommand(sq, 0, "Delete vertex"));
+            Assert.Equal(3, sq.Vertices.Count, "closed: one vertex gone");
+            Assert.Near(10, sq.Vertices[0].Location.X, 1e-9, "old vertex 1 is now first");
+            Assert.Near(0, sq.Vertices[2].Bulge, 1e-9, "wrap-around span straightened");
+            undo.Undo();
+            Assert.Near(0, sq.Vertices[0].Location.X, 1e-9, "undo restores vertex 0");
+            Assert.Near(0.2, sq.Vertices[3].Bulge, 1e-9, "and the wrap-around arc");
+            undo.Redo();
+            Assert.Equal(3, sq.Vertices.Count, "redo deletes again");
+        }
+
+        public static void TestInsertVertexSplitsStraightAndArcSpans()
+        {
+            var p = Poly(false, (0, 0, 0), (10, 0, 0));
+            var undo = new UndoStack();
+            var ins = new InsertVertexCommand(p, 0, new CSMath.XY(4, 0), "Insert vertex");
+            undo.Push(ins);
+            Assert.Equal(1, ins.Index, "new vertex index");
+            Assert.Equal(3, p.Vertices.Count, "vertex added");
+            Assert.Near(4, p.Vertices[1].Location.X, 1e-9, "at the typed spot");
+            undo.Undo();
+            Assert.Equal(2, p.Vertices.Count, "undo removes it");
+
+            // A CCW quarter arc about the origin from (5,0) to (0,5), split at 45 degrees.
+            var arc = Poly(false, (5, 0, Math.Tan(Math.PI / 8)), (0, 5, 0));
+            var mid = Construct.Span.FromBulge(new Vec2(5, 0), new Vec2(0, 5), Math.Tan(Math.PI / 8)).Midpoint;
+            Assert.Near(5 / Math.Sqrt(2), mid.X, 1e-9, "arc midpoint is on the curve");
+            undo.Push(new InsertVertexCommand(arc, 0, new CSMath.XY(mid.X, mid.Y), "Insert vertex"));
+            Assert.Near(Math.Tan(Math.PI / 16), arc.Vertices[0].Bulge, 1e-9, "first half keeps the curve");
+            Assert.Near(Math.Tan(Math.PI / 16), arc.Vertices[1].Bulge, 1e-9, "second half keeps the curve");
+            undo.Undo();
+            Assert.Near(Math.Tan(Math.PI / 8), arc.Vertices[0].Bulge, 1e-9, "undo restores the whole arc");
+
+            // Picking near the arc projects onto the curve, not the chord.
+            int span = VertexEditing.NearestSpan(arc, new Vec2(4, 4), out var on, out _);
+            Assert.Equal(0, span, "nearest span");
+            Assert.Near(5, on.Length, 1e-9, "projected onto the radius-5 curve");
+            Assert.Equal(2, VertexEditing.NearestVertex(Poly(false, (0, 0, 0), (5, 0, 0), (9, 1, 0)), new Vec2(8, 1), out _), "nearest vertex");
+        }
     }
 }

@@ -4,6 +4,7 @@ using System.Linq;
 using ACadSharp.Entities;
 using ACadSharp.Tables;
 using CSMath;
+using FdDraft.Core.Geometry;
 
 namespace FdDraft.Cad.Editing
 {
@@ -249,6 +250,37 @@ namespace FdDraft.Cad.Editing
             }
             return found;
         }
+
+        /// <summary>The LwPolyline vertex nearest <paramref name="pick"/> (for VXDEL), and how
+        /// far away it is.</summary>
+        public static int NearestVertex(LwPolyline poly, Vec2 pick, out double distance)
+        {
+            int best = -1; distance = double.MaxValue;
+            for (int i = 0; i < poly.Vertices.Count; i++)
+            {
+                var v = poly.Vertices[i].Location;
+                double d = Vec2.Distance(pick, new Vec2(v.X, v.Y));
+                if (d < distance) { distance = d; best = i; }
+            }
+            return best;
+        }
+
+        /// <summary>The LwPolyline span nearest <paramref name="pick"/> (for VXADD): the index
+        /// of the vertex it starts at, and the point on it nearest the pick - on the curve
+        /// itself for an arc span, so an inserted vertex there splits the arc exactly.</summary>
+        public static int NearestSpan(LwPolyline poly, Vec2 pick, out Vec2 onSpan, out double distance)
+        {
+            var pts = poly.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList();
+            var spans = Construct.Spans(pts, poly.Vertices.Select(v => v.Bulge).ToList(), poly.IsClosed);
+            int best = -1; distance = double.MaxValue; onSpan = pick;
+            for (int i = 0; i < spans.Count; i++)
+            {
+                var q = spans[i].Project(pick);
+                double d = Vec2.Distance(q, pick);
+                if (d < distance) { distance = d; best = i; onSpan = q; }
+            }
+            return best;
+        }
     }
 
     /// <summary>Moves one shared vertex - every Line endpoint and polyline vertex that sits at
@@ -270,6 +302,102 @@ namespace FdDraft.Cad.Editing
 
         public void Undo() { foreach (var (r, old) in _items) r.Set(old); }
         public void Redo() { foreach (var (r, _) in _items) r.Set(_new); }
+    }
+
+    /// <summary>
+    /// Removes one vertex from an LwPolyline (the single-vertex partial erase, as opposed to
+    /// Del erasing the whole entity). The two spans meeting there become one straight span
+    /// from the previous vertex to the next; undo puts the vertex, and the previous span's
+    /// bulge, back exactly.
+    /// </summary>
+    public sealed class DeleteVertexCommand : IEditCommand
+    {
+        private readonly LwPolyline _poly;
+        private readonly int _index;
+        private readonly LwPolyline.Vertex _removed;
+        private readonly int _prev;
+        private readonly double _prevBulge;
+        public string Description { get; }
+
+        /// <summary>Whether <paramref name="poly"/> can lose a vertex and still be a polyline
+        /// (an open one needs 2 left, a closed one 3).</summary>
+        public static bool CanDelete(LwPolyline poly) => poly.Vertices.Count > (poly.IsClosed ? 3 : 2);
+
+        public DeleteVertexCommand(LwPolyline poly, int index, string description)
+        {
+            if (index < 0 || index >= poly.Vertices.Count) throw new ArgumentOutOfRangeException(nameof(index));
+            if (!CanDelete(poly)) throw new InvalidOperationException("too few vertices left to delete one");
+            _poly = poly;
+            _index = index;
+            _removed = poly.Vertices[index];
+            int n = poly.Vertices.Count;
+            // The span arriving at the removed vertex starts at the previous vertex; for vertex 0
+            // of an open polyline there is none (-1).
+            _prev = index > 0 ? index - 1 : poly.IsClosed ? n - 1 : -1;
+            _prevBulge = _prev >= 0 ? poly.Vertices[_prev].Bulge : 0;
+            Description = description;
+            Redo();
+        }
+
+        public void Redo()
+        {
+            if (_prev >= 0) _poly.Vertices[_prev].Bulge = 0;
+            _poly.Vertices.RemoveAt(_index);
+        }
+
+        public void Undo()
+        {
+            _poly.Vertices.Insert(_index, _removed);
+            if (_prev >= 0) _poly.Vertices[_prev].Bulge = _prevBulge;
+        }
+    }
+
+    /// <summary>
+    /// Adds a vertex to an LwPolyline on the span that starts at vertex
+    /// <c>afterIndex</c>. A point on an arc span splits the arc exactly (both pieces keep
+    /// the curve); otherwise both pieces are straight. Undo removes it and restores the
+    /// span's original bulge.
+    /// </summary>
+    public sealed class InsertVertexCommand : IEditCommand
+    {
+        private readonly LwPolyline _poly;
+        private readonly int _after;
+        private readonly double _oldBulge;
+        private readonly double _firstBulge;
+        private readonly LwPolyline.Vertex _added;
+        public string Description { get; }
+        /// <summary>The new vertex's index.</summary>
+        public int Index => _after + 1;
+
+        public InsertVertexCommand(LwPolyline poly, int afterIndex, XY location, string description)
+        {
+            int n = poly.Vertices.Count;
+            int spans = poly.IsClosed ? n : n - 1;
+            if (afterIndex < 0 || afterIndex >= spans) throw new ArgumentOutOfRangeException(nameof(afterIndex));
+            _poly = poly;
+            _after = afterIndex;
+            var a = poly.Vertices[afterIndex];
+            var b = poly.Vertices[(afterIndex + 1) % n];
+            _oldBulge = a.Bulge;
+            var span = Construct.Span.FromBulge(new Vec2(a.Location.X, a.Location.Y), new Vec2(b.Location.X, b.Location.Y), a.Bulge);
+            var (first, second) = span.SplitBulges(new Vec2(location.X, location.Y));
+            _firstBulge = first;
+            _added = new LwPolyline.Vertex(location) { Bulge = second, StartWidth = a.StartWidth, EndWidth = a.EndWidth };
+            Description = description;
+            Redo();
+        }
+
+        public void Redo()
+        {
+            _poly.Vertices[_after].Bulge = _firstBulge;
+            _poly.Vertices.Insert(_after + 1, _added);
+        }
+
+        public void Undo()
+        {
+            _poly.Vertices.RemoveAt(_after + 1);
+            _poly.Vertices[_after].Bulge = _oldBulge;
+        }
     }
 
     /// <summary>Linear undo/redo stack. A new command truncates any redo history past it,
