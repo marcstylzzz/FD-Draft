@@ -13,6 +13,7 @@
     <RootNamespace>FdDraft.App</RootNamespace>
     <StartupObject>FdDraft.App.Program</StartupObject>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>FD-Draft.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FdDraft.Core\FdDraft.Core.csproj" />
