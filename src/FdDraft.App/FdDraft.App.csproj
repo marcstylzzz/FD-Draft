@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    FD-Draft desktop application (Windows, WPF). The window, canvas and dialogs
+    only; everything they show and do comes from FdDraft.Core / .Cad / .View.
+    UI is built in code (no XAML) so a mistake is a compile error, not a
+    runtime binding surprise.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>FD-Draft</AssemblyName>
+    <RootNamespace>FdDraft.App</RootNamespace>
+    <StartupObject>FdDraft.App.Program</StartupObject>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FdDraft.Core\FdDraft.Core.csproj" />
+    <ProjectReference Include="..\FdDraft.Cad\FdDraft.Cad.csproj" />
+    <ProjectReference Include="..\FdDraft.View\FdDraft.View.csproj" />
+    <ProjectReference Include="..\..\external\ACadSharp\src\ACadSharp\ACadSharp.csproj" SetTargetFramework="TargetFramework=net8.0" />
+  </ItemGroup>
+</Project>

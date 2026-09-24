@@ -6,16 +6,19 @@ already have their templates set up, so FD-Draft uses those as they are. It open
 the .dwt itself, drafts into it and saves a real DWG. No AutoCAD, MSCAD or other
 CAD program is involved.
 
-Status: **v0.2**. The drafting engine and the DWG layer work end to end from the
-command line. The desktop application (canvas, layers, point table, editing
-tools) is the next milestone, and the document assistant (plans, PINs, deeds)
-comes after it. See `docs/ARCHITECTURE.md`.
+Status: **v0.3**. The desktop application (**FD-Draft.exe**) opens, drafts,
+views, inverses, saves DWG and plots PDF. The command-line tool runs the same
+engine. Editing tools and the document assistant (plans, PINs, deeds) come next.
+See `docs/ARCHITECTURE.md`.
 
 ```
 FD-Draft/
   src/FdDraft.Core/        drafting engine: FD-Pro reader, geometry, labels, sheet/scale picker, title-block rules
   src/FdDraft.Cad/         DWG layer: open the .dwt, draft into it, save DWG; template inspector
+  src/FdDraft.View/        what the app draws: DWG -> display list (model and sheets), snaps, inverse, PDF
+  src/FdDraft.App/         FD-Draft.exe - the Windows app (WPF)
   tools/FdDraft.Cli/       fddraft.exe - the engine from the command line
+  tools/wpf-compile-check/ compiles the app against WPF's public API on a non-Windows box
   tests/FdDraft.Tests/     plain console test runner
   external/ACadSharp/      DWG/DXF library (MIT), git submodule at a pinned commit
   standards/               provision-2024.standards.ini - rules for the example template
@@ -35,7 +38,32 @@ dotnet run --project tests\FdDraft.Tests
 
 Set `FDDRAFT_TEST_DWT` to a template path to include the DWG tests.
 
-## Draft a plan
+## The app
+
+Run `src\FdDraft.App\bin\Debug\net8.0-windows\FD-Draft.exe` (or F5 on the
+FdDraft.App project in Visual Studio).
+
+- **Draft job** (Ctrl+D): pick the FD-Pro job folder, the firm .dwt and its
+  standards file, and the plan type. Every sheet is ranked with the scale it
+  fits at and why. Accept the top one, or pick another sheet or scale. The plan
+  opens on its sheet, and the job's points fill the **Points** panel
+  (double-click a point to zoom to it).
+- **Canvas**: the wheel zooms at the cursor. Middle-drag or Shift-drag pans, and
+  a middle double-click zooms to extents. Tabs along the bottom switch between
+  Model and the sheets. On a sheet, the status bar shows the model N/E under the
+  cursor through the viewport.
+- **Snaps** (F3) to surveyed points, line ends and midpoints, and arc centres.
+- **Inverse** (INV): pick points for bearing, distance, dN and dE. It chains
+  from point to point like a data collector, and works on Model or through a
+  sheet's viewport. Esc ends it.
+- **Layers** panel: display on/off for each layer. Layers frozen in the drawing
+  are shown greyed.
+- **Save** (Ctrl+S) writes the DWG. **PDF** (Ctrl+P) plots the current sheet as
+  a true-scale vector PDF.
+- **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
+  SAVE, SAVEAS, PDF, INV, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+
+## Draft a plan from the command line
 
 ```powershell
 fddraft C:\...\FD-PRO\Project\24-012 --template ProVisionTemplate-2024.dwt --standards standards\provision-2024.standards.ini
@@ -54,6 +82,7 @@ writes `<job>\export\fd-draft\`:
   - the plan type's layers frozen and the unused layouts removed.
 
   The template wins every tie. Anything it lacked is created and listed in the report.
+- **`<job>.pdf`** is the sheet as a true-scale vector PDF.
 - **`<job>.svg`** is a preview of the plan area on the chosen sheet.
 - **`<job>.report.txt`** holds the ranking, parcel areas and perimeters, and what was created or missing.
 

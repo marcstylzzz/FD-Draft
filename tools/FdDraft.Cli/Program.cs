@@ -15,6 +15,7 @@ namespace FdDraft.Cli
         private const string Usage =
 @"fddraft <job-folder> --template <firm.dwt> --standards <file.ini> [options]
 fddraft inspect <firm.dwt>
+fddraft render <drawing.dwg|dwt> <Model|layout> <out.svg>
 
   --template <dwt>   the firm's drawing template - the plan is drafted into a copy of it
   --standards <ini>  the firm standards file for that template
@@ -27,6 +28,7 @@ fddraft inspect <firm.dwt>
 Drafting writes:
   <job>.dwg         the plan, on the firm template: layers, blocks, viewport at scale,
                     title block filled in - opens in any DWG program
+  <job>.pdf         the sheet as a true-scale vector PDF
   <job>.svg         a preview of the plan area on the chosen sheet
   <job>.report.txt  sheet ranking, parcels, what was created or missing
 
@@ -42,6 +44,17 @@ prints a starter [sheet.*] block for a new firm's standards file.";
                 {
                     if (args.Length < 2) { Console.Error.WriteLine("fddraft inspect <firm.dwt>"); return 2; }
                     Console.Write(TemplateInspector.Describe(args[1]));
+                    return 0;
+                }
+                if (args[0] == "render")
+                {
+                    if (args.Length < 4) { Console.Error.WriteLine("fddraft render <drawing> <Model|layout> <out.svg>"); return 2; }
+                    var doc = ACadSharp.IO.DwgReader.Read(args[1]);
+                    var b = new FdDraft.View.SceneBuilder(doc);
+                    var scene = args[2].Equals("Model", StringComparison.OrdinalIgnoreCase) ? b.Model() : b.Layout(args[2]);
+                    FdDraft.View.SvgSceneWriter.Write(scene, args[3], 2000);
+                    foreach (var n in scene.Notes) Console.WriteLine(n);
+                    Console.WriteLine("Wrote " + args[3]);
                     return 0;
                 }
                 return Draft(args);
@@ -125,10 +138,15 @@ prints a starter [sheet.*] block for a new firm's standards file.";
                     var drafter = TemplateDrafter.Open(template, std);
                     var notes = drafter.Draft(result, filler);
                     drafter.Save(dwg);
+                    // The sheet as a true-scale vector PDF, painted from the drafted drawing itself.
+                    string pdf = Path.ChangeExtension(dwg, ".pdf");
+                    var sheet = new FdDraft.View.SceneBuilder(drafter.Document).Layout(result.Chosen.Sheet.Layout);
+                    FdDraft.View.PdfSceneWriter.Write(sheet, pdf, fdJob.Settings.Name + " - " + result.Chosen.Sheet.Layout + " " + result.Chosen.Scale.Label);
                     report.WriteLine();
                     report.WriteLine("Drawing:");
                     foreach (var n in notes) report.WriteLine("  " + n);
                     report.WriteLine("  Saved " + dwg);
+                    report.WriteLine("  Plotted " + pdf + " (true scale)");
                 }
             }
 

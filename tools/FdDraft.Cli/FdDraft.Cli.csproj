@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FdDraft.Core\FdDraft.Core.csproj" />
     <ProjectReference Include="..\..\src\FdDraft.Cad\FdDraft.Cad.csproj" />
+    <ProjectReference Include="..\..\src\FdDraft.View\FdDraft.View.csproj" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,386 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using ACadSharp;
+using ACadSharp.Entities;
+using ACadSharp.Tables;
+using CSMath;
+using FdDraft.Core.Drafting;
+using FdDraft.Core.Geometry;
+using FdDraft.Core.Standards;
+
+namespace FdDraft.View
+{
+    /// <summary>
+    /// Turns a DWG into a display list. Model space is drawn in model units; a layout
+    /// is drawn in paper units, with model space appearing through each of its
+    /// viewports (scaled, clipped, and minus that viewport's frozen layers).
+    ///
+    /// Follows the usual CAD display rules: layer off/frozen hides, ByLayer and
+    /// ByBlock colours resolve, entities on layer 0 inside a block take the insert's
+    /// layer, arcs and bulges are tessellated finely enough to look round at any zoom
+    /// a survey drawing needs.
+    /// </summary>
+    public sealed class SceneBuilder
+    {
+        private readonly CadDocument _doc;
+        private readonly ISet<string> _hidden;
+        private Scene _scene = new Scene();
+        private SceneGroup _group = new SceneGroup();
+        private ISet<string> _vpFrozen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private int _skipped;
+
+        /// <param name="hiddenLayers">Layers the user has switched off in the app (display only).</param>
+        public SceneBuilder(CadDocument doc, ISet<string>? hiddenLayers = null)
+        {
+            _doc = doc;
+            _hidden = hiddenLayers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        public Scene Model()
+        {
+            _scene = new Scene { Name = "Model" };
+            _group = new SceneGroup();
+            _scene.Groups.Add(_group);
+            foreach (var e in _doc.ModelSpace.Entities) Emit(e, Affine.Identity, null, null, e.Handle, 0);
+            Finish();
+            return _scene;
+        }
+
+        public Scene Layout(string name)
+        {
+            var layout = _doc.Layouts.First(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            bool rotated = layout.PaperRotation == ACadSharp.Objects.PlotRotation.Degrees90 || layout.PaperRotation == ACadSharp.Objects.PlotRotation.Degrees270;
+            double pw = rotated ? layout.PaperHeight : layout.PaperWidth, ph = rotated ? layout.PaperWidth : layout.PaperHeight;
+            _scene = new Scene { Name = layout.Name, IsPaper = true, Paper = new Rect(0, 0, pw, ph) };
+            var paperEntities = layout.AssociatedBlock.Entities.ToList();
+
+            // Model space through each viewport first, so the sheet's own linework draws on top.
+            foreach (var vp in paperEntities.OfType<Viewport>())
+            {
+                if (vp.RepresentsPaper || vp.Status.HasFlag(ViewportStatusFlags.ViewportOff) || vp.ViewHeight <= 0 || vp.Height <= 0) continue;
+                if (IsHiddenLayer(vp.Layer)) { /* the viewport frame's layer does not hide its contents */ }
+                double s = vp.Height / vp.ViewHeight;
+                var toPaper = Affine.Translate(vp.Center.X, vp.Center.Y)
+                    .After(Affine.Rotate(vp.TwistAngle))
+                    .After(Affine.Scale(s, s))
+                    .After(Affine.Translate(-vp.ViewCenter.X - vp.ViewTarget.X, -vp.ViewCenter.Y - vp.ViewTarget.Y));
+                _group = new SceneGroup
+                {
+                    Clip = new Rect(vp.Center.X - vp.Width / 2, vp.Center.Y - vp.Height / 2, vp.Center.X + vp.Width / 2, vp.Center.Y + vp.Height / 2),
+                    ToModel = toPaper.Inverse(),
+                    ModelPerPaper = 1 / s,
+                };
+                _scene.Groups.Add(_group);
+                _vpFrozen = new HashSet<string>(vp.FrozenLayers.Select(l => l.Name), StringComparer.OrdinalIgnoreCase);
+                foreach (var e in _doc.ModelSpace.Entities) Emit(e, toPaper, null, null, e.Handle, 0);
+                _vpFrozen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            _group = new SceneGroup();
+            _scene.Groups.Add(_group);
+            foreach (var e in paperEntities)
+            {
+                if (e is Viewport) continue;
+                Emit(e, Affine.Identity, null, null, e.Handle, 0);
+            }
+            Finish();
+            return _scene;
+        }
+
+        private void Finish()
+        {
+            _scene.ComputeBounds();
+            if (_skipped > 0) _scene.Notes.Add(_skipped + " entities of types the viewer does not draw yet (hatch fills, leaders, images) were skipped.");
+        }
+
+        // ---- visibility and colour --------------------------------------------------------
+
+        private bool IsHiddenLayer(Layer? layer)
+        {
+            if (layer == null) return false;
+            return !layer.IsOn || layer.Flags.HasFlag(LayerFlags.Frozen) || _hidden.Contains(layer.Name) || _vpFrozen.Contains(layer.Name);
+        }
+
+        /// <summary>Blocks: an entity on layer 0 takes the insert's layer.</summary>
+        private static Layer? EffectiveLayer(Entity e, Layer? parentLayer) =>
+            parentLayer != null && (e.Layer == null || e.Layer.Name == "0") ? parentLayer : e.Layer;
+
+        private uint Rgb(Entity e, Layer? layer, uint? parentRgb)
+        {
+            var c = e.Color;
+            if (c.IsByBlock) return parentRgb ?? 0x000000;
+            if (c.IsByLayer) c = layer?.Color ?? new Color(7);
+            if (c.IsTrueColor) return (uint)(c.R << 16 | c.G << 8 | c.B);
+            short i = c.Index;
+            // 7 is "white on black, black on white"; plans are viewed on white paper.
+            if (i <= 0 || i == 7 || i >= 256) return 0x000000;
+            var rgb = Color.GetIndexRGB((byte)i);
+            uint v = (uint)(rgb[0] << 16 | rgb[1] << 8 | rgb[2]);
+            // Very light colours (yellow 2, 50-ish) vanish on white; darken them for the screen.
+            return Readable(v);
+        }
+
+        private static uint Readable(uint rgb)
+        {
+            double r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+            double lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            if (lum < 170) return rgb;
+            double k = 170 / lum;
+            return (uint)((int)(r * k) << 16 | (int)(g * k) << 8 | (int)(b * k));
+        }
+
+        // ---- entities ---------------------------------------------------------------------
+
+        private void Emit(Entity e, Affine t, Layer? parentLayer, uint? parentRgb, ulong handle, int depth)
+        {
+            if (e.IsInvisible) return;
+            var layer = EffectiveLayer(e, parentLayer);
+            if (IsHiddenLayer(layer)) return;
+            uint rgb = Rgb(e, layer, parentRgb);
+            string lname = layer?.Name ?? "0";
+
+            switch (e)
+            {
+                case Line l:
+                    Poly(new[] { t.Apply(l.StartPoint.X, l.StartPoint.Y), t.Apply(l.EndPoint.X, l.EndPoint.Y) }, false, rgb, lname, handle, snapVertices: true);
+                    break;
+                case LwPolyline pl:
+                    Bulged(pl.Vertices.Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), pl.IsClosed, t, rgb, lname, handle);
+                    break;
+                case Polyline2D p2:
+                    Bulged(p2.Vertices.Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), p2.IsClosed, t, rgb, lname, handle);
+                    break;
+                case ACadSharp.Entities.Arc a:
+                {
+                    double sweep = a.EndAngle - a.StartAngle;
+                    while (sweep <= 0) sweep += 2 * Math.PI;
+                    var pts = ArcPoints(new Vec2(a.Center.X, a.Center.Y), a.Radius, a.StartAngle, sweep).Select(t.Apply).ToList();
+                    Poly(pts, false, rgb, lname, handle, snapVertices: false);
+                    AddSnap(pts[0], SnapKind.Endpoint); AddSnap(pts[pts.Count - 1], SnapKind.Endpoint);
+                    AddSnap(t.Apply(a.Center.X, a.Center.Y), SnapKind.Center);
+                    break;
+                }
+                case Circle c:
+                {
+                    var center = t.Apply(c.Center.X, c.Center.Y);
+                    _group.Prims.Add(new Prim { Kind = PrimKind.Circle, Center = center, Radius = c.Radius * t.ScaleFactor, Rgb = rgb, Layer = lname, Handle = handle });
+                    AddSnap(center, SnapKind.Center);
+                    break;
+                }
+                case Ellipse el:
+                    Poly(el.PolygonalVertexes(64).Select(p => t.Apply(p.X, p.Y)).ToList(), false, rgb, lname, handle, snapVertices: false);
+                    break;
+                case Spline sp:
+                    if (sp.TryPolygonalVertexes(96, out var spts))
+                        Poly(spts.Select(p => t.Apply(p.X, p.Y)).ToList(), false, rgb, lname, handle, snapVertices: false);
+                    else _skipped++;
+                    break;
+                case Solid so:
+                    _group.Prims.Add(new Prim
+                    {
+                        Kind = PrimKind.Fill, Rgb = rgb, Layer = lname, Handle = handle, Closed = true,
+                        // SOLID corners run zig-zag: 1, 2, 4, 3 walks the outline.
+                        Points = new List<Vec2> { t.Apply(so.FirstCorner.X, so.FirstCorner.Y), t.Apply(so.SecondCorner.X, so.SecondCorner.Y), t.Apply(so.FourthCorner.X, so.FourthCorner.Y), t.Apply(so.ThirdCorner.X, so.ThirdCorner.Y) },
+                    });
+                    break;
+                case Point pt:
+                {
+                    var p = t.Apply(pt.Location.X, pt.Location.Y);
+                    _group.Prims.Add(new Prim { Kind = PrimKind.Node, Center = p, Rgb = rgb, Layer = lname, Handle = handle });
+                    AddSnap(p, SnapKind.Node);
+                    break;
+                }
+                case AttributeEntity att:
+                    if (!att.Flags.HasFlag(ACadSharp.Entities.AttributeFlags.Hidden)) Text(att, t, rgb, lname, handle);
+                    break;
+                case TextEntity te:
+                    Text(te, t, rgb, lname, handle);
+                    break;
+                case MText mt:
+                    MTextLines(mt, t, rgb, lname, handle);
+                    break;
+                case Insert ins:
+                    InsertBlock(ins, t, layer, rgb, handle, depth);
+                    break;
+                case Dimension dim:
+                    if (dim.Block != null && depth < 8)
+                        foreach (var be in dim.Block.Entities) Emit(be, t, layer, rgb, handle, depth + 1);
+                    break;
+                case Viewport:
+                    break;
+                default:
+                    _skipped++;
+                    break;
+            }
+        }
+
+        private void InsertBlock(Insert ins, Affine t, Layer? layer, uint rgb, ulong handle, int depth)
+        {
+            if (ins.Block == null || depth > 8) return;
+            var basePoint = ins.Block.BlockEntity?.BasePoint ?? XYZ.Zero;
+            for (int r = 0; r < Math.Max((int)ins.RowCount, 1); r++)
+            {
+                for (int c = 0; c < Math.Max((int)ins.ColumnCount, 1); c++)
+                {
+                    var local = Affine.Translate(ins.InsertPoint.X, ins.InsertPoint.Y)
+                        .After(Affine.Rotate(ins.Rotation))
+                        .After(Affine.Translate(c * ins.ColumnSpacing, r * ins.RowSpacing))
+                        .After(Affine.Scale(ins.XScale, ins.YScale))
+                        .After(Affine.Translate(-basePoint.X, -basePoint.Y));
+                    var bt = t.After(local);
+                    foreach (var be in ins.Block.Entities)
+                    {
+                        if (be is AttributeDefinition) continue; // definitions show only through their attributes
+                        Emit(be, bt, layer, rgb, handle, depth + 1);
+                    }
+                }
+            }
+            AddSnap(t.Apply(ins.InsertPoint.X, ins.InsertPoint.Y), SnapKind.Node);
+            // Attributes are stored in the insert's own coordinate space, not the block's.
+            foreach (var a in ins.Attributes) Emit(a, t, layer, rgb, handle, depth + 1);
+        }
+
+        private void Text(TextEntity te, Affine t, uint rgb, string layer, ulong handle)
+        {
+            if (string.IsNullOrWhiteSpace(te.Value)) return;
+            bool aligned = te.HorizontalAlignment != TextHorizontalAlignment.Left || te.VerticalAlignment != TextVerticalAlignmentType.Baseline;
+            var at = aligned ? te.AlignmentPoint : te.InsertPoint;
+            var h = te.HorizontalAlignment switch
+            {
+                TextHorizontalAlignment.Center or TextHorizontalAlignment.Middle or TextHorizontalAlignment.Aligned or TextHorizontalAlignment.Fit => HAlign.Center,
+                TextHorizontalAlignment.Right => HAlign.Right,
+                _ => HAlign.Left,
+            };
+            var v = te.HorizontalAlignment == TextHorizontalAlignment.Middle ? VAlign.Middle : te.VerticalAlignment switch
+            {
+                TextVerticalAlignmentType.Middle => VAlign.Middle,
+                TextVerticalAlignmentType.Top => VAlign.Top,
+                _ => VAlign.Bottom,
+            };
+            _group.Prims.Add(new Prim
+            {
+                Kind = PrimKind.Text, Text = Decode(te.Value), Center = t.Apply(at.X, at.Y),
+                Height = te.Height * t.ScaleFactor, Rotation = te.Rotation + t.Rotation, WidthFactor = te.WidthFactor <= 0 ? 1 : te.WidthFactor,
+                H = h, V = v, Rgb = rgb, Layer = layer, Handle = handle,
+            });
+        }
+
+        private void MTextLines(MText mt, Affine t, uint rgb, string layer, ulong handle)
+        {
+            var lines = PlainMText(mt.Value);
+            if (lines.Count == 0) return;
+            int ap = (int)mt.AttachmentPoint; // 1..9: TL TC TR ML MC MR BL BC BR
+            var h = ap % 3 == 1 ? HAlign.Left : ap % 3 == 2 ? HAlign.Center : HAlign.Right;
+            double pitch = mt.Height * 1.667 * (mt.LineSpacing <= 0 ? 1 : mt.LineSpacing);
+            double blockH = pitch * (lines.Count - 1);
+            // Offset of the first line's top from the attachment point, along the text's "up" direction.
+            double firstTop = ap <= 3 ? 0 : ap <= 6 ? blockH / 2 + mt.Height / 2 : blockH + mt.Height;
+            double rot = mt.Rotation;
+            var up = new Vec2(-Math.Sin(rot), Math.Cos(rot));
+            var origin = new Vec2(mt.InsertPoint.X, mt.InsertPoint.Y);
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].Length == 0) continue;
+                var top = origin + up * (firstTop - i * pitch);
+                _group.Prims.Add(new Prim
+                {
+                    Kind = PrimKind.Text, Text = lines[i], Center = t.Apply(top), Height = mt.Height * t.ScaleFactor,
+                    Rotation = rot + t.Rotation, H = h, V = VAlign.Top, Rgb = rgb, Layer = layer, Handle = handle,
+                });
+            }
+        }
+
+        /// <summary>%%d, %%c, %%p and %%nnn control codes as the characters they draw.</summary>
+        public static string Decode(string s)
+        {
+            if (s.IndexOf("%%", StringComparison.Ordinal) < 0) return s;
+            s = Regex.Replace(s, "%%([0-9]{3})", m => ((char)int.Parse(m.Groups[1].Value)).ToString());
+            return s.Replace("%%d", "°").Replace("%%D", "°").Replace("%%c", "Ø").Replace("%%C", "Ø")
+                    .Replace("%%p", "±").Replace("%%P", "±").Replace("%%u", "").Replace("%%U", "").Replace("%%o", "").Replace("%%O", "").Replace("%%%", "%");
+        }
+
+        /// <summary>MTEXT contents as plain lines: formatting codes removed, \P split.</summary>
+        public static List<string> PlainMText(string value)
+        {
+            var s = value.Replace("\\P", "\n").Replace("\\~", " ");
+            s = Regex.Replace(s, @"\\U\+([0-9A-Fa-f]{4})", m => ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString());
+            s = Regex.Replace(s, @"\\[fFHhCcTtQqWwAp][^;]*;", "");        // font, height, colour, tracking, oblique, width, align, paragraph
+            s = Regex.Replace(s, @"\\S([^;]*)\^([^;]*);", "$1/$2");          // stacked fractions
+            s = Regex.Replace(s, @"\\[LlOoKkNn]", "");
+            s = s.Replace("\\\\", "\\").Replace("{", "").Replace("}", "");
+            return Decode(s).Split('\n').Select(x => x.TrimEnd()).ToList();
+        }
+
+        // ---- geometry helpers -------------------------------------------------------------
+
+        private void Bulged(List<(Vec2 p, double bulge)> v, bool closed, Affine t, uint rgb, string layer, ulong handle)
+        {
+            if (v.Count == 0) return;
+            var pts = new List<Vec2> { t.Apply(v[0].p) };
+            int n = v.Count, segs = closed ? n : n - 1;
+            for (int i = 0; i < segs; i++)
+            {
+                var a = v[i].p; var b = v[(i + 1) % n].p; double bl = v[i].bulge;
+                if (Math.Abs(bl) > 1e-9)
+                {
+                    double theta = 4 * Math.Atan(bl);
+                    double chord = Vec2.Distance(a, b);
+                    if (chord > 1e-12)
+                    {
+                        double r = chord / (2 * Math.Sin(Math.Abs(theta) / 2));
+                        var mid = (a + b) * 0.5;
+                        var n1 = (b - a).Normalized().Left();
+                        double off = r * Math.Cos(theta / 2) * Math.Sign(bl);
+                        var c = mid + n1 * off;
+                        double start = Math.Atan2(a.Y - c.Y, a.X - c.X);
+                        var arc = ArcPoints(c, r, start, theta);
+                        for (int k = 1; k < arc.Count - 1; k++) pts.Add(t.Apply(arc[k]));
+                        AddSnap(t.Apply(c), SnapKind.Center);
+                    }
+                }
+                else AddSnap(t.Apply((a + b) * 0.5), SnapKind.Midpoint);
+                pts.Add(t.Apply(b));
+            }
+            _group.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = pts, Closed = false, Rgb = rgb, Layer = layer, Handle = handle });
+            foreach (var x in v) AddSnap(t.Apply(x.p), SnapKind.Endpoint);
+        }
+
+        private void Poly(IList<Vec2> pts, bool closed, uint rgb, string layer, ulong handle, bool snapVertices)
+        {
+            if (pts.Count < 2) return;
+            var list = new List<Vec2>(pts);
+            if (closed) list.Add(pts[0]);
+            _group.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = list, Rgb = rgb, Layer = layer, Handle = handle });
+            if (snapVertices)
+            {
+                foreach (var p in pts) AddSnap(p, SnapKind.Endpoint);
+                if (pts.Count == 2) AddSnap((pts[0] + pts[1]) * 0.5, SnapKind.Midpoint);
+            }
+        }
+
+        /// <summary>Points along an arc, about every 3 degrees (never fewer than 4 spans).</summary>
+        public static List<Vec2> ArcPoints(Vec2 c, double r, double start, double sweep)
+        {
+            int n = Math.Max(4, (int)Math.Ceiling(Math.Abs(sweep) / (Math.PI / 60)));
+            var list = new List<Vec2>(n + 1);
+            for (int i = 0; i <= n; i++)
+            {
+                double a = start + sweep * i / n;
+                list.Add(new Vec2(c.X + r * Math.Cos(a), c.Y + r * Math.Sin(a)));
+            }
+            return list;
+        }
+
+        private void AddSnap(Vec2 p, SnapKind k)
+        {
+            if (_group.Clip.HasValue)
+            {
+                var c = _group.Clip.Value;
+                if (p.X < c.X1 || p.X > c.X2 || p.Y < c.Y1 || p.Y > c.Y2) return;
+            }
+            _scene.Snaps.Add(new SnapPoint(p, k));
+        }
+    }
+}

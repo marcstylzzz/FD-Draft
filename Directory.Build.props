@@ -14,7 +14,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Company>Vaughan Land Surveyors</Company>
     <Product>FD-Draft</Product>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
   <PropertyGroup Condition="'$(FD_OFFLINE)' == '1'">

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    What the app draws, without any UI toolkit: turns a DWG (model space or a
+    layout seen through its viewports) into a flat display list, plus the view
+    transform, object snaps and the inverse tool. The WPF canvas only paints this
+    list, so everything here is testable on any machine.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FdDraft.View</RootNamespace>
+    <AssemblyName>FdDraft.View</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FdDraft.Core\FdDraft.Core.csproj" />
+    <ProjectReference Include="..\..\external\ACadSharp\src\ACadSharp\ACadSharp.csproj" SetTargetFramework="TargetFramework=net8.0" />
+  </ItemGroup>
+</Project>

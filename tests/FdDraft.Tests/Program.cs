@@ -317,6 +317,56 @@ namespace FdDraft.Tests
             Assert.True(!back.Layouts.Any(l => l.Name == "36X48"), "unused layouts removed");
         }
 
+        public static void TestViewerSceneAndPdfFromDraftedSheet()
+        {
+            if (string.IsNullOrEmpty(TestTemplate)) { Console.Write("  (skipped: FDDRAFT_TEST_DWT not set) "); return; }
+            var std = ProVision;
+            var job = FdJobReader.Read(Demo);
+            var result = DraftPipeline.Run(job, std);
+            var def = std.Sheets[result.Chosen!.Sheet.Layout];
+            var drafter = FdDraft.Cad.TemplateDrafter.Open(TestTemplate!, std);
+            drafter.Draft(result, new TitleBlockFiller(std, job.Settings, result.Chosen.Scale, "11X17", "t.dwg", DateTime.Today, def.PaperWidth, def.PaperHeight));
+
+            var sheet = new FdDraft.View.SceneBuilder(drafter.Document).Layout("11X17");
+            Assert.True(sheet.IsPaper && Math.Abs(sheet.Paper!.Value.Width - 431.8) < 0.5, "sheet is 11x17 landscape");
+            var vpGroup = sheet.Groups.First(g => g.Clip.HasValue);
+            Assert.True(vpGroup.Prims.Any(p => p.Kind == FdDraft.View.PrimKind.Text && p.Text == "S89°13'52\"W"), "bearing seen through the viewport, degree decoded");
+            // Paper text height = 2 mm, whatever the scale.
+            var brg = vpGroup.Prims.First(p => p.Text == "S89°13'52\"W");
+            Assert.Near(2.0, brg.Height, 1e-6, "bearing is 2 mm on paper");
+            // Monument 1 (FDIB) lands inside the viewport on paper and is snappable.
+            var p1 = job.Point(1)!;
+            var vp = drafter.Document.Layouts.First(l => l.Name == "11X17").AssociatedBlock.Entities.OfType<ACadSharp.Entities.Viewport>().First(v => !v.RepresentsPaper);
+            double s = vp.Height / vp.ViewHeight;
+            var onPaper = new Vec2((p1.Easting - vp.ViewCenter.X) * s + vp.Center.X, (p1.Northing - vp.ViewCenter.Y) * s + vp.Center.Y);
+            var snap = sheet.Snap(onPaper, 1.0);
+            Assert.True(snap.HasValue && Vec2.Distance(snap.Value.Point, onPaper) < 0.01, "monument snaps on the sheet");
+
+            string pdf = Path.Combine(Path.GetTempPath(), "fdd-test.pdf");
+            FdDraft.View.PdfSceneWriter.Write(sheet, pdf, "test");
+            var head = File.ReadAllText(pdf, System.Text.Encoding.Latin1);
+            Assert.True(head.StartsWith("%PDF-1.4") && head.Contains("/MediaBox [0 0 1224 792]") && head.TrimEnd().EndsWith("%%EOF"), "11x17 PDF page");
+        }
+
+        public static void TestInverseAndViewTransform()
+        {
+            var inv = FdDraft.View.InverseResult.Between(new Vec2(0, 0), new Vec2(10, -10));
+            Assert.Equal("S45°00'00\"E", inv.Bearing);
+            Assert.Near(Math.Sqrt(200), inv.Distance, 1e-9);
+            var vt = new FdDraft.View.ViewTransform { ScreenWidth = 800, ScreenHeight = 600 };
+            vt.Fit(new Rect(100, 200, 300, 400), 0);
+            var sc = vt.ToScreen(new Vec2(200, 300));
+            Assert.Near(400, sc.X, 1e-9); Assert.Near(300, sc.Y, 1e-9);
+            vt.ZoomAt(100, 100, 2);
+            var back = vt.ToScene(100, 100);
+            var before = new FdDraft.View.ViewTransform { ScreenWidth = 800, ScreenHeight = 600 };
+            before.Fit(new Rect(100, 200, 300, 400), 0);
+            var w0 = before.ToScene(100, 100);
+            Assert.Near(w0.X, back.X, 1e-9, "zoom keeps the point under the cursor");
+            Assert.Near(w0.Y, back.Y, 1e-9);
+            Assert.Equal("47°", FdDraft.View.SceneBuilder.PlainMText("{\\fArial|b0;47%%d}")[0], "mtext codes stripped, %%d decoded");
+        }
+
         public static void TestInspectorFindsTitleColumn()
         {
             if (string.IsNullOrEmpty(TestTemplate)) { Console.Write("  (skipped: FDDRAFT_TEST_DWT not set) "); return; }

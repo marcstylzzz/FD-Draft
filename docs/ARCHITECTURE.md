@@ -63,24 +63,36 @@ them with pattern rules (`#` = a number, `*` = rest of the text). Scale-bar
 ticks are recomputed from the template's "SCALE 1:n" text. The layout that owns
 `*Paper_Space` is kept because the DWG format needs it.
 
-## Next: the desktop application
+## The desktop application (v0.3)
 
-A Windows app on the same engine, playing the role MSCAD plays today:
+FdDraft.App is WPF on .NET 8, with the UI built in code (no XAML) so mistakes
+are compile errors. It is a thin shell:
 
-- **Canvas.** Renders the DWG, both model space and the layouts through their
-  viewports, with zoom, pan and object snaps. Selection shows point and course
-  properties.
-- **Panels.** A layer manager fed from the template, the FD-Pro point table, and
-  the code list.
-- **Draft command.** Picks the job, shows the sheet/scale ranking with a preview,
-  and lets the drafter accept or override it. Re-drafting keeps manual edits on
-  their own layers.
-- **Drafting tools.** Move or flip a label, inverse, and COGO by bearing and
-  distance (reusing FD-Pro's math), plus text, leaders, dimensions and
-  building ties.
-- **Output.** Plots to PDF with the template's page setup, and saves DWG.
-- **UI stack.** WPF on .NET 8: native Windows, mature, and fast enough for survey
-  drawings. It builds on Windows only.
+- **FdDraft.View** builds the display list from the DWG. Model space is drawn in
+  model units. A sheet is drawn in paper mm, with model space shown through each
+  viewport (scaled, clipped, with per-viewport frozen layers), blocks expanded,
+  ByLayer/ByBlock colours resolved, layer-0-in-blocks inheritance applied, and
+  MTEXT formatting stripped. The same list feeds the canvas, the SVG preview and
+  the PDF plot, so the screen, the preview and the PDF always agree.
+- **DrawingCanvas** paints that list with culling, cached text and frozen pens.
+  It handles zoom at the cursor, pan and snap markers.
+- **PDF plotting** is FD-Draft's own writer: one page the size of the sheet at
+  1:1, vector linework, and the PDF base font Helvetica with real metrics for
+  alignment. No PDF library, and no printer driver involved.
+
+The app cannot be built on the Linux build box, so
+`tools/wpf-compile-check/check.sh` compiles it against WPF's public reference
+API, with warnings treated as errors. That catches C# and API mistakes; running
+it on Windows is the real test.
+
+### Next in the app
+
+- Editing: move, rotate and flip labels; erase; undo. Relabel courses after a
+  point moves.
+- Drafting tools: line/arc by bearing and distance, text, leaders, building
+  ties, dimensions.
+- A sheet setup panel that re-runs the sheet/scale choice on an open plan.
+- Properties panel for the selected entity; a code list panel.
 
 ## After that: the document assistant (hybrid)
 
