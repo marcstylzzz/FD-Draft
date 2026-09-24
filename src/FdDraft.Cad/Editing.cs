@@ -29,11 +29,19 @@ namespace FdDraft.Cad.Editing
             _owner = owner;
             _entities = entities.ToList();
             Description = description;
-            foreach (var e in _entities) _owner.Entities.Add(e);
+            Redo();
         }
 
         public void Undo() { foreach (var e in _entities) _owner.Entities.Remove(e); }
-        public void Redo() { foreach (var e in _entities) _owner.Entities.Add(e); }
+        public void Redo()
+        {
+            foreach (var e in _entities)
+            {
+                _owner.Entities.Add(e);
+                // FD-Draft's aligned dimensions (re)draw their own picture once they're in the document.
+                if (e.GetType() == typeof(DimensionAligned)) DimensionBuilder.DrawPicture((DimensionAligned)e);
+            }
+        }
     }
 
     /// <summary>Removes entities (erase). Each is put back in the block it came from on undo.</summary>
@@ -72,11 +80,22 @@ namespace FdDraft.Cad.Editing
             _forward = forward;
             _inverse = inverse;
             Description = description;
-            foreach (var e in _entities) e.ApplyTransform(_forward);
+            Apply(_forward);
         }
 
-        public void Undo() { foreach (var e in _entities) e.ApplyTransform(_inverse); }
-        public void Redo() { foreach (var e in _entities) e.ApplyTransform(_forward); }
+        public void Undo() => Apply(_inverse);
+        public void Redo() => Apply(_forward);
+
+        private void Apply(Transform t)
+        {
+            foreach (var e in _entities)
+            {
+                e.ApplyTransform(t);
+                // A dimension's picture block is in world coordinates and doesn't follow the
+                // transform on its own; FD-Draft's aligned dimensions redraw theirs.
+                if (e.GetType() == typeof(DimensionAligned) && e.Document != null) DimensionBuilder.DrawPicture((DimensionAligned)e);
+            }
+        }
 
         /// <summary>A pure translation by (dx, dy).</summary>
         public static TransformEntitiesCommand Move(IEnumerable<Entity> entities, double dx, double dy, string description) =>

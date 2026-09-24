@@ -193,6 +193,25 @@ it on Windows is the real test.
   up in FD-Draft's own canvas/PDF/SVG, not just in AutoCAD/MSCAD. Covered by
   an in-memory test and a real DWG write/read round trip (no firm .dwt
   needed for the latter, unlike most DWG tests).
+- **DIM** places a real `ACadSharp.Entities.DimensionAligned`
+  (`FdDraft.Cad.Editing.DimensionBuilder`): first/second points, the
+  definition point on the dimension line, override text = the measured
+  distance to the standards' distance decimals. A DWG dimension's visible
+  "picture" is its own anonymous `*D` block; ACadSharp's generator for it
+  puts both arrowheads at the first end and never turns the text to the
+  line, so FD-Draft calls `UpdateBlock()` only to register/clear that block
+  and then draws the picture itself (`DrawPicture`): extension lines with an
+  offset gap and overshoot, the dimension line, two filled SOLID arrowheads
+  (one at each end), an MTEXT turned readable along the line, and the three
+  definition points on `defpoints`. The picture is in world coordinates, so
+  `TransformEntitiesCommand` redraws it after MOVE/ROTATE and
+  `AddEntitiesCommand` draws it whenever an aligned dimension is (re)added
+  (undo/redo detaches the block). COPY/MIRROR rebuild an FD-Draft dimension
+  from its moved/reflected definition points (`DimensionBuilder.Rebuilt`)
+  rather than cloning it, since a clone would share its source's block.
+  Only the exact `DimensionAligned` type gets this - `DimensionLinear`
+  derives from it, and a template's other dimension kinds keep their own
+  picture. Covered by a real DWG write/read round trip.
 - New entities pick up the toolbar's **current layer**, created on the fly
   if the template doesn't have it yet, and land in the right block: Model
   space, unless the current sheet is a layout with no working viewport at
@@ -259,9 +278,8 @@ it on Windows is the real test.
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
   `internal` to ACadSharp - not reachable from FD-Draft) or an MTEXT with a
-  real dimension-style-driven landing gap; a true DIMENSION entity (for
-  distance/angle dimensioning, as opposed to a leader) is likewise not built
-  yet.
+  real dimension-style-driven landing gap. Aligned DIMENSIONs exist (DIM);
+  linear (rotated), angular and radial ones don't yet.
 - Properties editing now covers layer, text content, a text's height and
   rotation, a Circle/Arc's radius, an Arc's start/end angle, a Line's
   endpoint coordinates, and one LwPolyline/Polyline2D vertex's E,N at a time

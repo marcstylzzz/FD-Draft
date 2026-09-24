@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.12 (`Directory.Build.props`).
+- **Current version:** 0.4.13 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  49 tests as of v0.4.12, all passing.
+  52 tests as of v0.4.13, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -125,9 +125,13 @@ on Windows; that's still Marc's job when he runs a build.
   `ClosureReport` and `FigureMeasure` (not "Figure" - that name is FD-Pro's
   job figure in FdDraft.Core.Job, and "Measure" clashes with WPF's
   UIElement.Measure inside MainWindow).
-- **v0.4.12** (current): drag-box selection in the canvas (window
+- **v0.4.12**: drag-box selection in the canvas (window
   left-to-right, crossing right-to-left, Ctrl adds; logic in
   `FdDraft.View.BoxSelect`), plus SELALL (Ctrl+A) and SELLAYER.
+- **v0.4.13** (current): DIM - a real aligned `DimensionAligned` whose
+  picture block FD-Draft draws itself (ACadSharp's own generator puts both
+  arrows at one end). Redrawn after MOVE/ROTATE and on undo/redo; COPY and
+  MIRROR rebuild it from its definition points. DWG round-trip tested.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -140,8 +144,8 @@ on Windows; that's still Marc's job when he runs a build.
   `internal` to ACadSharp, not reachable from FD-Draft. The leader's text is
   a separate, unassociated TEXT entity next to a real Leader. Likely not
   solvable without a change on the ACadSharp side.
-- **No true DIMENSION entity** yet (distance/angle dimensioning, as opposed
-  to a leader).
+- **Dimensions**: aligned only (DIM, v0.4.13). No linear (rotated),
+  angular or radial DIMENSION yet.
 - No dedicated sheet-setup panel (scale-only changes
   currently mean re-running the whole Draft FD-Pro job flow). Vertex
   insert/delete covers LwPolyline only (not Polyline2D).
@@ -156,7 +160,8 @@ on Windows; that's still Marc's job when he runs a build.
 2. ~~Partial polyline-vertex erase~~ - done in v0.4.9 (LwPolyline).
 3. A dedicated sheet-setup panel (scale/layout changes without re-running
    the full Draft FD-Pro job pipeline).
-4. A real DIMENSION entity.
+4. ~~A real DIMENSION entity~~ - aligned done in v0.4.13; linear/angular/
+   radial would follow the same `DimensionBuilder.DrawPicture` pattern.
 5. The course-relabeling-after-STRETCH problem - but only once a real
    course<->label link is designed; don't guess at this with heuristics.
 6. **Phase 2**: the in-app document assistant (reads R-plans, registered

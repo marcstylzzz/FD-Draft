@@ -99,7 +99,10 @@ FdDraft.App project in Visual Studio).
   place labels (type `height text`, e.g. `0.25 LOT 5`, or just the text for
   the default height) - Leader places a real DWG leader entity, with an
   arrowhead, not just plain lines, so it reads back as one in AutoCAD/MSCAD
-  too. New linework goes on the toolbar's **Layer** box, and lands on the
+  too. **Dim** places a real aligned DIMENSION: pick the two points,
+  then where the dimension line goes, then the text height - it shows the
+  measured distance with extension lines and arrowheads, and reads back as
+  a dimension in AutoCAD/MSCAD. New linework goes on the toolbar's **Layer** box, and lands on the
   current sheet correctly even when that sheet has no real viewport of its
   own (a real MSCAD job commonly draws straight onto paper on the sheet it
   actually used).
@@ -117,7 +120,7 @@ FdDraft.App project in Visual Studio).
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
+  SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
   COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line

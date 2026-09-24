@@ -210,6 +210,7 @@ namespace FdDraft.App
             draw.Items.Add(Item("_Arc (3 points)", "ARC", StartArc));
             draw.Items.Add(Item("_Text", "TEXT", StartText));
             draw.Items.Add(Item("_Leader", "LEADER", StartLeader));
+            draw.Items.Add(Item("_Dimension (aligned)", "DIM", StartDimension));
             var modify = new MenuItem { Header = "_Modify" };
             modify.Items.Add(Item("_Move", "MOVE", StartMove));
             modify.Items.Add(Item("_Rotate", "ROTATE", StartRotate));
@@ -254,6 +255,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Arc", "Draw an arc through three points (ARC)", StartArc));
             bar.Items.Add(B("Text", "Place text (TEXT)", StartText));
             bar.Items.Add(B("Leader", "Draw a leader with text (LEADER)", StartLeader));
+            bar.Items.Add(B("Dim", "Aligned dimension between two points (DIM)", StartDimension));
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Move", "Move the selected entities (MOVE)", StartMove));
             bar.Items.Add(B("Rotate", "Rotate the selected entities (ROTATE)", StartRotate));
@@ -337,6 +339,7 @@ namespace FdDraft.App
                 case "ARC": StartArc(); break;
                 case "TEXT": case "T": StartText(); break;
                 case "LEADER": case "LE": StartLeader(); break;
+                case "DIM": case "DIMALIGNED": case "DAL": StartDimension(); break;
                 case "MOVE": case "M": StartMove(); break;
                 case "ROTATE": case "RO": StartRotate(); break;
                 case "STRETCH": case "S": StartStretch(); break;
@@ -386,6 +389,7 @@ namespace FdDraft.App
             Log("  ARC     pick three points on the arc: start, a point on it, end");
             Log("  TEXT    pick a point, then type the text (or \"height text\", e.g. \"0.25 LOT 5\")");
             Log("  LEADER  pick the feature point then the text position, then type the text");
+            Log("  DIM     aligned dimension: pick two points, then the dimension line's position, then the text height");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
             Log("  MODEL / LAYOUT <name>   switch sheet · SNAP (F3) toggles snapping · Esc cancels the active tool");
@@ -1352,6 +1356,45 @@ namespace FdDraft.App
                 EndTool();
                 Rebuild(fit: false);
                 Log("  leader placed");
+            };
+        }
+
+        private double _lastDimHeight = DimensionBuilder.DefaultTextHeight;
+
+        private void StartDimension()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            string layer = CurrentLayer();
+            BeginTool("DIM");
+            Log("DIM  aligned dimension on layer " + layer + " - pick the two points to measure between (snap helps), then where the dimension line goes (Esc to cancel)");
+            _prompt.Text = "Dimension - first point:";
+            var pts = new List<Vec2>();
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                if (pts.Count == 1 && Vec2.Distance(pts[0], model.Value) < 1e-9) { Log("  that's the same point - pick the second point"); return; }
+                pts.Add(model.Value);
+                if (pts.Count == 1) { _canvas.RubberFrom = p; _prompt.Text = "Dimension - second point:"; Log("  from " + NE(model.Value)); return; }
+                if (pts.Count == 2) { _prompt.Text = "Dimension - dimension line location:"; Log("  to   " + NE(model.Value) + "  " + InverseResult.Between(pts[0], pts[1], _std?.BearingRotationDeg ?? 0)); return; }
+                _canvas.ToolActive = false; _canvas.RubberFrom = null; _awaitingPoint = null;
+                string def = _lastDimHeight.ToString("0.###", CultureInfo.InvariantCulture);
+                _prompt.Text = "Dimension - text height <" + def + ">:";
+                Log("  type the text height (Enter = " + def + ")");
+                var at = model.Value;
+                _awaitingLine = s =>
+                {
+                    double h = _lastDimHeight;
+                    if (s.Length > 0 && (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out h) || h <= 0)) { Log("  type a positive height, or Enter for " + def); return; }
+                    _lastDimHeight = h;
+                    var dim = DimensionBuilder.Aligned(pts[0], pts[1], at, _std?.DistanceDecimals ?? 3);
+                    dim.Layer = GetOrCreateLayer(layer);
+                    _undo.Push(new AddDimensionCommand(CurrentEntityOwner(), dim, h, "Dimension"));
+                    _dirty = true; UpdateTitle();
+                    EndTool();
+                    Rebuild(fit: false);
+                    Log("  dimension " + dim.Text + " placed");
+                };
             };
         }
 

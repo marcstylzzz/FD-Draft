@@ -940,5 +940,81 @@ namespace FdDraft.Tests
             sheet.Groups.Add(vp);
             Assert.True(BoxSelect.Handles(sheet, new Rect(0, 0, 10, 10), crossing: true).Count == 0, "linework clipped out of the viewport can't be boxed");
         }
+            // ---- aligned DIMENSION (v0.4.13) ------------------------------------------------------
+
+        public static void TestAlignedDimensionDrawsItsOwnPicture()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            // 10 m along east, dimension line 2 m north of it.
+            var dim = DimensionBuilder.Aligned(new Vec2(0, 0), new Vec2(10, 0), new Vec2(5, 2));
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, dim, 0.25, "Dimension"));
+            Assert.Equal("10.000", dim.Text, "text is the measured distance");
+            Assert.Near(2, dim.DefinitionPoint.Y, 1e-9, "dimension line stands 2 off");
+            var block = dim.Block;
+            Assert.True(block != null && doc.BlockRecords.Contains(block), "its picture block is registered in the document");
+            var lines = block!.Entities.OfType<ACadSharp.Entities.Line>().ToList();
+            Assert.Equal(3, lines.Count, "two extension lines and the dimension line");
+            Assert.Equal(2, block.Entities.OfType<ACadSharp.Entities.Solid>().Count(), "an arrowhead at each end");
+            var arrows = block.Entities.OfType<ACadSharp.Entities.Solid>().Select(a => a.FirstCorner.X).OrderBy(x => x).ToList();
+            Assert.Near(0, arrows[0], 1e-9, "first arrow tip on the first extension line");
+            Assert.Near(10, arrows[1], 1e-9, "second arrow tip on the second - not both at one end");
+            var text = block.Entities.OfType<ACadSharp.Entities.MText>().Single();
+            Assert.Near(0.25, text.Height, 1e-9, "text height as asked");
+            Assert.True(text.InsertPoint.Y > 2, "text sits above the dimension line");
+
+            var scene = new SceneBuilder(doc).Model();
+            Assert.True(scene.AllPrims().Count(pr => pr.Handle == dim.Handle) >= 6, "FD-Draft's own canvas draws the picture");
+
+            // MOVE redraws the picture where the dimension went.
+            undo.Push(TransformEntitiesCommand.Move(new ACadSharp.Entities.Entity[] { dim }, 100, 50, "Move"));
+            var dimLine = dim.Block.Entities.OfType<ACadSharp.Entities.Line>().OrderBy(l => Math.Abs(l.StartPoint.Y - l.EndPoint.Y)).First();
+            Assert.Near(52, dimLine.StartPoint.Y, 1e-9, "picture followed the move");
+            Assert.True(dim.Block.Entities.OfType<ACadSharp.Entities.MText>().Single().Height == 0.25, "and kept its text height");
+            undo.Undo(); undo.Undo();
+            Assert.True(!doc.ModelSpace.Entities.Contains(dim), "undo removes it");
+            undo.Redo();
+            Assert.True(doc.ModelSpace.Entities.Contains(dim) && dim.Block.Entities.Count > 0, "redo puts it back with its picture");
+        }
+
+        public static void TestAlignedDimensionSurvivesDwgRoundTrip()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            var dim = DimensionBuilder.Aligned(new Vec2(1, 1), new Vec2(4, 5), new Vec2(0, 3));
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, dim, 0.2, "Dimension"));
+            // Round-trip after an undo/redo too - the path most likely to leave a stale block.
+            undo.Undo(); undo.Redo();
+            string path = Path.Combine(Path.GetTempPath(), "fdd-dim-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            var d = back.ModelSpace.Entities.OfType<ACadSharp.Entities.DimensionAligned>().Single();
+            Assert.Near(5, d.Measurement, 1e-6, "3-4-5 measurement survives");
+            Assert.Equal("5.000", d.Text, "text survives");
+            Assert.True(d.Block != null && d.Block.Entities.OfType<ACadSharp.Entities.Line>().Count() == 3, "its picture block survives with its lines");
+            Assert.True(new SceneBuilder(back).Model().AllPrims().Any(), "and renders after reading back");
+        }
+            public static void TestCopyAndMirrorRebuildDimensionsWithTheirOwnPicture()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            var dim = DimensionBuilder.Aligned(new Vec2(0, 0), new Vec2(10, 0), new Vec2(5, 2));
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, dim, 0.3, "Dimension"));
+
+            var pairs = EntityOps.Copies(new ACadSharp.Entities.Entity[] { dim }, 0, 20);
+            undo.Push(EntityOps.AddBesideSources(pairs, "Copy")!);
+            var copy = (ACadSharp.Entities.DimensionAligned)pairs[0].Copy;
+            Assert.True(copy.Block != null && copy.Block != dim.Block, "the copy has a picture block of its own");
+            Assert.Near(22, copy.DefinitionPoint.Y, 1e-9, "copy moved");
+            Assert.Near(0.3, copy.Block!.Entities.OfType<ACadSharp.Entities.MText>().Single().Height, 1e-9, "and kept the text height");
+            Assert.Near(2, dim.Block.Entities.OfType<ACadSharp.Entities.Line>().Max(l => l.EndPoint.Y), 1, "the source's picture is untouched");
+
+            var mirrored = (ACadSharp.Entities.DimensionAligned)EntityOps.Mirrored(dim, new Vec2(0, -5), new Vec2(10, -5))!;
+            undo.Push(EntityOps.AddBesideSources(new[] { ((ACadSharp.Entities.Entity)dim, (ACadSharp.Entities.Entity)mirrored) }, "Mirror")!);
+            Assert.Near(-12, mirrored.DefinitionPoint.Y, 1e-9, "dimension line reflected to the other side");
+            Assert.Equal("10.000", mirrored.Text, "same measured text");
+            Assert.True(mirrored.Block.Entities.OfType<ACadSharp.Entities.MText>().Single().InsertPoint.Y > -12, "text still sits above its dimension line, reading forwards");
+        }
     }
 }
