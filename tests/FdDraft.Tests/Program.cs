@@ -1094,5 +1094,86 @@ namespace FdDraft.Tests
             Assert.Equal(4, pl.Count, "each span labelled");
             Assert.True(pl.Any(t => t.Value.StartsWith("R=5.") && t.Value.Contains("A=7.85")), "curve data: radius 5, arc length 7.854: " + string.Join(" | ", pl.Select(t => t.Value)));
         }
+            // ---- TRIM / EXTEND / FILLET (v0.4.16) -------------------------------------------------
+
+        private static ACadSharp.Entities.Line Ln(double x1, double y1, double x2, double y2) =>
+            new ACadSharp.Entities.Line(new CSMath.XYZ(x1, y1, 0), new CSMath.XYZ(x2, y2, 0));
+
+        public static void TestTrimShortensSplitsOrErases()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var line = Ln(0, 0, 10, 0);
+            var edgeA = Ln(3, -1, 3, 1); var edgeB = Ln(7, -1, 7, 1);
+            foreach (var e in new[] { line, edgeA, edgeB }) doc.ModelSpace.Entities.Add(e);
+            var undo = new UndoStack();
+
+            // Pick between the two edges: the middle goes, the line splits in two.
+            undo.Push(EntityOps.Trim(line, new Vec2(5, 0), new ACadSharp.Entities.Entity[] { edgeA, edgeB })!);
+            Assert.Near(3, line.EndPoint.X, 1e-9, "first piece ends at the first edge");
+            var rest = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Line>().Single(l => Math.Abs(l.StartPoint.X - 7) < 1e-9 && Math.Abs(l.StartPoint.Y) < 1e-9);
+            Assert.Near(10, rest.EndPoint.X, 1e-9, "second piece runs from the second edge to the old end");
+            undo.Undo();
+            Assert.Near(10, line.EndPoint.X, 1e-9, "undo restores the whole line");
+            Assert.True(!doc.ModelSpace.Entities.Contains(rest), "and removes the split-off piece");
+
+            // Pick past the last edge: just that end is cut back.
+            undo.Push(EntityOps.Trim(line, new Vec2(9, 0), new ACadSharp.Entities.Entity[] { edgeA, edgeB })!);
+            Assert.Near(0, line.StartPoint.X, 1e-9, "start kept"); Assert.Near(7, line.EndPoint.X, 1e-9, "end cut back to the edge");
+            Assert.True(EntityOps.Trim(Ln(0, 5, 10, 5), new Vec2(5, 5), new ACadSharp.Entities.Entity[] { edgeA }) == null, "an edge that doesn't cross it: nothing to trim");
+
+            // A circle edge cuts too.
+            var circle = new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(20, 0, 0), Radius = 2 };
+            var through = Ln(15, 0, 25, 0);
+            doc.ModelSpace.Entities.Add(through);
+            undo.Push(EntityOps.Trim(through, new Vec2(20, 0), new ACadSharp.Entities.Entity[] { circle })!);
+            Assert.Near(18, through.EndPoint.X, 1e-9, "trimmed out of the circle");
+        }
+
+        public static void TestExtendRunsTheNearerEndToTheBoundary()
+        {
+            var line = Ln(0, 0, 5, 0);
+            var wall = Ln(12, -5, 12, 5);
+            var arc = new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(0, 0, 0), Radius = 8, StartAngle = Math.PI / 2, EndAngle = 3 * Math.PI / 2 };
+            var undo = new UndoStack();
+            undo.Push(EntityOps.Extend(line, new Vec2(4.5, 0), new ACadSharp.Entities.Entity[] { wall, arc })!);
+            Assert.Near(12, line.EndPoint.X, 1e-9, "end runs out to the wall");
+            Assert.Near(0, line.StartPoint.X, 1e-9, "start untouched");
+            undo.Push(EntityOps.Extend(line, new Vec2(0.5, 0), new ACadSharp.Entities.Entity[] { wall, arc })!);
+            Assert.Near(-8, line.StartPoint.X, 1e-9, "start runs back to the arc (on its sweep only)");
+            undo.Undo(); undo.Undo();
+            Assert.Near(5, line.EndPoint.X, 1e-9, "undo restores");
+            Assert.True(EntityOps.Extend(Ln(0, 20, 5, 20), new Vec2(5, 20), new ACadSharp.Entities.Entity[] { wall }) == null, "nothing ahead: no extend");
+        }
+
+        public static void TestFilletRoundsACornerTangentially()
+        {
+            var doc = new ACadSharp.CadDocument();
+            // Two lot lines meeting at (10,0): one east from the origin, one north up to (10,10).
+            var l1 = Ln(0, 0, 10, 0); var l2 = Ln(10, 0, 10, 10);
+            doc.ModelSpace.Entities.Add(l1); doc.ModelSpace.Entities.Add(l2);
+            var undo = new UndoStack();
+            var cmd = EntityOps.Fillet(l1, new Vec2(2, 0), l2, new Vec2(10, 8), 3, out var arc);
+            undo.Push(cmd!);
+            Assert.Near(7, l1.EndPoint.X, 1e-9, "first line cut back to its tangent point");
+            Assert.Near(0, l1.StartPoint.X, 1e-9, "its far end kept");
+            Assert.Near(3, l2.StartPoint.Y, 1e-9, "second line cut back to its tangent point");
+            Assert.True(arc != null && doc.ModelSpace.Entities.Contains(arc), "the curve is added");
+            Assert.Near(7, arc!.Center.X, 1e-9, "centre E"); Assert.Near(3, arc.Center.Y, 1e-9, "centre N");
+            Assert.Near(3 * Math.PI / 2, arc.StartAngle, 1e-9, "curve starts at the first tangent point (south of centre)");
+            Assert.Near(0, arc.EndAngle, 1e-9, "and ends at the second (east of centre)");
+            undo.Undo();
+            Assert.Near(10, l1.EndPoint.X, 1e-9, "undo restores the corner");
+            Assert.True(!doc.ModelSpace.Entities.Contains(arc), "and removes the curve");
+
+            // Radius 0 closes a gap to a sharp corner; lines that cross keep the picked sides.
+            var a = Ln(0, 0, 8, 0); var b = Ln(10, -3, 10, 10);
+            doc.ModelSpace.Entities.Add(a); doc.ModelSpace.Entities.Add(b);
+            undo.Push(EntityOps.Fillet(a, new Vec2(1, 0), b, new Vec2(10, 6), 0, out var none)!);
+            Assert.True(none == null, "radius 0 adds no curve");
+            Assert.Near(10, a.EndPoint.X, 1e-9, "first line runs to the corner");
+            Assert.Near(0, b.StartPoint.Y, 1e-9, "second line trimmed to the corner, keeping the picked north part");
+            Assert.Near(10, b.EndPoint.Y, 1e-9, "north end kept");
+            Assert.True(EntityOps.Fillet(Ln(0, 0, 10, 0), new Vec2(1, 0), Ln(0, 5, 10, 5), new Vec2(1, 5), 1, out _) == null, "parallel lines can't be filleted");
+        }
     }
 }

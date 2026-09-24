@@ -158,6 +158,18 @@ it on Windows is the real test.
   tuple of the fields that change). This needs no course↔label link: it is
   purely geometric, one label at a time, and never re-derives any text - the
   deferred relabel-after-STRETCH problem is unaffected.
+- **TRIM / EXTEND / FILLET** (lines as targets): `EntityOps.SpansOf` turns
+  any Line, Arc, Circle (two half arcs) or polyline into
+  `Construct.Span`s, and `Construct.LineParamsOn` gives where a line's
+  carrier crosses each span (on the segment, or on the arc's sweep only).
+  TRIM removes the part around the pick between the nearest cuts either
+  side (the line is shortened, split - the second piece a `Duplicate` added
+  to the same block - or erased); EXTEND moves the end nearer the pick to
+  the first crossing beyond it. FILLET (`Construct.Fillet`) intersects the
+  two lines, keeps each one's end on its picked side of the corner, sets
+  back r/tan(θ/2) to the tangent points and adds a CCW Arc on the first
+  line's layer; r = 0 just runs both to the corner. All are single undo
+  steps. `LabelFlip` now uses `SpansOf` too.
 - **Polyline vertex insert/delete** (LwPolyline): `DeleteVertexCommand`
   removes one vertex and straightens the span that arrived at it (merging
   two arcs has no exact answer, and a straight join is what a drafter

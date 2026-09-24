@@ -220,6 +220,9 @@ namespace FdDraft.App
             modify.Items.Add(Item("_Copy", "COPY", StartCopy));
             modify.Items.Add(Item("M_irror", "MIRROR", StartMirror));
             modify.Items.Add(Item("_Offset", "OFFSET", StartOffset));
+            modify.Items.Add(Item("_Trim", "TRIM", () => StartTrimExtend(true)));
+            modify.Items.Add(Item("_Extend", "EXTEND", () => StartTrimExtend(false)));
+            modify.Items.Add(Item("Fi_llet", "FILLET", StartFillet));
             modify.Items.Add(Item("La_bel bearing/distance", "LABEL", LabelSelection));
             modify.Items.Add(Item("_Flip label to other side", "FLIP", FlipSelectedLabels));
             modify.Items.Add(new Separator());
@@ -266,6 +269,9 @@ namespace FdDraft.App
             bar.Items.Add(B("Copy", "Copy the selected entities (COPY)", StartCopy));
             bar.Items.Add(B("Mirror", "Mirror the selected entities across a line (MIRROR)", StartMirror));
             bar.Items.Add(B("Label", "Bearing/distance (or curve data) labels for the selected lines, arcs and polylines (LABEL)", LabelSelection));
+            bar.Items.Add(B("Trim", "Cut lines back at the selected edges, or at everything if nothing is selected (TRIM)", () => StartTrimExtend(true)));
+            bar.Items.Add(B("Extend", "Run line ends out to the selected boundaries, or to anything if nothing is selected (EXTEND)", () => StartTrimExtend(false)));
+            bar.Items.Add(B("Fillet", "Round (or close) the corner between two lines (FILLET)", StartFillet));
             bar.Items.Add(B("Flip", "Move the selected bearing/distance labels to the other side of their course (FLIP)", FlipSelectedLabels));
             bar.Items.Add(B("Offset", "Parallel copy of lines, arcs, circles and polylines at a distance (OFFSET)", StartOffset));
             bar.Items.Add(new Separator());
@@ -358,6 +364,9 @@ namespace FdDraft.App
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
                 case "OFFSET": case "O": StartOffset(); break;
+                case "TRIM": case "TR": StartTrimExtend(true); break;
+                case "EXTEND": case "EX": StartTrimExtend(false); break;
+                case "FILLET": case "F": StartFillet(); break;
                 case "ERASE": EraseSelected(); break;
                 case "LAYER": SetSelectionLayer(); break;
                 case "UNDO": case "U": DoUndo(); break;
@@ -389,6 +398,8 @@ namespace FdDraft.App
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
             Log("  MIRROR  select entities, MIRROR, pick two points on the mirror line, then Y/N to erase the originals");
             Log("  OFFSET  select lines/arcs/circles/polylines, OFFSET, type the distance, pick the side");
+            Log("  TRIM / EXTEND   select the edges (or nothing = everything), then pick lines to cut / lengthen (blank ends)");
+            Log("  FILLET  type the radius (0 = sharp corner), then pick two lines on the parts to keep");
             Log("  LAYER   select entities, LAYER, moves them to the toolbar's current layer   · or the Set Layer button");
             Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
             Log("          C closes back to the start and reports misclosure, precision and area; U undoes the last leg");
@@ -1849,6 +1860,97 @@ namespace FdDraft.App
             Rebuild(fit: false);
             UpdateProperties();
             Log("  flipped " + Plural(flipped, "label", "labels") + (flipped < labels.Count ? " (" + (labels.Count - flipped) + " had no course beside them)" : "") + "  (Ctrl+Z to undo)");
+        }
+
+        /// <summary>The Line in the current block (Model, or a paper-native sheet) nearest a
+        /// picked point, within a few screen pixels - how TRIM/EXTEND/FILLET pick their target.</summary>
+        private Line? LineNear(Vec2 model, double pixels = 8)
+        {
+            double tol = Math.Max(pixels / _canvas.View.Zoom, 1e-6);
+            Line? best = null; double bestD = tol;
+            foreach (var l in CurrentEntityOwner().Entities.OfType<Line>())
+            {
+                double d = Construct.DistanceToSegment(model, new Vec2(l.StartPoint.X, l.StartPoint.Y), new Vec2(l.EndPoint.X, l.EndPoint.Y), out _);
+                if (d < bestD) { bestD = d; best = l; }
+            }
+            return best;
+        }
+
+        /// <summary>TRIM (cut=true) / EXTEND: the selection is the cutting edges / boundaries -
+        /// or, with nothing selected, all linework in the block - then each picked line is
+        /// trimmed at, or extended to, them. Stays active until blank/Esc.</summary>
+        private void StartTrimExtend(bool cut)
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            string name = cut ? "TRIM" : "EXTEND";
+            var chosen = SelectedEntities();
+            bool all = chosen.Count == 0;
+            BeginTool(name);
+            _prompt.Text = cut ? "Trim - pick the part of a line to cut away (blank ends):" : "Extend - pick a line near the end to extend (blank ends):";
+            Log(name + "  " + (all ? "every line, arc, circle and polyline here is a " + (cut ? "cutting edge" : "boundary") : Plural(chosen.Count, "selected entity", "selected entities") + " as " + (cut ? "cutting edges" : "boundaries"))
+                + " - pick lines to " + (cut ? "trim" : "extend") + " (Esc/blank ends)");
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                var line = LineNear(model.Value);
+                if (line == null) { Log("  no line there - " + name + " works on lines; pick closer"); return; }
+                var edges = all ? CurrentEntityOwner().Entities.ToList() : chosen;
+                var cmd = cut ? EntityOps.Trim(line, model.Value, edges) : EntityOps.Extend(line, model.Value, edges);
+                if (cmd == null) { Log(cut ? "  nothing crosses that line to trim it at" : "  nothing lies ahead of that end to extend to"); return; }
+                _undo.Push(cmd);
+                _dirty = true; UpdateTitle();
+                Rebuild(fit: false);
+                Log("  " + (cut ? "trimmed" : "extended") + " - " + (line.Owner != null
+                    ? InverseResult.Between(new Vec2(line.StartPoint.X, line.StartPoint.Y), new Vec2(line.EndPoint.X, line.EndPoint.Y), _std?.BearingRotationDeg ?? 0).ToString()
+                    : "line erased (every part was cut away)"));
+            };
+            _awaitingLine = s => { if (s.Length == 0) { EndTool(); Log("  *" + name.ToLowerInvariant() + " complete*"); } else Log("  pick a line, or blank to end"); };
+        }
+
+        private double _lastFillet = 5.0;
+
+        /// <summary>FILLET: type a radius (0 = sharp corner), then pick the two lines on the
+        /// sides to keep; they're cut back to their tangent points and joined by the curve.</summary>
+        private void StartFillet()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            BeginTool("FILLET");
+            _canvas.ToolActive = false;
+            string def = _lastFillet.ToString("0.###", CultureInfo.InvariantCulture);
+            _prompt.Text = "Fillet - radius <" + def + ">:";
+            Log("FILLET  type the radius (Enter = " + def + ", 0 = sharp corner), then pick the two lines on the parts to keep");
+            double radius = -1;
+            Line? first = null; Vec2 firstPick = default;
+            _awaitingLine = s =>
+            {
+                if (s.Length == 0) radius = _lastFillet;
+                else if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out radius) || radius < 0) { Log("  type a radius of 0 or more"); return; }
+                _lastFillet = radius;
+                _awaitingLine = null;
+                _canvas.ToolActive = true;
+                _prompt.Text = "Fillet - first line:";
+                Log("  radius " + radius.ToString("0.###", CultureInfo.InvariantCulture) + " - pick the first line");
+            };
+            _awaitingPoint = p =>
+            {
+                if (radius < 0) { Log("  type the radius first"); return; }
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                var line = LineNear(model.Value);
+                if (line == null) { Log("  no line there - pick on a line"); return; }
+                if (first == null) { first = line; firstPick = model.Value; _prompt.Text = "Fillet - second line:"; Log("  first line picked - now the second"); return; }
+                if (line == first) { Log("  that's the same line - pick the other one"); return; }
+                var cmd = EntityOps.Fillet(first, firstPick, line, model.Value, radius, out var arc);
+                EndTool();
+                if (cmd == null) { Log("  can't fillet those - they're parallel, or too short for that radius"); return; }
+                _undo.Push(cmd);
+                _dirty = true; UpdateTitle();
+                Rebuild(fit: false);
+                Log(arc != null
+                    ? string.Format(CultureInfo.InvariantCulture, "  fillet R {0:F3}, arc length {1:F3}  (Ctrl+Z to undo)", arc.Radius, arc.Radius * Angles.Normalize2Pi(arc.EndAngle - arc.StartAngle))
+                    : "  corner closed  (Ctrl+Z to undo)");
+            };
         }
 
         private static string Plural(int n, string one, string many) => n + " " + (n == 1 ? one : many);

@@ -216,6 +216,109 @@ namespace FdDraft.Core.Geometry
             }
         }
 
+        // ---- TRIM / EXTEND / FILLET ------------------------------------------------------------
+
+        /// <summary>Where the infinite line p + t·d crosses a span, as parameters t (a Line
+        /// entity from p to p + d is t in 0..1).</summary>
+        public static List<double> LineParamsOn(Vec2 p, Vec2 d, Span s)
+        {
+            var result = new List<double>();
+            double dd = Vec2.Dot(d, d);
+            if (dd < 1e-24) return result;
+            if (!s.IsArc)
+            {
+                var x = LineLine(p, d, s.A, s.B - s.A);
+                if (x == null) return result;
+                DistanceToSegment(x.Value, s.A, s.B, out var onSeg);
+                if (Vec2.Distance(onSeg, x.Value) > 1e-9 * Math.Max(1, (s.B - s.A).Length)) return result;
+                result.Add(Vec2.Dot(x.Value - p, d) / dd);
+                return result;
+            }
+            foreach (var x in LineCircle(p, d, s.Center, s.Radius))
+            {
+                if (Vec2.Distance(s.Project(x), x) > 1e-9 * Math.Max(1, s.Radius)) continue; // off the arc's sweep
+                result.Add(Vec2.Dot(x - p, d) / dd);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// TRIM for a straight segment a-b cut by <paramref name="edges"/>: the part around the
+        /// picked parameter <paramref name="pick"/> (0..1 along a→b) between the nearest cuts
+        /// either side is removed. Returns the pieces that remain (zero, one or two), or null
+        /// when no edge crosses the segment on either side of the pick.
+        /// </summary>
+        public static List<(Vec2 A, Vec2 B)>? TrimSegment(Vec2 a, Vec2 b, double pick, IEnumerable<Span> edges)
+        {
+            var d = b - a;
+            double below = double.NegativeInfinity, above = double.PositiveInfinity;
+            const double eps = 1e-9;
+            foreach (var s in edges)
+                foreach (double t in LineParamsOn(a, d, s))
+                {
+                    if (t <= eps || t >= 1 - eps) continue;   // a cut at an existing end changes nothing
+                    if (t < pick && t > below) below = t;
+                    if (t > pick && t < above) above = t;
+                }
+            if (double.IsNegativeInfinity(below) && double.IsPositiveInfinity(above)) return null;
+            var keep = new List<(Vec2, Vec2)>();
+            if (!double.IsNegativeInfinity(below)) keep.Add((a, a + d * below));
+            if (!double.IsPositiveInfinity(above)) keep.Add((a + d * above, b));
+            return keep;
+        }
+
+        /// <summary>
+        /// EXTEND for a straight segment a-b: the end nearer <paramref name="pick"/> (0..1) is
+        /// run out along the segment to the first boundary it meets. Returns the new end
+        /// point and which end moved (true = b), or null when nothing lies ahead.
+        /// </summary>
+        public static (Vec2 Point, bool AtB)? ExtendSegment(Vec2 a, Vec2 b, double pick, IEnumerable<Span> boundaries)
+        {
+            var d = b - a;
+            bool atB = pick >= 0.5;
+            double best = atB ? double.PositiveInfinity : double.NegativeInfinity;
+            const double eps = 1e-9;
+            foreach (var s in boundaries)
+                foreach (double t in LineParamsOn(a, d, s))
+                {
+                    if (atB && t > 1 + eps && t < best) best = t;
+                    if (!atB && t < -eps && t > best) best = t;
+                }
+            if (double.IsInfinity(best)) return null;
+            return (a + d * best, atB);
+        }
+
+        /// <summary>
+        /// A fillet (corner rounding) of radius <paramref name="r"/> between two straight
+        /// courses, each given as (far end, end near the corner). Returns the two tangent
+        /// points, the arc's centre and its counter-clockwise start/end angles - or, for r = 0,
+        /// the corner itself (tangent points both at the intersection). Null when the courses
+        /// are parallel or too short to hold the curve.
+        /// </summary>
+        public static (Vec2 T1, Vec2 T2, Vec2 Center, double StartAngle, double EndAngle)? Fillet(Vec2 far1, Vec2 near1, Vec2 far2, Vec2 near2, double r)
+        {
+            var x = LineLine(far1, near1 - far1, far2, near2 - far2);
+            if (x == null) return null;
+            var X = x.Value;
+            var u1 = (far1 - X).Normalized();
+            var u2 = (far2 - X).Normalized();
+            if (u1.Length < 1e-12 || u2.Length < 1e-12) return null;
+            if (r <= 0) return (X, X, X, 0, 0);
+            double theta = Math.Acos(Math.Max(-1, Math.Min(1, Vec2.Dot(u1, u2))));
+            if (theta < 1e-9 || Math.PI - theta < 1e-9) return null;
+            double back = r / Math.Tan(theta / 2);
+            if (back > Vec2.Distance(X, far1) + 1e-9 || back > Vec2.Distance(X, far2) + 1e-9) return null;
+            var t1 = X + u1 * back;
+            var t2 = X + u2 * back;
+            var bis = (u1 + u2).Normalized();
+            var c = X + bis * (r / Math.Sin(theta / 2));
+            double a1 = Math.Atan2(t1.Y - c.Y, t1.X - c.X);
+            double a2 = Math.Atan2(t2.Y - c.Y, t2.X - c.X);
+            // The fillet is the short way round (< 180°) between the tangent points.
+            double ccw = Angles.Normalize2Pi(a2 - a1);
+            return ccw <= Math.PI ? (t1, t2, c, Angles.Normalize2Pi(a1), Angles.Normalize2Pi(a2)) : (t1, t2, c, Angles.Normalize2Pi(a2), Angles.Normalize2Pi(a1));
+        }
+
         public static List<Span> Spans(IList<Vec2> pts, IList<double>? bulges, bool closed)
         {
             var spans = new List<Span>();

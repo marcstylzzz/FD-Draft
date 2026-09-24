@@ -91,6 +91,12 @@ FdDraft.App project in Visual Studio).
 - **Flip** moves the selected bearing/distance (or curve-data) labels to
   the other side of their course, at the same gap and still reading the
   same way - select both labels of a course to swap them.
+- **Trim** and **Extend** cut lines back at, or run them out to, the
+  selected edges (or every line, arc, circle and polyline in view when
+  nothing is selected) - pick each line on the part to cut / near the end
+  to lengthen. **Fillet** rounds the corner between two lines with a typed
+  radius (a corner rounding or daylighting curve), cutting both back to
+  their tangent points; radius 0 closes them to a sharp corner.
 - **VXDEL** removes one polyline vertex (pick it) without erasing the
   whole polyline; **VXADD** adds one where you pick on a span - on an arc
   it lands on the curve and splits the arc exactly.
@@ -131,7 +137,7 @@ FdDraft.App project in Visual Studio).
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
-  COPY, MIRROR, OFFSET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, TRIM, EXTEND, FILLET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

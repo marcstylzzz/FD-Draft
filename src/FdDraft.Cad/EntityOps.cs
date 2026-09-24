@@ -261,6 +261,133 @@ namespace FdDraft.Cad.Editing
             }
         }
 
+        // ---- spans of linework (TRIM/EXTEND edges, FLIP courses) ----------------------------
+
+        /// <summary>An entity's linework as spans: a Line, an Arc, a Circle (as two half
+        /// arcs), or every span of an LwPolyline/Polyline2D. Empty for anything else.</summary>
+        public static IEnumerable<Construct.Span> SpansOf(Entity e)
+        {
+            switch (e)
+            {
+                case Line l:
+                    return new[] { Construct.Span.Straight(new Vec2(l.StartPoint.X, l.StartPoint.Y), new Vec2(l.EndPoint.X, l.EndPoint.Y)) };
+                case ACadSharp.Entities.Arc a:
+                {
+                    double sweep = a.EndAngle - a.StartAngle;
+                    while (sweep <= 0) sweep += Angles.TwoPi;
+                    var c = new Vec2(a.Center.X, a.Center.Y);
+                    return new[] { Construct.Span.Arc(Polar(c, a.Radius, a.StartAngle), Polar(c, a.Radius, a.EndAngle), c, a.Radius, sweep) };
+                }
+                case Circle ci:
+                {
+                    var c = new Vec2(ci.Center.X, ci.Center.Y);
+                    var e0 = Polar(c, ci.Radius, 0); var e1 = Polar(c, ci.Radius, Math.PI);
+                    return new[] { Construct.Span.Arc(e0, e1, c, ci.Radius, Math.PI), Construct.Span.Arc(e1, e0, c, ci.Radius, Math.PI) };
+                }
+                case LwPolyline lp when lp.Vertices.Count >= 2:
+                    return Construct.Spans(lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), lp.Vertices.Select(v => v.Bulge).ToList(), lp.IsClosed);
+                case Polyline2D p2 when p2.Vertices.Count >= 2:
+                    return Construct.Spans(p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), p2.Vertices.Select(v => v.Bulge).ToList(), p2.IsClosed);
+                default:
+                    return Array.Empty<Construct.Span>();
+            }
+        }
+
+        private static Vec2 Polar(Vec2 c, double r, double a) => new Vec2(c.X + r * Math.Cos(a), c.Y + r * Math.Sin(a));
+
+        /// <summary>How far along a line (0..1) the point nearest <paramref name="p"/> is.</summary>
+        public static double ParamAlong(Line l, Vec2 p)
+        {
+            var a = new Vec2(l.StartPoint.X, l.StartPoint.Y);
+            var d = new Vec2(l.EndPoint.X, l.EndPoint.Y) - a;
+            double dd = Vec2.Dot(d, d);
+            return dd < 1e-24 ? 0 : Math.Max(0, Math.Min(1, Vec2.Dot(p - a, d) / dd));
+        }
+
+        private static IEditCommand SetEnds(Line l, XYZ start, XYZ end, string description) =>
+            new SetPropertyCommand<(XYZ S, XYZ E)>((l.StartPoint, l.EndPoint), (start, end), v => { l.StartPoint = v.S; l.EndPoint = v.E; }, description);
+
+        private static XYZ W(Vec2 v, double z = 0) => new XYZ(v.X, v.Y, z);
+
+        /// <summary>
+        /// TRIM: removes the part of <paramref name="line"/> around <paramref name="pick"/>
+        /// between the nearest cutting edges either side (the line is shortened, split in two,
+        /// or - if every part is cut away - erased). Null when no edge crosses it.
+        /// </summary>
+        public static IEditCommand? Trim(Line line, Vec2 pick, IEnumerable<Entity> edges)
+        {
+            var a = new Vec2(line.StartPoint.X, line.StartPoint.Y);
+            var b = new Vec2(line.EndPoint.X, line.EndPoint.Y);
+            var pieces = Construct.TrimSegment(a, b, ParamAlong(line, pick), edges.Where(e => e != line).SelectMany(SpansOf));
+            if (pieces == null) return null;
+            if (pieces.Count == 0) return new RemoveEntitiesCommand(new Entity[] { line }, "Trim");
+            var first = SetEnds(line, W(pieces[0].A, line.StartPoint.Z), W(pieces[0].B, line.EndPoint.Z), "Trim");
+            if (pieces.Count == 1 || !(line.Owner is ACadSharp.Tables.BlockRecord owner)) return first;
+            var rest = (Line)Duplicate(line);
+            rest.StartPoint = W(pieces[1].A, line.StartPoint.Z); rest.EndPoint = W(pieces[1].B, line.EndPoint.Z);
+            return new CompositeCommand(new[] { first, new AddEntitiesCommand(owner, new Entity[] { rest }, "Trim") }, "Trim");
+        }
+
+        /// <summary>EXTEND: runs the end of <paramref name="line"/> nearer the pick out to the
+        /// first boundary ahead of it. Null when nothing lies ahead.</summary>
+        public static IEditCommand? Extend(Line line, Vec2 pick, IEnumerable<Entity> boundaries)
+        {
+            var a = new Vec2(line.StartPoint.X, line.StartPoint.Y);
+            var b = new Vec2(line.EndPoint.X, line.EndPoint.Y);
+            var hit = Construct.ExtendSegment(a, b, ParamAlong(line, pick), boundaries.Where(e => e != line).SelectMany(SpansOf));
+            if (hit == null) return null;
+            return hit.Value.AtB
+                ? SetEnds(line, line.StartPoint, W(hit.Value.Point, line.EndPoint.Z), "Extend")
+                : SetEnds(line, W(hit.Value.Point, line.StartPoint.Z), line.EndPoint, "Extend");
+        }
+
+        /// <summary>
+        /// FILLET: rounds the corner between two lines with an arc of radius
+        /// <paramref name="radius"/> (0 = just run both lines to their corner). Each line keeps
+        /// the part on its picked side of the corner and is cut back to its tangent point; the
+        /// arc goes on the first line's layer. Null when the lines are parallel or too short.
+        /// </summary>
+        public static IEditCommand? Fillet(Line l1, Vec2 pick1, Line l2, Vec2 pick2, double radius, out ACadSharp.Entities.Arc? arc)
+        {
+            arc = null;
+            if (l1 == l2 || !(l1.Owner is ACadSharp.Tables.BlockRecord owner)) return null;
+            var (far1, near1, atEnd1) = KeptSide(l1, l2, pick1);
+            var (far2, near2, atEnd2) = KeptSide(l2, l1, pick2);
+            var f = Construct.Fillet(far1, near1, far2, near2, radius);
+            if (f == null) return null;
+            var edits = new List<IEditCommand>
+            {
+                atEnd1 ? SetEnds(l1, W(far1, l1.StartPoint.Z), W(f.Value.T1, l1.EndPoint.Z), "Fillet") : SetEnds(l1, W(f.Value.T1, l1.StartPoint.Z), W(far1, l1.EndPoint.Z), "Fillet"),
+                atEnd2 ? SetEnds(l2, W(far2, l2.StartPoint.Z), W(f.Value.T2, l2.EndPoint.Z), "Fillet") : SetEnds(l2, W(f.Value.T2, l2.StartPoint.Z), W(far2, l2.EndPoint.Z), "Fillet"),
+            };
+            if (radius > 0)
+            {
+                arc = new ACadSharp.Entities.Arc
+                {
+                    Center = W(f.Value.Center), Radius = radius, StartAngle = f.Value.StartAngle, EndAngle = f.Value.EndAngle,
+                    Layer = l1.Layer, LineType = l1.LineType,
+                };
+                edits.Add(new AddEntitiesCommand(owner, new Entity[] { arc }, "Fillet"));
+            }
+            return new CompositeCommand(edits, "Fillet");
+        }
+
+        /// <summary>For a line meeting another at their (extended) intersection: the end it keeps
+        /// (on the picked side of the corner), the end that moves to the corner, and whether that
+        /// moving end is the line's EndPoint.</summary>
+        private static (Vec2 Far, Vec2 Near, bool NearIsEnd) KeptSide(Line l, Line other, Vec2 pick)
+        {
+            var a = new Vec2(l.StartPoint.X, l.StartPoint.Y);
+            var b = new Vec2(l.EndPoint.X, l.EndPoint.Y);
+            var oa = new Vec2(other.StartPoint.X, other.StartPoint.Y);
+            var ob = new Vec2(other.EndPoint.X, other.EndPoint.Y);
+            var x = Construct.LineLine(a, b - a, oa, ob - oa);
+            if (x == null) return Vec2.Distance(pick, a) > Vec2.Distance(pick, b) ? (a, b, true) : (b, a, false);
+            // Keep the end on the same side of the corner as the pick.
+            double side = Vec2.Dot(pick - x.Value, b - a);
+            return side >= 0 ? (b, a, false) : (a, b, true);
+        }
+
         private static double OffsetRadius(XYZ center, double radius, double distance, Vec2 toward)
         {
             double dc = Vec2.Distance(new Vec2(center.X, center.Y), toward);
@@ -287,15 +414,8 @@ namespace FdDraft.Cad.Editing
             course = default; distance = double.MaxValue; bool found = false;
             foreach (var e in candidates)
             {
-                IEnumerable<Construct.Span> spans = e switch
-                {
-                    Line l => new[] { Construct.Span.Straight(new Vec2(l.StartPoint.X, l.StartPoint.Y), new Vec2(l.EndPoint.X, l.EndPoint.Y)) },
-                    ACadSharp.Entities.Arc a => new[] { ArcSpan(a) },
-                    LwPolyline lp when lp.Vertices.Count >= 2 => Construct.Spans(lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), lp.Vertices.Select(v => v.Bulge).ToList(), lp.IsClosed),
-                    Polyline2D p2 when p2.Vertices.Count >= 2 => Construct.Spans(p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), p2.Vertices.Select(v => v.Bulge).ToList(), p2.IsClosed),
-                    _ => Array.Empty<Construct.Span>(),
-                };
-                foreach (var s in spans)
+                if (e is Circle && !(e is ACadSharp.Entities.Arc)) continue; // a circle isn't a course
+                foreach (var s in EntityOps.SpansOf(e))
                 {
                     if (Vec2.Distance(s.A, s.B) < 1e-9) continue;
                     double d = s.DistanceAndSide(p, out _);
@@ -303,16 +423,6 @@ namespace FdDraft.Cad.Editing
                 }
             }
             return found;
-        }
-
-        private static Construct.Span ArcSpan(ACadSharp.Entities.Arc a)
-        {
-            double sweep = a.EndAngle - a.StartAngle;
-            while (sweep <= 0) sweep += Angles.TwoPi;
-            var c = new Vec2(a.Center.X, a.Center.Y);
-            var s = new Vec2(c.X + a.Radius * Math.Cos(a.StartAngle), c.Y + a.Radius * Math.Sin(a.StartAngle));
-            var e = new Vec2(c.X + a.Radius * Math.Cos(a.EndAngle), c.Y + a.Radius * Math.Sin(a.EndAngle));
-            return Construct.Span.Arc(s, e, c, a.Radius, sweep);
         }
 
         /// <summary>A point mirrored to the other side of a course: across its line, or

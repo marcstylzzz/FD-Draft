@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.15 (`Directory.Build.props`).
+- **Current version:** 0.4.16 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  54 tests as of v0.4.15, all passing.
+  57 tests as of v0.4.16, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -135,10 +135,13 @@ on Windows; that's still Marc's job when he runs a build.
 - **v0.4.14**: VPSCALE - change the current sheet's scale in
   place (viewport zoom, title-block "1:n", scale-bar ticks, optional resize
   of model labels/symbols/dimension text), one undo step.
-- **v0.4.15** (current): LABEL - bearing/distance/curve labels for hand-
+- **v0.4.15**: LABEL - bearing/distance/curve labels for hand-
   drawn linework, built by the pipeline's own rules (Annotator's label
   construction factored into public `StraightCourseLabels`/`ArcCourseLabels`,
   which the pipeline now calls too) at the sheet's scale.
+- **v0.4.16** (current): TRIM, EXTEND (lines, against any linework or the
+  selection) and FILLET (corner rounding with a typed radius, 0 = sharp
+  corner). Geometry in `Construct.TrimSegment/ExtendSegment/Fillet`.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
