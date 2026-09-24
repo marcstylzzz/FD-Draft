@@ -121,6 +121,20 @@ it on Windows is the real test.
 - Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
   Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
   template and standards.
+- **Opening any DWG** (not just FD-Draft's own output) logs, per sheet, how
+  much it actually has drawn on it - a real firm's legacy DWG commonly
+  carries several unused blank sheet-size layouts (leftover template
+  options) alongside the one actually plotted, and they look identical in
+  the tab strip. FD-Draft renders each sheet's own display list and counts
+  the primitives; a sheet at or under the title-block's own handful is
+  flagged blank, so the drafter isn't left guessing which tab has the plan.
+  Draft (Ctrl+D) is unrelated to whichever DWG is open - it always drafts
+  from a raw FD-Pro job folder onto the template - so opening a legacy DWG
+  with no FD-Pro data behind it correctly leaves nothing to draft; view,
+  edit and plot it directly instead. If the opened file does look like
+  FD-Draft's own prior output (`<job>\export\fd-draft\<job>.dwg`), its job
+  folder is picked up automatically so Ctrl+D re-drafts that same job
+  rather than whatever was drafted last.
 
 ### Next in the app
 

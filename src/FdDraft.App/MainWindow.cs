@@ -365,7 +365,9 @@ namespace FdDraft.App
                 bool isTemplate = path.EndsWith(".dwt", StringComparison.OrdinalIgnoreCase);
                 SetDocument(doc, isTemplate ? null : path, dirty: false);
                 _job = null; _points.ItemsSource = null; FillCodes();
-                Log("  " + System.IO.Path.GetFileName(path) + ": " + doc.Layers.Count + " layers, " + doc.ModelSpace.Entities.Count() + " model entities, sheets: " + string.Join(", ", SheetNames(doc).Skip(1)));
+                Log("  " + System.IO.Path.GetFileName(path) + ": " + doc.Layers.Count + " layers, " + doc.ModelSpace.Entities.Count() + " model entities");
+                LogSheetContents(doc);
+                SuggestJobFolder(path);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException || ex is NotSupportedException || ex is ArgumentException)
             {
@@ -471,6 +473,58 @@ namespace FdDraft.App
             if (fit) _canvas.ZoomExtents();
             foreach (var n in scene.Notes) Log("  " + n);
             UpdateStatus();
+        }
+
+        /// <summary>
+        /// Logs, per sheet, whether it actually has anything drawn on it - a legacy DWG
+        /// typically carries several unused blank sheet-size options alongside the one
+        /// actually plotted, and they look identical in the tab strip. Counts the display
+        /// primitives FD-Draft would draw for each sheet (title block/frame linework only
+        /// counts as "blank"; anything past a small handful of prims is a real plan).
+        /// </summary>
+        private void LogSheetContents(CadDocument doc)
+        {
+            var builder = new SceneBuilder(doc);
+            var counts = new List<(string Name, int Prims)>();
+            foreach (var name in SheetNames(doc).Skip(1))
+            {
+                try
+                {
+                    var scene = builder.Layout(name);
+                    counts.Add((name, scene.Groups.Sum(g => g.Prims.Count)));
+                }
+                catch { /* a malformed layout just won't get a count */ }
+            }
+            if (counts.Count == 0) return;
+            const int blankThreshold = 25; // a title block alone is usually well under this
+            var drawn = counts.Where(c => c.Prims > blankThreshold).ToList();
+            Log("  sheets: " + string.Join(", ", counts.Select(c => c.Name + " (" + c.Prims + (c.Prims <= blankThreshold ? ", blank" : "") + ")")));
+            if (drawn.Count > 0 && drawn.Count < counts.Count)
+                Log("  the plan looks drawn on: " + string.Join(", ", drawn.Select(c => c.Name)) + " - the other sheets are unused blank options from the template.");
+        }
+
+        /// <summary>
+        /// If the opened file looks like one FD-Draft itself wrote (a job's own
+        /// "&lt;job&gt;\export\fd-draft\&lt;job&gt;.dwg"), point the Draft dialog's job folder
+        /// at that job so Ctrl+D re-drafts the same job instead of whatever job was drafted
+        /// last (which may be unrelated, e.g. the sample job).
+        /// </summary>
+        private void SuggestJobFolder(string path)
+        {
+            try
+            {
+                var dir = System.IO.Path.GetDirectoryName(path);
+                if (dir == null || !dir.EndsWith(System.IO.Path.Combine("export", "fd-draft"), StringComparison.OrdinalIgnoreCase)) return;
+                var jobFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(dir));
+                if (jobFolder == null || !Directory.Exists(jobFolder)) return;
+                _settings.LastJobFolder = jobFolder;
+                _settings.Save();
+                Log("  this looks like an FD-Draft output; Ctrl+D will re-draft " + jobFolder);
+            }
+            catch (Exception ex) when (ex is IOException || ex is ArgumentException)
+            {
+                // best-effort convenience only
+            }
         }
 
         private void FillLayers()
