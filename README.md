@@ -79,9 +79,10 @@ FdDraft.App project in Visual Studio).
   own (a real MSCAD job commonly draws straight onto paper on the sheet it
   actually used).
 - **Codes** panel lists the job's codes; **Properties** summarises the
-  current selection and, for a single TEXT or MTEXT, lets you retype its
-  content right there (Enter or **Apply text**). **Set Layer** on the
-  toolbar reassigns the whole selection to the current layer.
+  current selection and, for a single entity, grows editable fields for it:
+  a TEXT/MTEXT's content (Enter or **Apply text**), and a text's height or a
+  Circle/Arc's radius (**Apply**). **Set Layer** on the toolbar reassigns
+  the whole selection to the current layer.
 - Opening any DWG logs which sheets actually have a plan drawn on them - a
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.

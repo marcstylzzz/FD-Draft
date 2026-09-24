@@ -147,6 +147,29 @@ namespace FdDraft.Cad.Editing
         public void Redo() { if (_text != null) _text.Value = _newValue; if (_mtext != null) _mtext.Value = _newValue; }
     }
 
+    /// <summary>Sets a single scalar property (a Circle/Arc's radius, a text's height or
+    /// rotation, ...) via a setter delegate, undoable. One generic command instead of a
+    /// bespoke class per property, since there is nothing property-specific about undo here.</summary>
+    public sealed class SetPropertyCommand<T> : IEditCommand
+    {
+        private readonly Action<T> _set;
+        private readonly T _old;
+        private readonly T _new;
+        public string Description { get; }
+
+        public SetPropertyCommand(T oldValue, T newValue, Action<T> set, string description)
+        {
+            _old = oldValue;
+            _new = newValue;
+            _set = set;
+            Description = description;
+            _set(_new);
+        }
+
+        public void Undo() => _set(_old);
+        public void Redo() => _set(_new);
+    }
+
     /// <summary>One endpoint of a Line, or one vertex of an LwPolyline/Polyline2D, that
     /// <see cref="StretchVertexCommand"/> can move independently of the rest of the entity.
     /// Found by <see cref="VertexEditing.FindCoincident"/>.</summary>

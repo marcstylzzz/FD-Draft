@@ -55,6 +55,9 @@ namespace FdDraft.App
         private readonly TextBox _properties = new TextBox { IsReadOnly = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), AcceptsReturn = true };
         private readonly TextBox _textEdit = new TextBox { IsEnabled = false, Margin = new Thickness(4) };
         private readonly Button _textEditApply = new Button { Content = "Apply text", IsEnabled = false, Margin = new Thickness(4, 0, 4, 4), Padding = new Thickness(6, 2, 6, 2) };
+        private readonly TextBlock _numberLabel = new TextBlock { Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11, Visibility = Visibility.Collapsed };
+        private readonly TextBox _numberEdit = new TextBox { IsEnabled = false, Margin = new Thickness(4), Visibility = Visibility.Collapsed };
+        private readonly Button _numberEditApply = new Button { Content = "Apply", IsEnabled = false, Margin = new Thickness(4, 0, 4, 4), Padding = new Thickness(6, 2, 6, 2), Visibility = Visibility.Collapsed };
         private readonly ListView _codes = new ListView();
         private readonly UndoStack _undo = new UndoStack();
 
@@ -114,6 +117,9 @@ namespace FdDraft.App
             editRow.Children.Add(new TextBlock { Text = "Text of the selected label:", Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
             editRow.Children.Add(_textEdit);
             editRow.Children.Add(_textEditApply);
+            editRow.Children.Add(_numberLabel);
+            editRow.Children.Add(_numberEdit);
+            editRow.Children.Add(_numberEditApply);
             DockPanel.SetDock(editRow, Dock.Bottom);
             propsPanel.Children.Add(editRow);
             propsPanel.Children.Add(_properties);
@@ -145,6 +151,8 @@ namespace FdDraft.App
             _points.MouseDoubleClick += (s, e) => { if (_points.SelectedItem is PointRow r) ZoomToPoint(r); };
             _textEditApply.Click += (s, e) => ApplySelectedTextEdit();
             _textEdit.KeyDown += (s, e) => { if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift) { ApplySelectedTextEdit(); e.Handled = true; } };
+            _numberEditApply.Click += (s, e) => ApplySelectedNumberEdit();
+            _numberEdit.KeyDown += (s, e) => { if (e.Key == Key.Enter) { ApplySelectedNumberEdit(); e.Handled = true; } };
             _canvas.CursorMoved += OnCursor;
             _canvas.Picked += OnPick;
             _canvas.EntityClicked += OnEntityClicked;
@@ -774,12 +782,48 @@ namespace FdDraft.App
             Log("  text updated  (Ctrl+Z to undo)");
         }
 
+        /// <summary>Commits an edit made in the Properties tab's number box - a Circle/Arc's
+        /// radius, or a TEXT/MTEXT's height - to the single selected entity, as an undo step.</summary>
+        private void ApplySelectedNumberEdit()
+        {
+            var entities = SelectedEntities();
+            if (entities.Count != 1) return;
+            if (!double.TryParse(_numberEdit.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || value <= 0)
+            {
+                Log("  not a positive number");
+                return;
+            }
+            string what;
+            switch (entities[0])
+            {
+                // Arc must come before Circle: Arc derives from Circle in ACadSharp.
+                case Arc a when Math.Abs(a.Radius - value) > 1e-12:
+                    _undo.Push(new SetPropertyCommand<double>(a.Radius, value, v => a.Radius = v, "Set radius")); what = "radius"; break;
+                case Circle c when Math.Abs(c.Radius - value) > 1e-12:
+                    _undo.Push(new SetPropertyCommand<double>(c.Radius, value, v => c.Radius = v, "Set radius")); what = "radius"; break;
+                case TextEntity te when Math.Abs(te.Height - value) > 1e-12:
+                    _undo.Push(new SetPropertyCommand<double>(te.Height, value, v => te.Height = v, "Set text height")); what = "text height"; break;
+                case MText mt when Math.Abs(mt.Height - value) > 1e-12:
+                    _undo.Push(new SetPropertyCommand<double>(mt.Height, value, v => mt.Height = v, "Set text height")); what = "text height"; break;
+                default:
+                    return;
+            }
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            Log("  " + what + " updated  (Ctrl+Z to undo)");
+        }
+
         private void UpdateProperties()
         {
             var entities = SelectedEntities();
             _textEdit.Text = "";
             _textEdit.IsEnabled = false;
             _textEditApply.IsEnabled = false;
+            _numberEdit.Text = "";
+            _numberEdit.IsEnabled = false;
+            _numberEditApply.IsEnabled = false;
+            _numberLabel.Visibility = _numberEdit.Visibility = _numberEditApply.Visibility = Visibility.Collapsed;
             if (entities.Count == 1)
             {
                 string? content = entities[0] switch { TextEntity te => te.Value, MText mt => mt.Value, _ => null };
@@ -788,6 +832,23 @@ namespace FdDraft.App
                     _textEdit.Text = content;
                     _textEdit.IsEnabled = true;
                     _textEditApply.IsEnabled = true;
+                }
+                // Arc must come before Circle: Arc derives from Circle in ACadSharp.
+                (string Label, double Value)? number = entities[0] switch
+                {
+                    Arc a => ("Radius:", a.Radius),
+                    Circle c => ("Radius:", c.Radius),
+                    TextEntity te => ("Text height:", te.Height),
+                    MText mt => ("Text height:", mt.Height),
+                    _ => null,
+                };
+                if (number != null)
+                {
+                    _numberLabel.Text = number.Value.Label;
+                    _numberEdit.Text = number.Value.Value.ToString("0.####", CultureInfo.InvariantCulture);
+                    _numberLabel.Visibility = _numberEdit.Visibility = _numberEditApply.Visibility = Visibility.Visible;
+                    _numberEdit.IsEnabled = true;
+                    _numberEditApply.IsEnabled = true;
                 }
             }
             if (entities.Count == 0) { _properties.Text = "(nothing selected)"; return; }

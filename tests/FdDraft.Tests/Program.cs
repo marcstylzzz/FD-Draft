@@ -490,6 +490,24 @@ namespace FdDraft.Tests
             Assert.True(mtext.Value == "N45-30-00E", "undo mtext edit restores the old text");
         }
 
+        public static void TestSetPropertyCommandOnRadiusAndTextHeight()
+        {
+            var undo = new UndoStack();
+            var circle = new ACadSharp.Entities.Circle { Radius = 5 };
+            undo.Push(new SetPropertyCommand<double>(circle.Radius, 8, v => circle.Radius = v, "Set radius"));
+            Assert.Near(8, circle.Radius, 1e-9, "radius changed");
+            undo.Undo();
+            Assert.Near(5, circle.Radius, 1e-9, "undo radius restores the old value");
+            undo.Redo();
+            Assert.Near(8, circle.Radius, 1e-9, "redo radius reapplies it");
+
+            var text = new ACadSharp.Entities.TextEntity { Value = "LOT 5", Height = 0.2 };
+            undo.Push(new SetPropertyCommand<double>(text.Height, 0.3, v => text.Height = v, "Set text height"));
+            Assert.Near(0.3, text.Height, 1e-9, "text height changed");
+            undo.Undo();
+            Assert.Near(0.2, text.Height, 1e-9, "undo text height restores the old value");
+        }
+
         public static void TestStretchVertexKeepsConnectedLinesTogether()
         {
             var doc = new ACadSharp.CadDocument();

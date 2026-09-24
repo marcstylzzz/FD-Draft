@@ -137,11 +137,14 @@ it on Windows is the real test.
 - **Codes** panel lists the job's `codes.csv` (key, description, layer).
   **Properties** panel summarises the current selection (layer, handle, and
   type-specific geometry: a line's bearing/distance, an arc or circle's
-  radius, a text's content). When exactly one TEXT or MTEXT is selected, its
-  content is also editable right there (Enter or **Apply text**) via
-  `EditTextCommand` - an ordinary undo step. **Set Layer** on the toolbar
-  reassigns the whole selection to the current layer via
-  `ChangeLayerCommand`, also undoable.
+  radius, a text's content). When exactly one entity is selected, the panel
+  also grows editable fields for that type - TEXT/MTEXT get their content
+  (Enter or **Apply text**) via `EditTextCommand`, and a text's height or a
+  Circle/Arc's radius get a numeric field (**Apply**) via the generic
+  `SetPropertyCommand<T>`, which takes a setter delegate so one command class
+  covers any scalar property rather than a bespoke class per field. All
+  ordinary undo steps. **Set Layer** on the toolbar reassigns the whole
+  selection to the current layer via `ChangeLayerCommand`, also undoable.
 - Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
   Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
   template and standards.
@@ -182,9 +185,10 @@ it on Windows is the real test.
   real dimension-style-driven landing gap; a true DIMENSION entity (for
   distance/angle dimensioning, as opposed to a leader) is likewise not built
   yet.
-- Properties editing so far covers layer and text content; still read-only
-  for everything else (a line's endpoints, an arc/circle's radius, a text's
-  height or rotation).
+- Properties editing now covers layer, text content, a text's height and a
+  Circle/Arc's radius; still read-only for a line's endpoints (STRETCH is
+  the way to move one, but there's no numeric-entry alternative), a text's
+  rotation, and an arc's start/end angle.
 
 ## After that: the document assistant (hybrid)
 
