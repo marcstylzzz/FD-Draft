@@ -11,7 +11,8 @@ views, inverses, saves DWG and plots PDF - and now edits: select, erase,
 move, rotate, retype text, reassign layers, undo/redo, and draw lines by
 bearing and distance, arcs, text and leaders. The command-line tool runs the
 same engine. The document assistant (plans, PINs, deeds) comes next. See
-`docs/ARCHITECTURE.md`.
+`docs/ARCHITECTURE.md` for how it's built, and **`docs/PROGRESS.md`** for
+current status and what's next - read that one first in a new chat/session.
 
 ```
 FD-Draft/
