@@ -211,7 +211,9 @@ namespace FdDraft.App
             draw.Items.Add(Item("_Arc (3 points)", "ARC", StartArc));
             draw.Items.Add(Item("_Text", "TEXT", StartText));
             draw.Items.Add(Item("_Leader", "LEADER", StartLeader));
-            draw.Items.Add(Item("_Dimension (aligned)", "DIM", StartDimension));
+            draw.Items.Add(Item("_Dimension (aligned)", "DIM", () => StartDimension()));
+            draw.Items.Add(Item("Dimension (li_near)", "DIMLIN", () => StartDimension(linear: true)));
+            draw.Items.Add(Item("Dimension (_radius)", "DIMRAD", StartRadiusDimension));
             var modify = new MenuItem { Header = "_Modify" };
             modify.Items.Add(Item("_Move", "MOVE", StartMove));
             modify.Items.Add(Item("_Rotate", "ROTATE", StartRotate));
@@ -263,7 +265,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Arc", "Draw an arc through three points (ARC)", StartArc));
             bar.Items.Add(B("Text", "Place text (TEXT)", StartText));
             bar.Items.Add(B("Leader", "Draw a leader with text (LEADER)", StartLeader));
-            bar.Items.Add(B("Dim", "Aligned dimension between two points (DIM)", StartDimension));
+            bar.Items.Add(B("Dim", "Aligned dimension between two points (DIM; DIMLIN for horizontal/vertical, DIMRAD for a radius)", () => StartDimension()));
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Move", "Move the selected entities (MOVE)", StartMove));
             bar.Items.Add(B("Rotate", "Rotate the selected entities (ROTATE)", StartRotate));
@@ -353,6 +355,8 @@ namespace FdDraft.App
                 case "TEXT": case "T": StartText(); break;
                 case "LEADER": case "LE": StartLeader(); break;
                 case "DIM": case "DIMALIGNED": case "DAL": StartDimension(); break;
+                case "DIMLIN": case "DLI": StartDimension(linear: true); break;
+                case "DIMRAD": case "DRA": StartRadiusDimension(); break;
                 case "MOVE": case "M": StartMove(); break;
                 case "ROTATE": case "RO": StartRotate(); break;
                 case "STRETCH": case "S": StartStretch(); break;
@@ -415,6 +419,8 @@ namespace FdDraft.App
             Log("  TEXT    pick a point, then type the text (or \"height text\", e.g. \"0.25 LOT 5\")");
             Log("  LEADER  pick the feature point then the text position, then type the text");
             Log("  DIM     aligned dimension: pick two points, then the dimension line's position, then the text height");
+            Log("  DIMLIN  linear dimension: as DIM, measuring dE or dN by where you place it (or type H, V or an angle)");
+            Log("  DIMRAD  radius dimension: pick on an arc or circle, then the text height");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
             Log("  VPSCALE [1:n]   change the current sheet's scale: viewport, title-block scale, scale bar, and label sizes");
@@ -1387,14 +1393,42 @@ namespace FdDraft.App
 
         private double _lastDimHeight = DimensionBuilder.DefaultTextHeight;
 
-        private void StartDimension()
+        /// <summary>The last step every dimension tool shares: type the text height (Enter
+        /// keeps the last one), then build and add the dimension.</summary>
+        private void AskDimensionHeightThen(Func<Dimension> build, string layer)
+        {
+            _canvas.ToolActive = false; _canvas.RubberFrom = null; _awaitingPoint = null;
+            string def = _lastDimHeight.ToString("0.###", CultureInfo.InvariantCulture);
+            _prompt.Text = "Dimension - text height <" + def + ">:";
+            Log("  type the text height (Enter = " + def + ")");
+            _awaitingLine = s =>
+            {
+                double h = _lastDimHeight;
+                if (s.Length > 0 && (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out h) || h <= 0)) { Log("  type a positive height, or Enter for " + def); return; }
+                _lastDimHeight = h;
+                var dim = build();
+                dim.Layer = GetOrCreateLayer(layer);
+                _undo.Push(new AddDimensionCommand(CurrentEntityOwner(), dim, h, "Dimension"));
+                _dirty = true; UpdateTitle();
+                EndTool();
+                Rebuild(fit: false);
+                Log("  dimension " + dim.Text + " placed");
+            };
+        }
+
+        /// <summary>DIM (aligned) and DIMLIN (linear): two points, then where the dimension
+        /// line goes - for DIMLIN, typing H, V or an angle first fixes the direction measured.</summary>
+        private void StartDimension(bool linear = false)
         {
             if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
             string layer = CurrentLayer();
-            BeginTool("DIM");
-            Log("DIM  aligned dimension on layer " + layer + " - pick the two points to measure between (snap helps), then where the dimension line goes (Esc to cancel)");
+            string name = linear ? "DIMLIN" : "DIM";
+            BeginTool(name);
+            Log(name + "  " + (linear ? "linear" : "aligned") + " dimension on layer " + layer + " - pick the two points to measure between (snap helps), then where the dimension line goes (Esc to cancel)");
             _prompt.Text = "Dimension - first point:";
             var pts = new List<Vec2>();
+            double? rotation = null;
+            int decimals = _std?.DistanceDecimals ?? 3;
             _awaitingPoint = p =>
             {
                 var model = _canvas.Scene!.ModelAt(p);
@@ -1402,25 +1436,59 @@ namespace FdDraft.App
                 if (pts.Count == 1 && Vec2.Distance(pts[0], model.Value) < 1e-9) { Log("  that's the same point - pick the second point"); return; }
                 pts.Add(model.Value);
                 if (pts.Count == 1) { _canvas.RubberFrom = p; _prompt.Text = "Dimension - second point:"; Log("  from " + NE(model.Value)); return; }
-                if (pts.Count == 2) { _prompt.Text = "Dimension - dimension line location:"; Log("  to   " + NE(model.Value) + "  " + InverseResult.Between(pts[0], pts[1], _std?.BearingRotationDeg ?? 0)); return; }
-                _canvas.ToolActive = false; _canvas.RubberFrom = null; _awaitingPoint = null;
-                string def = _lastDimHeight.ToString("0.###", CultureInfo.InvariantCulture);
-                _prompt.Text = "Dimension - text height <" + def + ">:";
-                Log("  type the text height (Enter = " + def + ")");
+                if (pts.Count == 2)
+                {
+                    _prompt.Text = linear ? "Dimension - line location (or type H, V, or an angle in degrees):" : "Dimension - dimension line location:";
+                    Log("  to   " + NE(model.Value) + "  " + InverseResult.Between(pts[0], pts[1], _std?.BearingRotationDeg ?? 0)
+                        + (linear ? " - pick where the line goes; above/below the points measures dE, beside them dN (or type H / V / an angle first)" : ""));
+                    return;
+                }
                 var at = model.Value;
+                AskDimensionHeightThen(() => linear
+                    ? DimensionBuilder.Linear(pts[0], pts[1], at, rotation, decimals)
+                    : DimensionBuilder.Aligned(pts[0], pts[1], at, decimals), layer);
+            };
+            if (linear)
+            {
                 _awaitingLine = s =>
                 {
-                    double h = _lastDimHeight;
-                    if (s.Length > 0 && (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out h) || h <= 0)) { Log("  type a positive height, or Enter for " + def); return; }
-                    _lastDimHeight = h;
-                    var dim = DimensionBuilder.Aligned(pts[0], pts[1], at, _std?.DistanceDecimals ?? 3);
-                    dim.Layer = GetOrCreateLayer(layer);
-                    _undo.Push(new AddDimensionCommand(CurrentEntityOwner(), dim, h, "Dimension"));
-                    _dirty = true; UpdateTitle();
-                    EndTool();
-                    Rebuild(fit: false);
-                    Log("  dimension " + dim.Text + " placed");
+                    if (pts.Count < 2) { Log("  pick the two points first"); return; }
+                    var t = s.Trim().ToUpperInvariant();
+                    if (t == "H") rotation = 0;
+                    else if (t == "V") rotation = Math.PI / 2;
+                    else if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double deg)) rotation = deg * Math.PI / 180;
+                    else { Log("  type H, V or an angle in degrees (CCW from east), or pick the line location"); return; }
+                    Log("  measuring along " + (rotation.Value * 180 / Math.PI).ToString("0.####", CultureInfo.InvariantCulture) + "° - now pick where the line goes");
                 };
+            }
+        }
+
+        /// <summary>DIMRAD: pick an arc or circle where the radius line should point, then the
+        /// text height.</summary>
+        private void StartRadiusDimension()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            string layer = CurrentLayer();
+            BeginTool("DIMRAD");
+            _prompt.Text = "Radius dimension - pick the arc or circle:";
+            Log("DIMRAD  pick on an arc or circle, where the radius line should point (Esc to cancel)");
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                double tol = Math.Max(10 / _canvas.View.Zoom, 1e-6);
+                Circle? best = null; double bestD = tol;
+                foreach (var c in CurrentEntityOwner().Entities.OfType<Circle>())
+                {
+                    double d = Math.Abs(Vec2.Distance(model.Value, new Vec2(c.Center.X, c.Center.Y)) - c.Radius);
+                    if (d < bestD) { bestD = d; best = c; }
+                }
+                if (best == null) { Log("  no arc or circle there - pick on the curve"); return; }
+                var center = new Vec2(best.Center.X, best.Center.Y);
+                double radius = best.Radius;
+                var toward = model.Value;
+                Log("  " + (best is Arc ? "arc" : "circle") + " R " + radius.ToString("F3", CultureInfo.InvariantCulture) + " centred " + NE(center));
+                AskDimensionHeightThen(() => DimensionBuilder.Radius(center, radius, toward, _std?.DistanceDecimals ?? 3), layer);
             };
         }
 

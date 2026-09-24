@@ -117,7 +117,10 @@ FdDraft.App project in Visual Studio).
   too. **Dim** places a real aligned DIMENSION: pick the two points,
   then where the dimension line goes, then the text height - it shows the
   measured distance with extension lines and arrowheads, and reads back as
-  a dimension in AutoCAD/MSCAD. New linework goes on the toolbar's **Layer** box, and lands on the
+  a dimension in AutoCAD/MSCAD. **DimLin** measures just the dE or dN
+  (horizontal when you place it above/below the points, vertical beside
+  them, or type H, V or an angle), and **DimRad** labels an arc's or
+  circle's radius. New linework goes on the toolbar's **Layer** box, and lands on the
   current sheet correctly even when that sheet has no real viewport of its
   own (a real MSCAD job commonly draws straight onto paper on the sheet it
   actually used).
@@ -141,7 +144,7 @@ FdDraft.App project in Visual Studio).
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, ID, AREA, JOIN, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
+  SAVE, SAVEAS, PDF, INV, ID, AREA, JOIN, LINE, ARC, TEXT, LEADER, DIM, DIMLIN, DIMRAD, MOVE, ROTATE, STRETCH,
   COPY, MIRROR, OFFSET, TRIM, EXTEND, FILLET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line

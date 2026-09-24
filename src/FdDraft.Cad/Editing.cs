@@ -39,7 +39,7 @@ namespace FdDraft.Cad.Editing
             {
                 _owner.Entities.Add(e);
                 // FD-Draft's aligned dimensions (re)draw their own picture once they're in the document.
-                if (e.GetType() == typeof(DimensionAligned)) DimensionBuilder.DrawPicture((DimensionAligned)e);
+                if (DimensionBuilder.IsOurs(e)) DimensionBuilder.DrawPicture((Dimension)e);
             }
         }
     }
@@ -90,10 +90,10 @@ namespace FdDraft.Cad.Editing
         {
             foreach (var e in _entities)
             {
-                e.ApplyTransform(t);
                 // A dimension's picture block is in world coordinates and doesn't follow the
-                // transform on its own; FD-Draft's aligned dimensions redraw theirs.
-                if (e.GetType() == typeof(DimensionAligned) && e.Document != null) DimensionBuilder.DrawPicture((DimensionAligned)e);
+                // transform on its own; FD-Draft's dimensions redraw theirs.
+                if (DimensionBuilder.IsOurs(e)) DimensionBuilder.Transform((Dimension)e, t);
+                else e.ApplyTransform(t);
             }
         }
 

@@ -32,11 +32,9 @@ namespace FdDraft.Cad.Editing
             var list = new List<(Entity, Entity)>();
             foreach (var e in entities)
             {
-                if (e.GetType() == typeof(DimensionAligned))
+                if (DimensionBuilder.IsOurs(e))
                 {
-                    var d = (DimensionAligned)e;
-                    Vec2 T(XYZ p) => new Vec2(p.X + dx, p.Y + dy);
-                    list.Add((e, DimensionBuilder.Rebuilt(d, T(d.FirstPoint), T(d.SecondPoint), T(d.DefinitionPoint))));
+                    list.Add((e, DimensionBuilder.Remapped((Dimension)e, p => new Vec2(p.X + dx, p.Y + dy))));
                     continue;
                 }
                 if (e is Dimension) continue; // other dimension kinds: their picture block is per-dimension
@@ -150,11 +148,8 @@ namespace FdDraft.Cad.Editing
                     foreach (var att in c.Attributes) MirrorText(att, a, b, axis);
                     return c;
                 }
-                case DimensionAligned da when da.GetType() == typeof(DimensionAligned):
-                {
-                    Vec2 V(XYZ p) => Construct.Reflect(new Vec2(p.X, p.Y), a, b);
-                    return DimensionBuilder.Rebuilt(da, V(da.FirstPoint), V(da.SecondPoint), V(da.DefinitionPoint));
-                }
+                case Dimension dm when DimensionBuilder.IsOurs(dm):
+                    return DimensionBuilder.Remapped(dm, p => Construct.Reflect(p, a, b));
                 case Leader ld:
                 {
                     var c = (Leader)Duplicate(ld);

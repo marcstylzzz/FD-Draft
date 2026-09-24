@@ -240,9 +240,17 @@ it on Windows is the real test.
   (undo/redo detaches the block). COPY/MIRROR rebuild an FD-Draft dimension
   from its moved/reflected definition points (`DimensionBuilder.Rebuilt`)
   rather than cloning it, since a clone would share its source's block.
-  Only the exact `DimensionAligned` type gets this - `DimensionLinear`
-  derives from it, and a template's other dimension kinds keep their own
-  picture. Covered by a real DWG write/read round trip.
+  Since v0.4.18 the same covers `DimensionLinear` (DIMLIN: FirstPoint/
+  SecondPoint projected onto a dimension line at `Rotation` - auto
+  horizontal/vertical by where the line is placed, as CAD programs do) and
+  `DimensionRadius` (DIMRAD: centre as DefinitionPoint, the point on the
+  curve as AngleVertex; one arrow on the curve, "R…" text).
+  `DimensionBuilder.IsOurs` is the exact-type test for those three; a
+  template's angular/diameter/ordinate dimensions keep their own picture.
+  `DimensionBuilder.Transform` turns a linear dimension's `Rotation` with
+  a ROTATE (ACadSharp leaves it alone) before redrawing, and `Remapped`
+  rebuilds any of the three through a point map for COPY/MIRROR. Covered by
+  real DWG write/read round trips.
 - New entities pick up the toolbar's **current layer**, created on the fly
   if the template doesn't have it yet, and land in the right block: Model
   space, unless the current sheet is a layout with no working viewport at
@@ -321,8 +329,8 @@ it on Windows is the real test.
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
   `internal` to ACadSharp - not reachable from FD-Draft) or an MTEXT with a
-  real dimension-style-driven landing gap. Aligned DIMENSIONs exist (DIM);
-  linear (rotated), angular and radial ones don't yet.
+  real dimension-style-driven landing gap. Aligned, linear and radius
+  DIMENSIONs exist (DIM, DIMLIN, DIMRAD); angular and diameter don't yet.
 - Properties editing now covers layer, text content, a text's height and
   rotation, a Circle/Arc's radius, an Arc's start/end angle, a Line's
   endpoint coordinates, and one LwPolyline/Polyline2D vertex's E,N at a time

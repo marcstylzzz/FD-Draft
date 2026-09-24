@@ -120,7 +120,7 @@ namespace FdDraft.Cad.Editing
                             n++;
                             break;
                         }
-                        case DimensionAligned da when da.GetType() == typeof(DimensionAligned):
+                        case Dimension da when DimensionBuilder.IsOurs(da):
                         {
                             double h = DimensionBuilder.TextHeightOf(da);
                             edits.Add(new SetPropertyCommand<double>(h, h * k, v => DimensionBuilder.DrawPicture(da, v), "Resize dimension")); n++;

@@ -1210,5 +1210,60 @@ namespace FdDraft.Tests
 
             Assert.True(EntityOps.Join(new ACadSharp.Entities.Entity[] { stray }, 1e-6, out _) == null, "nothing to join");
         }
+            // ---- linear and radius dimensions (v0.4.18) ------------------------------------------
+
+        public static void TestLinearDimensionPicksHorizontalOrVerticalAndTurnsWithRotate()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            var p1 = new Vec2(0, 0); var p2 = new Vec2(30, 40);
+            // Placed above both points: horizontal, measuring dE = 30.
+            var h = DimensionBuilder.Linear(p1, p2, new Vec2(15, 45));
+            Assert.Near(0, h.Rotation, 1e-12, "horizontal"); Assert.Equal("30.000", h.Text, "measures dE");
+            // Placed beside them: vertical, measuring dN = 40.
+            var v = DimensionBuilder.Linear(p1, p2, new Vec2(35, 20));
+            Assert.Near(Math.PI / 2, v.Rotation, 1e-12, "vertical"); Assert.Equal("40.000", v.Text, "measures dN");
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, h, 0.2, "Dimension"));
+            var dimLine = h.Block.Entities.OfType<ACadSharp.Entities.Line>().Single(l => Math.Abs(l.StartPoint.Y - l.EndPoint.Y) < 1e-9 && Math.Abs(l.StartPoint.Y - 45) < 1e-9);
+            Assert.Near(30, Math.Abs(dimLine.EndPoint.X - dimLine.StartPoint.X), 1e-9, "dimension line spans dE at the placed height");
+            Assert.Equal(3, h.Block.Entities.OfType<ACadSharp.Entities.Line>().Count(), "two extension lines + dimension line");
+
+            // ROTATE 90 degrees about the origin: the measuring direction turns with it.
+            undo.Push(TransformEntitiesCommand.Rotate(new ACadSharp.Entities.Entity[] { h }, new CSMath.XYZ(0, 0, 0), Math.PI / 2, "Rotate"));
+            Assert.Near(Math.PI / 2, h.Rotation, 1e-9, "rotation followed the ROTATE");
+            Assert.Near(-40, h.SecondPoint.X, 1e-9, "points rotated");
+            Assert.True(h.Block.Entities.OfType<ACadSharp.Entities.Line>().Any(l => Math.Abs(l.StartPoint.X - l.EndPoint.X) < 1e-9 && Math.Abs(Math.Abs(l.EndPoint.Y - l.StartPoint.Y) - 30) < 1e-9), "picture redrawn: dimension line now north-south, still 30 long");
+        }
+
+        public static void TestRadiusDimensionAndDwgRoundTrip()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var undo = new UndoStack();
+            var r = DimensionBuilder.Radius(new Vec2(10, 10), 7.5, new Vec2(20, 10));
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, r, 0.25, "Dimension"));
+            Assert.Equal("R7.500", r.Text, "radius text");
+            Assert.Near(17.5, r.AngleVertex.X, 1e-9, "points at the curve toward the pick");
+            Assert.Near(7.5, r.Measurement, 1e-9, "measurement is the radius");
+            Assert.Equal(1, r.Block.Entities.OfType<ACadSharp.Entities.Solid>().Count(), "one arrowhead, on the curve");
+            Assert.Near(17.5, r.Block.Entities.OfType<ACadSharp.Entities.Solid>().Single().FirstCorner.X, 1e-9, "arrow tip on the curve");
+
+            var lin = DimensionBuilder.Linear(new Vec2(0, 0), new Vec2(5, 3), new Vec2(2, 6));
+            undo.Push(new AddDimensionCommand(doc.ModelSpace, lin, 0.2, "Dimension"));
+            // Copies rebuild their own picture, of the same kind.
+            var pairs = EntityOps.Copies(new ACadSharp.Entities.Entity[] { r, lin }, 100, 0);
+            undo.Push(EntityOps.AddBesideSources(pairs, "Copy")!);
+            Assert.True(pairs[0].Copy is ACadSharp.Entities.DimensionRadius rc && rc.Block != r.Block && Math.Abs(rc.AngleVertex.X - 117.5) < 1e-9, "radius dimension copied with its own picture");
+            Assert.True(pairs[1].Copy is ACadSharp.Entities.DimensionLinear lc && lc.Rotation == 0 && lc.Text == "5.000", "linear dimension copied as linear");
+
+            string path = Path.Combine(Path.GetTempPath(), "fdd-dim2-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            var rb = back.ModelSpace.Entities.OfType<ACadSharp.Entities.DimensionRadius>().ToList();
+            var lb = back.ModelSpace.Entities.OfType<ACadSharp.Entities.DimensionLinear>().ToList();
+            Assert.Equal(2, rb.Count, "both radius dimensions survive");
+            Assert.Equal(2, lb.Count, "both linear dimensions survive");
+            Assert.True(rb.All(d => d.Text == "R7.500" && d.Block != null && d.Block.Entities.Any()), "with their text and pictures");
+            Assert.True(lb.All(d => Math.Abs(d.Measurement - 5) < 1e-6), "linear measurement survives");
+        }
     }
 }
