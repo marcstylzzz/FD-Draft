@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    Shared settings for every project in FD-Draft.
+
+    FD_OFFLINE=1 is for build machines with no NuGet access (Claude's cloud
+    workspace). There the core library builds for net8.0 and netstandard2.1
+    only, because both reference packs ship with the SDK. On a normal Windows
+    machine with Visual Studio or the .NET SDK, the core also builds for
+    netstandard2.0, which is what an AutoCAD 2024-or-older plugin (.NET
+    Framework 4.8) needs.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Company>Vaughan Land Surveyors</Company>
+    <Product>FD-Draft</Product>
+    <Version>0.1.0</Version>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>

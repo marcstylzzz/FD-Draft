@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Command-line front end: job folder in, sheet/scale report + DXF + SVG preview out.
+       Used for testing without AutoCAD, and by the assistant later. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>fddraft</AssemblyName>
+    <RootNamespace>FdDraft.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FdDraft.Core\FdDraft.Core.csproj" />
+  </ItemGroup>
+</Project>

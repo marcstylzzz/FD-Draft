@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    FD-Draft AutoCAD plugin. Load with NETLOAD, then run FDDRAFT.
+
+    Build against YOUR AutoCAD install:
+      dotnet build src/FdDraft.AutoCAD -p:AcadYear=2025 -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025"
+
+    AutoCAD 2025 and later run plugins on .NET 8; 2024 and earlier on .NET
+    Framework 4.8. AcadYear picks the right one. The AutoCAD DLLs are referenced
+    from the install folder (not copied) - AutoCAD supplies them at run time.
+  -->
+  <PropertyGroup>
+    <AcadYear Condition="'$(AcadYear)' == ''">2025</AcadYear>
+    <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD $(AcadYear)</AcadDir>
+    <RootNamespace>FdDraft.AutoCAD</RootNamespace>
+    <AssemblyName>FdDraft.AutoCAD</AssemblyName>
+    <OutputType>Library</OutputType>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(AcadYear) &gt;= 2025">
+    <TargetFramework>net8.0-windows</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(AcadYear) &lt; 2025">
+    <TargetFramework>net48</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>$(AcadDir)\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acdbmgd">
+      <HintPath>$(AcadDir)\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acmgd">
+      <HintPath>$(AcadDir)\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FdDraft.Core\FdDraft.Core.csproj" />
+  </ItemGroup>
+</Project>
