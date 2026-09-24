@@ -388,6 +388,56 @@ namespace FdDraft.Cad.Editing
             return side >= 0 ? (b, a, false) : (a, b, true);
         }
 
+        // ---- JOIN ------------------------------------------------------------------------------
+
+        /// <summary>
+        /// JOIN: links the Lines, Arcs and open LwPolylines among <paramref name="entities"/>
+        /// that share endpoints into LwPolylines (closed where they close), replacing the
+        /// pieces they were built from, as one undo step. A piece that touches nothing is left
+        /// as it was. Null when nothing joins.
+        /// </summary>
+        public static IEditCommand? Join(IEnumerable<Entity> entities, double tolerance, out List<LwPolyline> made)
+        {
+            made = new List<LwPolyline>();
+            var pieces = new List<Construct.Piece>();
+            var owners = new List<Entity>();
+            foreach (var e in entities)
+            {
+                if (!(e.Owner is ACadSharp.Tables.BlockRecord)) continue;
+                switch (e)
+                {
+                    case Line l:
+                        pieces.Add(new Construct.Piece(new Vec2(l.StartPoint.X, l.StartPoint.Y), new Vec2(l.EndPoint.X, l.EndPoint.Y), 0));
+                        owners.Add(e);
+                        break;
+                    case ACadSharp.Entities.Arc a:
+                        foreach (var s in SpansOf(a)) { pieces.Add(new Construct.Piece(s.A, s.B, Math.Tan(s.Sweep / 4))); owners.Add(e); }
+                        break;
+                    case LwPolyline lp when !lp.IsClosed && lp.Vertices.Count >= 2:
+                        foreach (var s in SpansOf(lp)) { pieces.Add(new Construct.Piece(s.A, s.B, s.IsArc ? Math.Tan(s.Sweep / 4) : 0)); owners.Add(e); }
+                        break;
+                }
+            }
+            var edits = new List<IEditCommand>();
+            var consumed = new List<Entity>();
+            foreach (var chain in Construct.JoinPieces(pieces, tolerance))
+            {
+                var sources = chain.Sources.Select(i => owners[i]).Distinct().ToList();
+                if (sources.Count < 2 && !(chain.Closed && sources[0] is LwPolyline)) continue; // nothing new joined (a lone polyline whose ends meet does get closed)
+                var first = sources[0];
+                if (sources.Any(x => x.Owner != first.Owner)) continue; // pieces in different blocks don't join
+                var pl = new LwPolyline { IsClosed = chain.Closed, Layer = first.Layer, LineType = first.LineType, Color = first.Color };
+                for (int i = 0; i < chain.Points.Count; i++)
+                    pl.Vertices.Add(new LwPolyline.Vertex(new XY(chain.Points[i].X, chain.Points[i].Y)) { Bulge = chain.Bulges[i] });
+                edits.Add(new AddEntitiesCommand((ACadSharp.Tables.BlockRecord)first.Owner!, new Entity[] { pl }, "Join"));
+                consumed.AddRange(sources);
+                made.Add(pl);
+            }
+            if (edits.Count == 0) return null;
+            edits.Add(new RemoveEntitiesCommand(consumed, "Join"));
+            return new CompositeCommand(edits, "Join");
+        }
+
         private static double OffsetRadius(XYZ center, double radius, double distance, Vec2 toward)
         {
             double dc = Vec2.Distance(new Vec2(center.X, center.Y), toward);

@@ -91,6 +91,11 @@ FdDraft.App project in Visual Studio).
 - **Flip** moves the selected bearing/distance (or curve-data) labels to
   the other side of their course, at the same gap and still reading the
   same way - select both labels of a course to swap them.
+- **Join** turns selected lines, arcs and open polylines that meet end to
+  end into one polyline (closed when it closes, arcs kept as true curves),
+  so a boundary drawn in pieces can then be measured with Area, offset or
+  labelled as one figure. **ID** reads off the N/E of picked points (and the
+  survey point's number and elevation when you snap to one).
 - **Trim** and **Extend** cut lines back at, or run them out to, the
   selected edges (or every line, arc, circle and polyline in view when
   nothing is selected) - pick each line on the part to cut / near the end
@@ -136,7 +141,7 @@ FdDraft.App project in Visual Studio).
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
-  SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
+  SAVE, SAVEAS, PDF, INV, ID, AREA, JOIN, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
   COPY, MIRROR, OFFSET, TRIM, EXTEND, FILLET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line

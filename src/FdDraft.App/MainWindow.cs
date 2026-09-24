@@ -197,6 +197,7 @@ namespace FdDraft.App
             survey.Items.Add(Item("_Draft FD-Pro job…", "Ctrl+D", DraftJob));
             survey.Items.Add(Item("_Inverse", "INV", StartInverse));
             survey.Items.Add(Item("_Area", "AREA", StartArea));
+            survey.Items.Add(Item("I_D point", "ID", StartId));
             var edit = new MenuItem { Header = "_Edit" };
             edit.Items.Add(Item("_Undo", "Ctrl+Z", DoUndo));
             edit.Items.Add(Item("_Redo", "Ctrl+Y", DoRedo));
@@ -220,6 +221,7 @@ namespace FdDraft.App
             modify.Items.Add(Item("_Copy", "COPY", StartCopy));
             modify.Items.Add(Item("M_irror", "MIRROR", StartMirror));
             modify.Items.Add(Item("_Offset", "OFFSET", StartOffset));
+            modify.Items.Add(Item("_Join into polyline", "JOIN", JoinSelection));
             modify.Items.Add(Item("_Trim", "TRIM", () => StartTrimExtend(true)));
             modify.Items.Add(Item("_Extend", "EXTEND", () => StartTrimExtend(false)));
             modify.Items.Add(Item("Fi_llet", "FILLET", StartFillet));
@@ -269,6 +271,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Copy", "Copy the selected entities (COPY)", StartCopy));
             bar.Items.Add(B("Mirror", "Mirror the selected entities across a line (MIRROR)", StartMirror));
             bar.Items.Add(B("Label", "Bearing/distance (or curve data) labels for the selected lines, arcs and polylines (LABEL)", LabelSelection));
+            bar.Items.Add(B("Join", "Join selected lines/arcs that meet end to end into one polyline (JOIN)", JoinSelection));
             bar.Items.Add(B("Trim", "Cut lines back at the selected edges, or at everything if nothing is selected (TRIM)", () => StartTrimExtend(true)));
             bar.Items.Add(B("Extend", "Run line ends out to the selected boundaries, or to anything if nothing is selected (EXTEND)", () => StartTrimExtend(false)));
             bar.Items.Add(B("Fillet", "Round (or close) the corner between two lines (FILLET)", StartFillet));
@@ -360,6 +363,8 @@ namespace FdDraft.App
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
+                case "JOIN": case "J": JoinSelection(); break;
+                case "ID": StartId(); break;
                 case "VPSCALE": case "SCALE": StartSheetScale(arg); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
@@ -403,6 +408,8 @@ namespace FdDraft.App
             Log("  LAYER   select entities, LAYER, moves them to the toolbar's current layer   · or the Set Layer button");
             Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
             Log("          C closes back to the start and reports misclosure, precision and area; U undoes the last leg");
+            Log("  ID      pick points to read their N/E (and survey point number, elevation)");
+            Log("  JOIN    select lines/arcs/polylines that meet end to end, JOIN makes one polyline (closed if it closes)");
             Log("  AREA    area and perimeter of the selected closed polylines/circles, or pick corners (blank ends)");
             Log("  ARC     pick three points on the arc: start, a point on it, end");
             Log("  TEXT    pick a point, then type the text (or \"height text\", e.g. \"0.25 LOT 5\")");
@@ -1950,6 +1957,49 @@ namespace FdDraft.App
                 Log(arc != null
                     ? string.Format(CultureInfo.InvariantCulture, "  fillet R {0:F3}, arc length {1:F3}  (Ctrl+Z to undo)", arc.Radius, arc.Radius * Angles.Normalize2Pi(arc.EndAngle - arc.StartAngle))
                     : "  corner closed  (Ctrl+Z to undo)");
+            };
+        }
+
+        /// <summary>JOIN: the selected lines, arcs and open polylines that meet end to end become
+        /// polylines (closed where they close), so AREA, OFFSET and LABEL can treat a
+        /// hand-drawn boundary as one figure.</summary>
+        private void JoinSelection()
+        {
+            if (_doc == null) return;
+            var sel = SelectedEntities();
+            if (sel.Count == 0) { Log("  select the lines/arcs/polylines to join first (a crossing box is quickest), then type JOIN"); return; }
+            // Ends within a millimetre count as meeting - tighter than any plan shows, looser than rounding noise.
+            var cmd = EntityOps.Join(sel, 0.001, out var made);
+            if (cmd == null) { Log("  nothing to join - the selected pieces don't meet end to end"); return; }
+            _undo.Push(cmd);
+            _canvas.Selected.Clear();
+            foreach (var pl in made) _canvas.Selected.Add(pl.Handle);
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            foreach (var pl in made)
+            {
+                var pts = pl.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList();
+                var bl = pl.Vertices.Select(v => v.Bulge).ToList();
+                Log("  joined into a" + (pl.IsClosed ? " closed" : "n open") + " polyline of " + pl.Vertices.Count + " vertices"
+                    + (pl.IsClosed ? ", area " + AreaText(FigureMeasure.Area(pts, bl)) : "") + ", length " + FigureMeasure.Perimeter(pts, bl, pl.IsClosed).ToString("F3", CultureInfo.InvariantCulture));
+            }
+            Log("  (the new polylines are selected; Ctrl+Z to undo)");
+        }
+
+        /// <summary>ID: report the coordinates of each picked point (snap for exact ones).</summary>
+        private void StartId()
+        {
+            if (_canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            BeginTool("ID");
+            _prompt.Text = "ID - pick a point (Esc ends):";
+            Log("ID  pick points to read their coordinates (snap on for exact ones; Esc ends)");
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                var pt = _job?.Points.FirstOrDefault(q => Math.Abs(q.Easting - model.Value.X) < 1e-4 && Math.Abs(q.Northing - model.Value.Y) < 1e-4);
+                Log("  " + NE(model.Value) + (pt != null ? "   point " + pt.Id + " " + pt.Code + "  elev " + pt.Elevation.ToString("F3", CultureInfo.InvariantCulture) : ""));
             };
         }
 

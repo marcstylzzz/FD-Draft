@@ -1175,5 +1175,40 @@ namespace FdDraft.Tests
             Assert.Near(10, b.EndPoint.Y, 1e-9, "north end kept");
             Assert.True(EntityOps.Fillet(Ln(0, 0, 10, 0), new Vec2(1, 0), Ln(0, 5, 10, 5), new Vec2(1, 5), 1, out _) == null, "parallel lines can't be filleted");
         }
+            // ---- JOIN (v0.4.17) -------------------------------------------------------------------
+
+        public static void TestJoinChainsLinesAndArcsIntoAClosedPolyline()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var layer = new ACadSharp.Tables.Layer("PLAN-SubjectBoundary");
+            doc.Layers.Add(layer);
+            // A lot drawn as loose pieces, some backwards: south line, a corner-rounding arc,
+            // east line (reversed), north line, west line - plus a stray line touching nothing.
+            var south = Ln(0, 0, 17, 0);
+            var round = new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(17, 3, 0), Radius = 3, StartAngle = 3 * Math.PI / 2, EndAngle = 0 };
+            var east = Ln(20, 20, 20, 3);
+            var north = Ln(20, 20, 0, 20);
+            var west = Ln(0, 20, 0, 0);
+            var stray = Ln(50, 50, 60, 50);
+            var all = new ACadSharp.Entities.Entity[] { south, round, east, north, west, stray };
+            foreach (var e in all) { e.Layer = layer; doc.ModelSpace.Entities.Add(e); }
+            var undo = new UndoStack();
+
+            undo.Push(EntityOps.Join(all, 1e-6, out var made)!);
+            Assert.Equal(1, made.Count, "one polyline");
+            var pl = made[0];
+            Assert.True(pl.IsClosed, "the ring closes");
+            Assert.Equal(5, pl.Vertices.Count, "five vertices");
+            Assert.True(pl.Layer == layer, "on the pieces' layer");
+            Assert.Near(20 * 20 - (9 - Math.PI * 9 / 4), FigureMeasure.Area(pl.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), pl.Vertices.Select(v => v.Bulge).ToList()), 1e-9, "area includes the rounded corner exactly");
+            Assert.True(!doc.ModelSpace.Entities.Contains(south) && !doc.ModelSpace.Entities.Contains(round), "the pieces are replaced");
+            Assert.True(doc.ModelSpace.Entities.Contains(stray), "a piece touching nothing is left alone");
+
+            undo.Undo();
+            Assert.True(doc.ModelSpace.Entities.Contains(south) && doc.ModelSpace.Entities.Contains(round) && doc.ModelSpace.Entities.Contains(east), "undo puts the pieces back");
+            Assert.True(!doc.ModelSpace.Entities.Contains(pl), "and removes the polyline");
+
+            Assert.True(EntityOps.Join(new ACadSharp.Entities.Entity[] { stray }, 1e-6, out _) == null, "nothing to join");
+        }
     }
 }

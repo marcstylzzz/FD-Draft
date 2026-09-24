@@ -319,6 +319,78 @@ namespace FdDraft.Core.Geometry
             return ccw <= Math.PI ? (t1, t2, c, Angles.Normalize2Pi(a1), Angles.Normalize2Pi(a2)) : (t1, t2, c, Angles.Normalize2Pi(a2), Angles.Normalize2Pi(a1));
         }
 
+        // ---- JOIN ----------------------------------------------------------------------------
+
+        /// <summary>One piece of linework to join: a straight (bulge 0) or arc span a→b.</summary>
+        public readonly struct Piece
+        {
+            public Vec2 A { get; }
+            public Vec2 B { get; }
+            public double Bulge { get; }
+            public Piece(Vec2 a, Vec2 b, double bulge) { A = a; B = b; Bulge = bulge; }
+            /// <summary>The same curve walked the other way.</summary>
+            public Piece Reversed => new Piece(B, A, -Bulge);
+        }
+
+        /// <summary>A joined run of pieces as polyline vertices and bulges.</summary>
+        public sealed class Chain
+        {
+            public List<Vec2> Points { get; } = new List<Vec2>();
+            public List<double> Bulges { get; } = new List<double>();
+            public bool Closed { get; set; }
+            /// <summary>Indexes of the input pieces this chain was built from.</summary>
+            public List<int> Sources { get; } = new List<int>();
+        }
+
+        /// <summary>
+        /// Links pieces that share endpoints (within <paramref name="tol"/>) into chains, each
+        /// piece used once and turned round where needed so every chain runs one way. A chain
+        /// whose ends meet is closed. Where three or more pieces meet at a point the chain
+        /// takes the first match and the rest start chains of their own.
+        /// </summary>
+        public static List<Chain> JoinPieces(IList<Piece> pieces, double tol)
+        {
+            var used = new bool[pieces.Count];
+            var chains = new List<Chain>();
+            bool Same(Vec2 p, Vec2 q) => Vec2.Distance(p, q) <= tol;
+            for (int seed = 0; seed < pieces.Count; seed++)
+            {
+                if (used[seed]) continue;
+                used[seed] = true;
+                var run = new LinkedList<(Piece P, int Src)>();
+                run.AddLast((pieces[seed], seed));
+                bool grew = true;
+                while (grew)
+                {
+                    grew = false;
+                    var tail = run.Last!.Value.P.B;
+                    var head = run.First!.Value.P.A;
+                    if (Same(tail, head) && run.Count > 1) break; // closed up
+                    for (int i = 0; i < pieces.Count; i++)
+                    {
+                        if (used[i]) continue;
+                        var pc = pieces[i];
+                        if (Same(pc.A, tail)) { run.AddLast((pc, i)); used[i] = true; grew = true; break; }
+                        if (Same(pc.B, tail)) { run.AddLast((pc.Reversed, i)); used[i] = true; grew = true; break; }
+                        if (Same(pc.B, head)) { run.AddFirst((pc, i)); used[i] = true; grew = true; break; }
+                        if (Same(pc.A, head)) { run.AddFirst((pc.Reversed, i)); used[i] = true; grew = true; break; }
+                    }
+                }
+                var chain = new Chain();
+                foreach (var (pc, src) in run)
+                {
+                    chain.Points.Add(pc.A);
+                    chain.Bulges.Add(pc.Bulge);
+                    chain.Sources.Add(src);
+                }
+                var end = run.Last!.Value.P.B;
+                if (run.Count > 1 && Same(end, chain.Points[0])) chain.Closed = true;
+                else { chain.Points.Add(end); chain.Bulges.Add(0); }
+                chains.Add(chain);
+            }
+            return chains;
+        }
+
         public static List<Span> Spans(IList<Vec2> pts, IList<double>? bulges, bool closed)
         {
             var spans = new List<Span>();

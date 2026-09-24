@@ -158,6 +158,14 @@ it on Windows is the real test.
   tuple of the fields that change). This needs no course↔label link: it is
   purely geometric, one label at a time, and never re-derives any text - the
   deferred relabel-after-STRETCH problem is unaffected.
+- **JOIN**: each Line, Arc and open LwPolyline span becomes a
+  `Construct.Piece` (a→b with a bulge); `Construct.JoinPieces` grows chains
+  from both ends by matching endpoints within 1 mm, reversing a piece
+  (swap ends, negate bulge) where it runs the wrong way, and marks a chain
+  closed when its ends meet. Every chain built from two or more source
+  entities (or a lone open polyline whose ends meet) becomes an LwPolyline
+  on the first piece's layer/linetype/colour, replacing its sources in one
+  `CompositeCommand`; pieces in different blocks never join.
 - **TRIM / EXTEND / FILLET** (lines as targets): `EntityOps.SpansOf` turns
   any Line, Arc, Circle (two half arcs) or polyline into
   `Construct.Span`s, and `Construct.LineParamsOn` gives where a line's
