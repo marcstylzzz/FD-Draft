@@ -1062,5 +1062,37 @@ namespace FdDraft.Tests
 
             Assert.True(SheetScale.Change(doc, layout, 500, true).Command == null, "same scale: nothing to do");
         }
+            // ---- LABEL existing courses (v0.4.15) -------------------------------------------------
+
+        public static void TestLabelCommandUsesThePipelinesLabelRules()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string name)
+            {
+                if (doc.Layers.TryGetValue(name, out var l)) return l;
+                l = new ACadSharp.Tables.Layer(name); doc.Layers.Add(l); return l;
+            }
+            // 1:500 metric: 0.5 m per paper mm. A 30 m course due east.
+            var line = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(30, 0, 0));
+            var labels = CourseLabelling.For(line, doc, std, 0.5, L).Cast<ACadSharp.Entities.TextEntity>().ToList();
+            Assert.Equal(2, labels.Count, "bearing and distance");
+            var bearing = labels.Single(t => t.Layer.Name == std.BearingLayer);
+            var distance = labels.Single(t => t.Layer.Name == std.DistanceLayer);
+            Assert.Equal("N90%%d00'00\"E", bearing.Value, "bearing text in plan form (degree as %%d for SHX fonts)");
+            Assert.Equal(30.0.ToString("F" + std.DistanceDecimals, System.Globalization.CultureInfo.InvariantCulture), distance.Value, "distance to the standards' decimals");
+            Assert.Near(std.BearingTextMm * 0.5, bearing.Height, 1e-9, "paper mm times model per mm");
+            Assert.True(bearing.AlignmentPoint.Y > 0 && distance.AlignmentPoint.Y < 0, "bearing above, distance below");
+            Assert.Near(15, bearing.AlignmentPoint.X, 1e-9, "centred on the course");
+
+            // A polyline with a straight span and a CCW quarter arc: two + two labels.
+            var poly = new ACadSharp.Entities.LwPolyline();
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(0, 0)));
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(10, 0)) { Bulge = Math.Tan(Math.PI / 8) });
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(15, 5)));
+            var pl = CourseLabelling.For(poly, doc, std, 0.5, L).Cast<ACadSharp.Entities.TextEntity>().ToList();
+            Assert.Equal(4, pl.Count, "each span labelled");
+            Assert.True(pl.Any(t => t.Value.StartsWith("R=5.") && t.Value.Contains("A=7.85")), "curve data: radius 5, arc length 7.854: " + string.Join(" | ", pl.Select(t => t.Value)));
+        }
     }
 }

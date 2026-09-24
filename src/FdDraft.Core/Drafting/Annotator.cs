@@ -19,8 +19,6 @@ namespace FdDraft.Core.Drafting
             doc.AnnotatedModelPerPaper = scale.ModelPerPaper;
             double modelPerMm = ModelPerMm(scale, std);
             double gridToGround = std.GridToGround && job.Settings.ScaleFactor > 0 ? 1.0 / job.Settings.ScaleFactor : 1.0;
-            string dist = "F" + Math.Max(0, std.DistanceDecimals).ToString(CultureInfo.InvariantCulture);
-            double rotation = std.BearingRotationDeg * Math.PI / 180.0;
             int skippedShort = 0;
             // Where the surveyed points are, so a course label can slide off a point that sits on it.
             var occupied = new System.Collections.Generic.List<Vec2>();
@@ -41,57 +39,14 @@ namespace FdDraft.Core.Drafting
                 {
                     var a = course.A;
                     var b = course.B;
-                    double r = Angles.ReadableRotation(a, b);
-                    double az = Angles.Azimuth(a, b);
-                    if (std.BearingDirection == "reading")
-                    {
-                        var readDir = new Vec2(Math.Cos(r), Math.Sin(r));
-                        if (Vec2.Dot(readDir, b - a) < 0) az += Math.PI;
-                    }
-                    var mid = a + (b - a) * ClearSpot(t => a + (b - a) * t, t => b - a, occupied, halfLen, halfHt);
-                    var up = new Vec2(-Math.Sin(r), Math.Cos(r));
-                    doc.Entities.Add(new DraftText
-                    {
-                        Layer = doc.Layer(std.BearingLayer).Name, Style = std.TextStyle("bearing"),
-                        Text = Angles.FormatBearing(az + rotation, std.BearingSecondsDecimals),
-                        Position = mid + up * (std.BearingTextMm * std.LabelGapFactor * modelPerMm),
-                        HeightMm = std.BearingTextMm, Rotation = r, H = HAlign.Center, V = VAlign.Bottom, Kind = TextKind.Bearing,
-                    });
-                    doc.Entities.Add(new DraftText
-                    {
-                        Layer = doc.Layer(std.DistanceLayer).Name, Style = std.TextStyle("distance"),
-                        Text = (Vec2.Distance(a, b) * gridToGround).ToString(dist, CultureInfo.InvariantCulture),
-                        Position = mid - up * (std.DistanceTextMm * std.LabelGapFactor * modelPerMm),
-                        HeightMm = std.DistanceTextMm, Rotation = r, H = HAlign.Center, V = VAlign.Top, Kind = TextKind.Distance,
-                    });
+                    double t = ClearSpot(u => a + (b - a) * u, u => b - a, occupied, halfLen, halfHt);
+                    doc.Entities.AddRange(StraightCourseLabels(a, b, t, std, modelPerMm, gridToGround, doc.Layer(std.BearingLayer).Name, doc.Layer(std.DistanceLayer).Name));
                 }
                 else
                 {
-                    // Curve data: radius and arc length on the convex side, chord and chord bearing inside.
                     var arc = course.Arc;
-                    var m = arc.PointAt(ClearSpot(arc.PointAt, t => (arc.PointAt(t) - arc.Center).Left(), occupied, arcHalfLen, arcHalfHt));
-                    var outward = (m - arc.Center).Normalized();
-                    var tangent = outward.Left();
-                    double r = Angles.ReadableRotation(m, m + tangent);
-                    var up = new Vec2(-Math.Sin(r), Math.Cos(r));
-                    bool upIsOut = Vec2.Dot(up, outward) > 0;
-                    double gap = std.ArcTextMm * std.LabelGapFactor * modelPerMm;
-                    double chordAz = Angles.Azimuth(arc.Start, arc.End);
-                    string outer = "R=" + (arc.Radius * gridToGround).ToString(dist, CultureInfo.InvariantCulture) +
-                                   "  A=" + (arc.Length * gridToGround).ToString(dist, CultureInfo.InvariantCulture);
-                    string inner = "C=" + (arc.ChordLength * gridToGround).ToString(dist, CultureInfo.InvariantCulture) +
-                                   "  " + Angles.FormatBearing(chordAz + rotation, std.BearingSecondsDecimals);
-                    var layer = doc.Layer(std.ArcLayer).Name;
-                    doc.Entities.Add(new DraftText
-                    {
-                        Layer = layer, Style = std.TextStyle("arc"), Text = outer, Position = m + outward * gap, HeightMm = std.ArcTextMm,
-                        Rotation = r, H = HAlign.Center, V = upIsOut ? VAlign.Bottom : VAlign.Top, Kind = TextKind.ArcData,
-                    });
-                    doc.Entities.Add(new DraftText
-                    {
-                        Layer = layer, Style = std.TextStyle("arc"), Text = inner, Position = m - outward * gap, HeightMm = std.ArcTextMm,
-                        Rotation = r, H = HAlign.Center, V = upIsOut ? VAlign.Top : VAlign.Bottom, Kind = TextKind.ArcData,
-                    });
+                    double t = ClearSpot(arc.PointAt, u => (arc.PointAt(u) - arc.Center).Left(), occupied, arcHalfLen, arcHalfHt);
+                    doc.Entities.AddRange(ArcCourseLabels(arc, t, std, modelPerMm, gridToGround, doc.Layer(std.ArcLayer).Name));
                 }
             }
             if (skippedShort > 0)
@@ -141,6 +96,78 @@ namespace FdDraft.Core.Drafting
                     });
                 }
             }
+        }
+
+        /// <summary>
+        /// A straight course's bearing (above, bottom-anchored) and distance (below,
+        /// top-anchored) labels, centred at <paramref name="t"/> (0..1) along a→b and turned to
+        /// read left-to-right. Shared by the drafting pipeline and the app's LABEL command.
+        /// </summary>
+        public static DraftText[] StraightCourseLabels(Vec2 a, Vec2 b, double t, FirmStandards std, double modelPerMm, double gridToGround, string bearingLayer, string distanceLayer)
+        {
+            string dist = "F" + Math.Max(0, std.DistanceDecimals).ToString(CultureInfo.InvariantCulture);
+            double rotation = std.BearingRotationDeg * Math.PI / 180.0;
+            double r = Angles.ReadableRotation(a, b);
+            double az = Angles.Azimuth(a, b);
+            if (std.BearingDirection == "reading")
+            {
+                var readDir = new Vec2(Math.Cos(r), Math.Sin(r));
+                if (Vec2.Dot(readDir, b - a) < 0) az += Math.PI;
+            }
+            var mid = a + (b - a) * t;
+            var up = new Vec2(-Math.Sin(r), Math.Cos(r));
+            return new[]
+            {
+                new DraftText
+                {
+                    Layer = bearingLayer, Style = std.TextStyle("bearing"),
+                    Text = Angles.FormatBearing(az + rotation, std.BearingSecondsDecimals),
+                    Position = mid + up * (std.BearingTextMm * std.LabelGapFactor * modelPerMm),
+                    HeightMm = std.BearingTextMm, Rotation = r, H = HAlign.Center, V = VAlign.Bottom, Kind = TextKind.Bearing,
+                },
+                new DraftText
+                {
+                    Layer = distanceLayer, Style = std.TextStyle("distance"),
+                    Text = (Vec2.Distance(a, b) * gridToGround).ToString(dist, CultureInfo.InvariantCulture),
+                    Position = mid - up * (std.DistanceTextMm * std.LabelGapFactor * modelPerMm),
+                    HeightMm = std.DistanceTextMm, Rotation = r, H = HAlign.Center, V = VAlign.Top, Kind = TextKind.Distance,
+                },
+            };
+        }
+
+        /// <summary>
+        /// A curve's data labels at <paramref name="t"/> (0..1) along it: radius and arc length
+        /// on the convex side, chord and chord bearing inside.
+        /// </summary>
+        public static DraftText[] ArcCourseLabels(Arc arc, double t, FirmStandards std, double modelPerMm, double gridToGround, string layer)
+        {
+            string dist = "F" + Math.Max(0, std.DistanceDecimals).ToString(CultureInfo.InvariantCulture);
+            double rotation = std.BearingRotationDeg * Math.PI / 180.0;
+            var m = arc.PointAt(t);
+            var outward = (m - arc.Center).Normalized();
+            var tangent = outward.Left();
+            double r = Angles.ReadableRotation(m, m + tangent);
+            var up = new Vec2(-Math.Sin(r), Math.Cos(r));
+            bool upIsOut = Vec2.Dot(up, outward) > 0;
+            double gap = std.ArcTextMm * std.LabelGapFactor * modelPerMm;
+            double chordAz = Angles.Azimuth(arc.Start, arc.End);
+            string outer = "R=" + (arc.Radius * gridToGround).ToString(dist, CultureInfo.InvariantCulture) +
+                           "  A=" + (arc.Length * gridToGround).ToString(dist, CultureInfo.InvariantCulture);
+            string inner = "C=" + (arc.ChordLength * gridToGround).ToString(dist, CultureInfo.InvariantCulture) +
+                           "  " + Angles.FormatBearing(chordAz + rotation, std.BearingSecondsDecimals);
+            return new[]
+            {
+                new DraftText
+                {
+                    Layer = layer, Style = std.TextStyle("arc"), Text = outer, Position = m + outward * gap, HeightMm = std.ArcTextMm,
+                    Rotation = r, H = HAlign.Center, V = upIsOut ? VAlign.Bottom : VAlign.Top, Kind = TextKind.ArcData,
+                },
+                new DraftText
+                {
+                    Layer = layer, Style = std.TextStyle("arc"), Text = inner, Position = m - outward * gap, HeightMm = std.ArcTextMm,
+                    Rotation = r, H = HAlign.Center, V = upIsOut ? VAlign.Top : VAlign.Bottom, Kind = TextKind.ArcData,
+                },
+            };
         }
 
         /// <summary>

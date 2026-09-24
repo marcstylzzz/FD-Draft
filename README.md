@@ -84,6 +84,10 @@ FdDraft.App project in Visual Studio).
   and perimeter of each selected closed polyline or circle, arcs included;
   with nothing closed selected, pick the corners and it keeps a running
   total.
+- **Label** adds bearing and distance (or radius/arc/chord for a curve) to
+  the selected lines, arcs and polyline spans, by exactly the rules Draft
+  uses - the firm's text heights, layers, styles and bearing format - at
+  the sheet's own scale.
 - **Flip** moves the selected bearing/distance (or curve-data) labels to
   the other side of their course, at the same gap and still reading the
   same way - select both labels of a course to swap them.
@@ -127,7 +131,7 @@ FdDraft.App project in Visual Studio).
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
-  COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

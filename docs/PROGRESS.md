@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.14 (`Directory.Build.props`).
+- **Current version:** 0.4.15 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  53 tests as of v0.4.14, all passing.
+  54 tests as of v0.4.15, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -132,9 +132,13 @@ on Windows; that's still Marc's job when he runs a build.
   picture block FD-Draft draws itself (ACadSharp's own generator puts both
   arrows at one end). Redrawn after MOVE/ROTATE and on undo/redo; COPY and
   MIRROR rebuild it from its definition points. DWG round-trip tested.
-- **v0.4.14** (current): VPSCALE - change the current sheet's scale in
+- **v0.4.14**: VPSCALE - change the current sheet's scale in
   place (viewport zoom, title-block "1:n", scale-bar ticks, optional resize
   of model labels/symbols/dimension text), one undo step.
+- **v0.4.15** (current): LABEL - bearing/distance/curve labels for hand-
+  drawn linework, built by the pipeline's own rules (Annotator's label
+  construction factored into public `StraightCourseLabels`/`ArcCourseLabels`,
+  which the pipeline now calls too) at the sheet's scale.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

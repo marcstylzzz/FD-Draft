@@ -135,6 +135,17 @@ it on Windows is the real test.
   corner, and a tangent curve stays tangent. The side comes from the span
   nearest the pick. Dimensions are left out of COPY for now (their picture
   block is per-dimension).
+- **LABEL** (`CourseLabelling`): the Annotator's straight-course and curve
+  label construction is factored out as `Annotator.StraightCourseLabels` /
+  `ArcCourseLabels` (the pipeline calls them too, so the two can't drift),
+  and LABEL runs them at the midpoint of each selected Line, Arc or
+  polyline span, converting each `DraftText` to a DWG TEXT aligned exactly
+  as `TemplateDrafter` writes it. The scale comes from the current sheet's
+  plan viewport (or, on Model, the first sheet with one), paper-native
+  sheets label in paper units, and the standards are the drafted job's,
+  else the Draft dialog's last standards file, else the built-in defaults.
+  No collision sliding (that needs the job's points) - FLIP or MOVE a label
+  that lands on something.
 - **FLIP** (`LabelFlip` in `FdDraft.Cad.Editing`): for each selected
   TEXT/MTEXT, finds the nearest course span (Lines, Arcs and every span of
   the polylines in the label's own block, within 10 text heights), mirrors

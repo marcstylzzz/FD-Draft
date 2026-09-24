@@ -220,6 +220,7 @@ namespace FdDraft.App
             modify.Items.Add(Item("_Copy", "COPY", StartCopy));
             modify.Items.Add(Item("M_irror", "MIRROR", StartMirror));
             modify.Items.Add(Item("_Offset", "OFFSET", StartOffset));
+            modify.Items.Add(Item("La_bel bearing/distance", "LABEL", LabelSelection));
             modify.Items.Add(Item("_Flip label to other side", "FLIP", FlipSelectedLabels));
             modify.Items.Add(new Separator());
             modify.Items.Add(Item("Set _layer of selection", "", SetSelectionLayer));
@@ -264,6 +265,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Stretch", "Move one shared vertex, keeping connected lines joined (STRETCH)", StartStretch));
             bar.Items.Add(B("Copy", "Copy the selected entities (COPY)", StartCopy));
             bar.Items.Add(B("Mirror", "Mirror the selected entities across a line (MIRROR)", StartMirror));
+            bar.Items.Add(B("Label", "Bearing/distance (or curve data) labels for the selected lines, arcs and polylines (LABEL)", LabelSelection));
             bar.Items.Add(B("Flip", "Move the selected bearing/distance labels to the other side of their course (FLIP)", FlipSelectedLabels));
             bar.Items.Add(B("Offset", "Parallel copy of lines, arcs, circles and polylines at a distance (OFFSET)", StartOffset));
             bar.Items.Add(new Separator());
@@ -348,6 +350,7 @@ namespace FdDraft.App
                 case "COPY": case "CO": case "CP": StartCopy(); break;
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
+                case "LABEL": case "LB": LabelSelection(); break;
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
@@ -381,6 +384,7 @@ namespace FdDraft.App
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
             Log("  VXDEL / VXADD   select a polyline, then pick a vertex to remove / a spot on it to add one (also buttons in Properties)");
+            Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
             Log("  MIRROR  select entities, MIRROR, pick two points on the mirror line, then Y/N to erase the originals");
@@ -1765,6 +1769,66 @@ namespace FdDraft.App
                 if (!TryDen(s, out den)) { Log("  type the scale as 1:n or just n, e.g. 1:250"); return; }
                 AskResize();
             };
+        }
+
+        /// <summary>The firm standards for labelling: the drafted job's, else the standards file
+        /// last used in the Draft dialog, else FD-Draft's built-in defaults.</summary>
+        private FirmStandards LabelStandards()
+        {
+            if (_std != null) return _std;
+            try
+            {
+                if (_settings.StandardsPath.Length > 0 && File.Exists(_settings.StandardsPath))
+                    return _std = FirmStandards.Load(_settings.StandardsPath);
+            }
+            catch (Exception ex) when (ex is IOException || ex is FormatException || ex is UnauthorizedAccessException) { }
+            return FirmStandards.Default();
+        }
+
+        /// <summary>Model units per paper millimetre for labels drawn now: the current sheet's
+        /// plan viewport, else the first sheet with one (when on Model), else 1:1 for a
+        /// paper-native sheet; 1:500 metric as a last resort.</summary>
+        private double LabelModelPerMm(FirmStandards std, out string basis)
+        {
+            if (_doc != null)
+            {
+                bool onSheet = _sheet != "Model";
+                var layouts = onSheet
+                    ? _doc.Layouts.Where(l => l.Name.Equals(_sheet, StringComparison.OrdinalIgnoreCase))
+                    : _doc.Layouts.Where(l => l.IsPaperSpace).OrderBy(l => l.TabOrder);
+                foreach (var l in layouts)
+                {
+                    var vp = SheetScale.PlanViewport(l);
+                    if (vp == null) continue;
+                    double stated = SheetScale.StatedDenominator(l, std.ScaleBarAnchor) ?? 0;
+                    basis = l.Name + (stated > 0 ? " at 1:" + stated.ToString("0.###", CultureInfo.InvariantCulture) : "'s viewport");
+                    return vp.ViewHeight / vp.Height * std.PaperUnitsPerMm;
+                }
+                if (onSheet && CurrentEntityOwner() != _doc.ModelSpace) { basis = "drawn straight onto " + _sheet + " (paper units)"; return std.PaperUnitsPerMm; }
+            }
+            basis = "1:500 (no sheet viewport to take the scale from)";
+            return 0.5;
+        }
+
+        /// <summary>LABEL: bearing/distance (or curve data) for each selected line, arc or
+        /// polyline span, by the firm's own label rules at the sheet's scale.</summary>
+        private void LabelSelection()
+        {
+            if (_doc == null) return;
+            var courses = SelectedEntities().Where(e => e is Line || e is Arc || e is LwPolyline || e is Polyline2D).ToList();
+            if (courses.Count == 0) { Log("  select the line(s), arc(s) or polyline(s) to label first, then type LABEL"); return; }
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
+            var pairs = new List<(Entity Source, Entity Copy)>();
+            foreach (var c in courses)
+                foreach (var t in CourseLabelling.For(c, _doc, std, mpm, GetOrCreateLayer, g2g)) pairs.Add((c, t));
+            var cmd = EntityOps.AddBesideSources(pairs, "Label " + courses.Count);
+            if (cmd == null) { Log("  nothing to label"); return; }
+            _undo.Push(cmd);
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            Log("  labelled " + Plural(courses.Count, "course", "courses") + " (" + pairs.Count + " labels, scale from " + basis + ")  - FLIP moves one to the other side; Ctrl+Z to undo");
         }
 
         /// <summary>FLIP: moves each selected bearing/distance/curve label to the other side of
