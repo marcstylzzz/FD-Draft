@@ -32,6 +32,10 @@ namespace FdDraft.App
         private SnapPoint? _snap;
         private WPoint _mouse;
         private bool _fitted;
+        /// <summary>Where a left-button drag started (screen), while no tool is active - a
+        /// drag past a few pixels becomes a selection box instead of a click.</summary>
+        private WPoint? _boxFrom;
+        private bool _boxing;
 
         public ViewTransform View { get; } = new ViewTransform();
         public bool SnapEnabled { get; set; } = true;
@@ -50,6 +54,9 @@ namespace FdDraft.App
         /// <summary>The entity handle clicked while not tool-active (null on an empty click), and
         /// whether Ctrl was held (add/remove from the existing selection rather than replace it).</summary>
         public event Action<ulong?, bool>? EntityClicked;
+        /// <summary>The entity handles a drag-box selected (window left-to-right, crossing
+        /// right-to-left), and whether Ctrl was held (add to the selection rather than replace it).</summary>
+        public event Action<HashSet<ulong>, bool>? BoxSelected;
 
         public DrawingCanvas()
         {
@@ -169,6 +176,17 @@ namespace FdDraft.App
                 dc.DrawLine(pen, from, _snap.HasValue ? S(_snap.Value.Point) : _mouse);
             }
             if (_snap.HasValue) DrawSnapMarker(dc, _snap.Value);
+            if (_boxing && _boxFrom.HasValue)
+            {
+                // Window (left to right) solid blue; crossing (right to left) dashed green - the
+                // same cue every CAD program gives for which rule applies.
+                bool crossing = _mouse.X < _boxFrom.Value.X;
+                var rect = new WRect(_boxFrom.Value, _mouse);
+                var fill = new SolidColorBrush(crossing ? Color.FromArgb(40, 0x20, 0xA0, 0x40) : Color.FromArgb(40, 0x20, 0x60, 0xE0));
+                var pen = new Pen(new SolidColorBrush(crossing ? Color.FromRgb(0x20, 0xA0, 0x40) : Color.FromRgb(0x20, 0x60, 0xE0)), 1);
+                if (crossing) pen.DashStyle = DashStyles.Dash;
+                dc.DrawRectangle(fill, pen, rect);
+            }
         }
 
         private static readonly Color HighlightColor = Color.FromRgb(0xFF, 0x00, 0xC8);
@@ -340,9 +358,10 @@ namespace FdDraft.App
                 }
                 else
                 {
-                    var hit = HitTest(p);
-                    EntityClicked?.Invoke(hit?.Handle is ulong h && h != 0 ? h : null, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
-                    InvalidateVisual();
+                    // Decide on release: a click selects what's under the cursor, a drag boxes.
+                    _boxFrom = p;
+                    _boxing = false;
+                    CaptureMouse();
                 }
                 e.Handled = true;
             }
@@ -414,6 +433,31 @@ namespace FdDraft.App
 
         protected override void OnMouseUp(MouseButtonEventArgs e)
         {
+            if (_boxFrom.HasValue && e.ChangedButton == MouseButton.Left)
+            {
+                var from = _boxFrom.Value;
+                var to = e.GetPosition(this);
+                bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                _boxFrom = null;
+                ReleaseMouseCapture();
+                if (_boxing && _scene != null)
+                {
+                    _boxing = false;
+                    var a = View.ToScene(from.X, from.Y);
+                    var b = View.ToScene(to.X, to.Y);
+                    var box = new FdDraft.Core.Standards.Rect(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+                    BoxSelected?.Invoke(BoxSelect.Handles(_scene, box, crossing: to.X < from.X), ctrl);
+                }
+                else
+                {
+                    _boxing = false;
+                    var hit = HitTest(from);
+                    EntityClicked?.Invoke(hit?.Handle is ulong h && h != 0 ? h : null, ctrl);
+                }
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
             if (_panning)
             {
                 _panning = false;
@@ -433,6 +477,8 @@ namespace FdDraft.App
                 InvalidateVisual();
                 return;
             }
+            if (_boxFrom.HasValue && !_boxing && Math.Abs(_mouse.X - _boxFrom.Value.X) + Math.Abs(_mouse.Y - _boxFrom.Value.Y) > 5) _boxing = true;
+            if (_boxing) { InvalidateVisual(); return; }
             if (_scene == null) return;
             var world = View.ToScene(_mouse.X, _mouse.Y);
             _snap = SnapEnabled ? _scene.Snap(world, 10 / View.Zoom) : null;

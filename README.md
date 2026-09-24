@@ -63,7 +63,11 @@ FdDraft.App project in Visual Studio).
   are shown greyed.
 - **Save** (Ctrl+S) writes the DWG. **PDF** (Ctrl+P) plots the current sheet as
   a true-scale vector PDF.
-- **Select**: click an entity (Ctrl+click adds); **Del** erases; **Ctrl+Z** /
+- **Select**: click an entity (Ctrl+click adds), or drag a box - left to
+  right takes what is wholly inside it (window), right to left anything it
+  touches (crossing); Ctrl+drag adds. **Ctrl+A** selects everything in
+  view, **SELLAYER** everything on a layer (or on the selection's own
+  layers). **Del** erases; **Ctrl+Z** /
   **Ctrl+Y** undo/redo. **Move** and **Rotate** act on the selection (Rotate
   picks the pivot, then type the angle in degrees, clockwise). **Stretch**
   moves just one vertex - select the line(s) or polyline sharing it, pick
@@ -114,7 +118,7 @@ FdDraft.App project in Visual Studio).
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, MOVE, ROTATE, STRETCH,
-  COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

@@ -909,5 +909,36 @@ namespace FdDraft.Tests
             Assert.Near(Math.PI * 25 / 2, FigureMeasure.Area(pts, bulges), 1e-9, "half-disc area");
             Assert.Near(10 + Math.PI * 5, FigureMeasure.Perimeter(pts, bulges, true), 1e-9, "diameter plus half circumference");
         }
+            // ---- drag-box selection (v0.4.12) -----------------------------------------------------
+
+        public static void TestBoxSelectWindowVersusCrossing()
+        {
+            var scene = new Scene();
+            var g = new SceneGroup();
+            scene.Groups.Add(g);
+            // 1: short line fully inside the box; 2: long line passing through it with both ends
+            // outside; 3: text whose anchor is inside; 4: a circle the box edge cuts;
+            // 5: a line far away; 6: an entity drawn as two prims, only one of them inside.
+            g.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = { new Vec2(2, 2), new Vec2(4, 4) }, Handle = 1 });
+            g.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = { new Vec2(-5, 5), new Vec2(15, 5) }, Handle = 2 });
+            g.Prims.Add(new Prim { Kind = PrimKind.Text, Center = new Vec2(6, 6), Text = "LOT 5", Height = 1, Handle = 3 });
+            g.Prims.Add(new Prim { Kind = PrimKind.Circle, Center = new Vec2(10, 1), Radius = 2, Handle = 4 });
+            g.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = { new Vec2(50, 50), new Vec2(60, 60) }, Handle = 5 });
+            g.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = { new Vec2(1, 1), new Vec2(2, 1) }, Handle = 6 });
+            g.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = { new Vec2(30, 1), new Vec2(31, 1) }, Handle = 6 });
+            var box = new Rect(0, 0, 9, 9);
+
+            var window = BoxSelect.Handles(scene, box, crossing: false);
+            Assert.True(window.SetEquals(new ulong[] { 1, 3 }), "window takes only what is wholly inside: " + string.Join(",", window));
+            var crossing = BoxSelect.Handles(scene, box, crossing: true);
+            Assert.True(crossing.SetEquals(new ulong[] { 1, 2, 3, 4, 6 }), "crossing also takes what the box touches: " + string.Join(",", crossing));
+
+            // On a sheet, a viewport group only offers what shows through its clip.
+            var sheet = new Scene { IsPaper = true };
+            var vp = new SceneGroup { Clip = new Rect(0, 0, 3, 3) };
+            vp.Prims.Add(new Prim { Kind = PrimKind.Polyline, Points = { new Vec2(5, 5), new Vec2(6, 6) }, Handle = 7 });
+            sheet.Groups.Add(vp);
+            Assert.True(BoxSelect.Handles(sheet, new Rect(0, 0, 10, 10), crossing: true).Count == 0, "linework clipped out of the viewport can't be boxed");
+        }
     }
 }

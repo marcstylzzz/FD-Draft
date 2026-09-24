@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.11 (`Directory.Build.props`).
+- **Current version:** 0.4.12 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  48 tests as of v0.4.11, all passing.
+  49 tests as of v0.4.12, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -119,12 +119,15 @@ on Windows; that's still Marc's job when he runs a build.
   to the other side of their nearest course (mirrored across the line, or
   radially through an arc) with top/bottom anchoring swapped. Purely
   geometric; no course<->label link needed.
-- **v0.4.11** (current): LINE gets `C` (close to start: misclosure, 1:n
+- **v0.4.11**: LINE gets `C` (close to start: misclosure, 1:n
   precision, area, then the closing course) and `U` (undo last leg); new
   AREA command (closed polylines/circles, or picked corners). Core types
   `ClosureReport` and `FigureMeasure` (not "Figure" - that name is FD-Pro's
   job figure in FdDraft.Core.Job, and "Measure" clashes with WPF's
   UIElement.Measure inside MainWindow).
+- **v0.4.12** (current): drag-box selection in the canvas (window
+  left-to-right, crossing right-to-left, Ctrl adds; logic in
+  `FdDraft.View.BoxSelect`), plus SELALL (Ctrl+A) and SELLAYER.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

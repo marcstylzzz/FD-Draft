@@ -160,6 +160,7 @@ namespace FdDraft.App
             _canvas.CursorMoved += OnCursor;
             _canvas.Picked += OnPick;
             _canvas.EntityClicked += OnEntityClicked;
+            _canvas.BoxSelected += OnBoxSelected;
             Closing += OnClosing;
             PreviewKeyDown += OnKey;
 
@@ -171,6 +172,7 @@ namespace FdDraft.App
             Bind(Key.F3, ModifierKeys.None, ToggleSnap);
             Bind(Key.Z, ModifierKeys.Control, DoUndo);
             Bind(Key.Y, ModifierKeys.Control, DoRedo);
+            Bind(Key.A, ModifierKeys.Control, SelectAll);
 
             UpdateStatus();
             Log("FD-Draft " + typeof(DraftPipeline).Assembly.GetName().Version?.ToString(3) + ". Ctrl+D drafts an FD-Pro job; type HELP for commands.");
@@ -200,6 +202,9 @@ namespace FdDraft.App
             edit.Items.Add(Item("_Redo", "Ctrl+Y", DoRedo));
             edit.Items.Add(new Separator());
             edit.Items.Add(Item("Erase selection", "Del", EraseSelected));
+            edit.Items.Add(new Separator());
+            edit.Items.Add(Item("Select _all in view", "Ctrl+A", SelectAll));
+            edit.Items.Add(Item("Select same _layer", "SELLAYER", () => SelectByLayer("")));
             var draw = new MenuItem { Header = "_Draw" };
             draw.Items.Add(Item("_Line", "LINE", StartLine));
             draw.Items.Add(Item("_Arc (3 points)", "ARC", StartArc));
@@ -338,6 +343,8 @@ namespace FdDraft.App
                 case "COPY": case "CO": case "CP": StartCopy(); break;
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
+                case "SELALL": case "ALL": SelectAll(); break;
+                case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
@@ -362,6 +369,8 @@ namespace FdDraft.App
             Log("  PDF     plot the current sheet to a true-scale PDF   (Ctrl+P)");
             Log("  INV     inverse: pick two points for bearing and distance");
             Log("  Click an entity to select it (Ctrl+click adds); Del erases; Ctrl+Z/Ctrl+Y undo/redo");
+            Log("  Drag a box: left-to-right takes what's fully inside, right-to-left anything it touches (Ctrl adds)");
+            Log("  SELALL (Ctrl+A) everything in view · SELLAYER <layer>, or SELLAYER alone for the selection's own layer(s)");
             Log("  MOVE    select entities, MOVE, pick base point then destination");
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
@@ -736,6 +745,47 @@ namespace FdDraft.App
             }
             UpdateProperties();
             _canvas.InvalidateVisual();
+        }
+
+        private void OnBoxSelected(HashSet<ulong> handles, bool ctrl)
+        {
+            if (!ctrl) _canvas.Selected.Clear();
+            foreach (var h in handles) _canvas.Selected.Add(h);
+            UpdateProperties();
+            _canvas.InvalidateVisual();
+            if (handles.Count > 0) Log("  selected " + Plural(_canvas.Selected.Count, "entity", "entities"));
+        }
+
+        /// <summary>Every entity drawn in the current view (Model, or the current sheet and what
+        /// shows through its viewports), as handles.</summary>
+        private HashSet<ulong> VisibleHandles() =>
+            _canvas.Scene == null ? new HashSet<ulong>() : new HashSet<ulong>(_canvas.Scene.AllPrims().Where(p => p.Handle != 0).Select(p => p.Handle));
+
+        /// <summary>SELALL: select everything drawn in the current view.</summary>
+        private void SelectAll()
+        {
+            _canvas.Selected.Clear();
+            foreach (var h in VisibleHandles()) _canvas.Selected.Add(h);
+            UpdateProperties();
+            _canvas.InvalidateVisual();
+            Log("  selected " + Plural(_canvas.Selected.Count, "entity", "entities"));
+        }
+
+        /// <summary>SELLAYER [name]: select everything in the current view on that layer - or,
+        /// with no name, on the same layer(s) as the current selection ("select similar").</summary>
+        private void SelectByLayer(string name)
+        {
+            if (_doc == null) return;
+            var layers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (name.Length > 0) layers.Add(name);
+            else foreach (var e in SelectedEntities()) layers.Add(e.Layer?.Name ?? "0");
+            if (layers.Count == 0) { Log("  type SELLAYER <layer>, or select something on the layer first"); return; }
+            _canvas.Selected.Clear();
+            foreach (var h in VisibleHandles())
+                if (_doc.GetCadObject(h) is Entity e && layers.Contains(e.Layer?.Name ?? "0")) _canvas.Selected.Add(h);
+            UpdateProperties();
+            _canvas.InvalidateVisual();
+            Log("  selected " + Plural(_canvas.Selected.Count, "entity", "entities") + " on " + string.Join(", ", layers));
         }
 
         private List<Entity> SelectedEntities() =>

@@ -90,6 +90,15 @@ it on Windows is the real test.
 - **Select**: click an entity to select it (its DWG handle drives it, from
   `Prim.Handle`); Ctrl+click adds or removes. Highlighted in the canvas and
   summarised in the **Properties** panel.
+- **Box selection**: a left-button drag with no tool active becomes a
+  selection box once it passes 5 px (a shorter one is still a click).
+  `FdDraft.View.BoxSelect.Handles` decides from the scene's own prims -
+  window (dragged left to right) needs every prim of an entity inside;
+  crossing (right to left) takes any entity with a prim inside or a segment
+  cutting the box edge (circles by nearest/farthest box point against the
+  radius). Text and nodes go by their anchor. On a sheet the box is clipped
+  to each viewport first, so only what shows through it can be boxed.
+  SELALL / SELLAYER work from the handles drawn in the current view.
 - **Erase** (Del, or the ERASE command) and **MOVE** / **ROTATE** transform
   the selected entities in place via `ACadSharp.Entities.Entity.ApplyTransform`.
   ROTATE takes the pivot by pick and the angle by typing degrees, clockwise
