@@ -208,6 +208,9 @@ namespace FdDraft.View
                     if (dim.Block != null && depth < 8)
                         foreach (var be in dim.Block.Entities) Emit(be, t, layer, rgb, handle, depth + 1);
                     break;
+                case Leader ld:
+                    EmitLeader(ld, t, rgb, lname, handle);
+                    break;
                 case Viewport:
                     break;
                 default:
@@ -240,6 +243,26 @@ namespace FdDraft.View
             AddSnap(t.Apply(ins.InsertPoint.X, ins.InsertPoint.Y), SnapKind.Node);
             // Attributes are stored in the insert's own coordinate space, not the block's.
             foreach (var a in ins.Attributes) Emit(a, t, layer, rgb, handle, depth + 1);
+        }
+
+        /// <summary>A LEADER's shaft (its own vertices, no bulge) plus a small arrowhead at the
+        /// first vertex when <see cref="Leader.ArrowHeadEnabled"/>, aimed back along the shaft -
+        /// the annotation text, if any, is a separate MTEXT/TEXT entity drawn on its own.</summary>
+        private void EmitLeader(Leader ld, Affine t, uint rgb, string layer, ulong handle)
+        {
+            if (ld.Vertices.Count < 2) return;
+            var pts = ld.Vertices.Select(v => t.Apply(v.X, v.Y)).ToList();
+            Poly(pts, false, rgb, layer, handle, snapVertices: true);
+            if (!ld.ArrowHeadEnabled) return;
+            var tip = pts[0];
+            var toward = (pts[1] - tip);
+            if (toward.Length < 1e-9) return;
+            var u = toward.Normalized();
+            var n = u.Left();
+            double headLen = Math.Min(0.15 * t.ScaleFactor, toward.Length * 0.2);
+            var wing1 = tip + u * headLen - n * (headLen * 0.35);
+            var wing2 = tip + u * headLen + n * (headLen * 0.35);
+            Poly(new[] { wing1, tip, wing2 }, false, rgb, layer, handle, snapVertices: false);
         }
 
         private void Text(TextEntity te, Affine t, uint rgb, string layer, ulong handle)

@@ -116,10 +116,22 @@ it on Windows is the real test.
   the same `Arc.ThroughThreePoints` the drafting engine itself uses.
 - **TEXT** / **LEADER**: pick a point (LEADER: two - the feature, then the
   text), then type the text, optionally prefixed with a height
-  (`"0.25 LOT 5"`; default 0.2). LEADER draws a shaft, a small arrowhead
-  aimed back along it, and the text as one undo step.
+  (`"0.25 LOT 5"`; default 0.2). LEADER places a real `ACadSharp.Entities.Leader`
+  (not hand-drawn lines) - `ArrowHeadEnabled`, `Style` set to the default
+  dimension style (resolved against the document's own `DimensionStyles`
+  table once added, registering "Standard" if it isn't there yet) - plus a
+  separate TEXT entity for the annotation, as one undo step. `SceneBuilder`
+  draws a Leader's own vertices and, when its arrowhead flag is set, a small
+  triangle at the first vertex aimed back along the shaft, so it still shows
+  up in FD-Draft's own canvas/PDF/SVG, not just in AutoCAD/MSCAD. Covered by
+  an in-memory test and a real DWG write/read round trip (no firm .dwt
+  needed for the latter, unlike most DWG tests).
 - New entities pick up the toolbar's **current layer**, created on the fly
-  if the template doesn't have it yet.
+  if the template doesn't have it yet, and land in the right block: Model
+  space, unless the current sheet is a layout with no working viewport at
+  all, in which case they go straight into that layout's own block in paper
+  coordinates (`MainWindow.CurrentEntityOwner`) - the same paper-native case
+  `Scene.ModelAt`'s fallback above exists for.
 - Bearing/leg parsing (`Cogo`) lives in `FdDraft.Core.Geometry` for the same
   testability reason as the edit commands.
 - **Codes** panel lists the job's `codes.csv` (key, description, layer).
@@ -164,8 +176,12 @@ it on Windows is the real test.
 - Flip labels; multi-point (not just Del-all) partial erase of a polyline
   vertex; a dedicated sheet setup panel (rather than reusing Draft FD-Pro
   job) for scale-only changes without re-running the whole pipeline.
-- Real leaders/dimensions as ACadSharp `Leader`/`Dimension` entities instead
-  of plain lines, so they read back as leaders in AutoCAD/MSCAD too.
+- LEADER's annotation is still a separate, unassociated TEXT entity next to
+  a real Leader, not linked as its `AssociatedAnnotation` (that setter is
+  `internal` to ACadSharp - not reachable from FD-Draft) or an MTEXT with a
+  real dimension-style-driven landing gap; a true DIMENSION entity (for
+  distance/angle dimensioning, as opposed to a leader) is likewise not built
+  yet.
 - Properties editing so far covers layer and text content; still read-only
   for everything else (a line's endpoints, an arc/circle's radius, a text's
   height or rotation).

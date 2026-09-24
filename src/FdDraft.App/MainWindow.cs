@@ -830,6 +830,20 @@ namespace FdDraft.App
 
         private string CurrentLayer() => (_layerCombo.SelectedItem as string) ?? "0";
 
+        /// <summary>
+        /// Where new linework/text drawn on the canvas belongs: Model space, unless the current
+        /// sheet is a layout with no working viewport at all - a real MSCAD job commonly draws
+        /// its plan straight onto paper on the sheet it actually used (see the empty-layout note
+        /// in docs/ARCHITECTURE.md), so new drafting there has to land in that layout's own block
+        /// too, in the same paper coordinates <see cref="Scene.ModelAt"/> already hands back.
+        /// </summary>
+        private BlockRecord CurrentEntityOwner()
+        {
+            if (_sheet == "Model" || _sheet.Length == 0 || _canvas.Scene == null) return _doc!.ModelSpace;
+            if (_canvas.Scene.Groups.Any(g => g.Clip.HasValue && g.ToModel.HasValue)) return _doc!.ModelSpace;
+            return _doc!.Layouts.First(l => l.Name.Equals(_sheet, StringComparison.OrdinalIgnoreCase)).AssociatedBlock;
+        }
+
         private Layer GetOrCreateLayer(string name)
         {
             if (_doc!.Layers.TryGetValue(name, out var layer)) return layer;
@@ -859,7 +873,7 @@ namespace FdDraft.App
             {
                 var from = cur!.Value;
                 var line = new Line(new XYZ(from.X, from.Y, 0), new XYZ(to.X, to.Y, 0)) { Layer = GetOrCreateLayer(layer) };
-                _undo.Push(new AddEntitiesCommand(_doc!.ModelSpace, new Entity[] { line }, "Line"));
+                _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { line }, "Line"));
                 cur = to;
                 _canvas.RubberFrom = to;
                 _dirty = true; UpdateTitle();
@@ -928,7 +942,7 @@ namespace FdDraft.App
                 }
                 double a0 = a.StartAngle, a1 = a.StartAngle + a.Sweep;
                 var entity = new Arc { Center = new XYZ(a.Center.X, a.Center.Y, 0), Radius = a.Radius, StartAngle = Math.Min(a0, a1), EndAngle = Math.Max(a0, a1), Layer = GetOrCreateLayer(layer) };
-                _undo.Push(new AddEntitiesCommand(_doc!.ModelSpace, new Entity[] { entity }, "Arc"));
+                _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { entity }, "Arc"));
                 _dirty = true; UpdateTitle();
                 EndTool();
                 Rebuild(fit: false);
@@ -958,7 +972,7 @@ namespace FdDraft.App
                 if (s.Length == 0) { EndTool(); Log("  *cancelled - no text*"); return; }
                 ParseHeightAndText(s, out double h, out string content);
                 var entity = new TextEntity { Value = content, InsertPoint = new XYZ(at!.Value.X, at.Value.Y, 0), Height = h, Layer = GetOrCreateLayer(layer) };
-                _undo.Push(new AddEntitiesCommand(_doc!.ModelSpace, new Entity[] { entity }, "Text"));
+                _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { entity }, "Text"));
                 _dirty = true; UpdateTitle();
                 EndTool();
                 Rebuild(fit: false);
@@ -986,17 +1000,14 @@ namespace FdDraft.App
                 }
                 var end = model.Value;
                 var added = new List<Entity>();
-                var shaft = new Line(new XYZ(tip.Value.X, tip.Value.Y, 0), new XYZ(end.X, end.Y, 0)) { Layer = GetOrCreateLayer(layer) };
-                added.Add(shaft);
-                double dx = end.X - tip.Value.X, dy = end.Y - tip.Value.Y;
-                double len = Math.Max(Math.Sqrt(dx * dx + dy * dy), 1e-9);
-                double ux = dx / len, uy = dy / len;
-                double headLen = Math.Min(0.15, len * 0.2);
-                double px = -uy, py = ux;
-                var wing1 = new Vec2(tip.Value.X + ux * headLen - px * headLen * 0.35, tip.Value.Y + uy * headLen - py * headLen * 0.35);
-                var wing2 = new Vec2(tip.Value.X + ux * headLen + px * headLen * 0.35, tip.Value.Y + uy * headLen + py * headLen * 0.35);
-                added.Add(new Line(new XYZ(tip.Value.X, tip.Value.Y, 0), new XYZ(wing1.X, wing1.Y, 0)) { Layer = GetOrCreateLayer(layer) });
-                added.Add(new Line(new XYZ(tip.Value.X, tip.Value.Y, 0), new XYZ(wing2.X, wing2.Y, 0)) { Layer = GetOrCreateLayer(layer) });
+                // A real ACadSharp Leader, not hand-drawn lines: it reads back as an actual
+                // leader in AutoCAD/MSCAD, with its own arrowhead driven by the dimension style
+                // (Style resolves against the document's DimensionStyles - registering "Standard"
+                // if it isn't there yet - once this is added to a block; see TestLeaderEntityAddsAndRenders).
+                var leader = new Leader { ArrowHeadEnabled = true, Layer = GetOrCreateLayer(layer), Style = DimensionStyle.Default };
+                leader.Vertices.Add(new XYZ(tip.Value.X, tip.Value.Y, 0));
+                leader.Vertices.Add(new XYZ(end.X, end.Y, 0));
+                added.Add(leader);
                 _canvas.ToolActive = false;
                 _prompt.Text = "Leader - text (or \"height text\", default height 0.2):";
                 _leaderPending = (added, end, layer);
@@ -1010,7 +1021,7 @@ namespace FdDraft.App
                 if (s.Length == 0) { EndTool(); Log("  *cancelled - no text*"); return; }
                 ParseHeightAndText(s, out double h, out string content);
                 added.Add(new TextEntity { Value = content, InsertPoint = new XYZ(end.X, end.Y, 0), Height = h, Layer = GetOrCreateLayer(lyr) });
-                _undo.Push(new AddEntitiesCommand(_doc!.ModelSpace, added, "Leader"));
+                _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), added, "Leader"));
                 _dirty = true; UpdateTitle();
                 EndTool();
                 Rebuild(fit: false);

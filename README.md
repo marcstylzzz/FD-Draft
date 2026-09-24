@@ -72,7 +72,12 @@ FdDraft.App project in Visual Studio).
   then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
   blank ends it. **Arc** fits three picked points. **Text** and **Leader**
   place labels (type `height text`, e.g. `0.25 LOT 5`, or just the text for
-  the default height). New linework goes on the toolbar's **Layer** box.
+  the default height) - Leader places a real DWG leader entity, with an
+  arrowhead, not just plain lines, so it reads back as one in AutoCAD/MSCAD
+  too. New linework goes on the toolbar's **Layer** box, and lands on the
+  current sheet correctly even when that sheet has no real viewport of its
+  own (a real MSCAD job commonly draws straight onto paper on the sheet it
+  actually used).
 - **Codes** panel lists the job's codes; **Properties** summarises the
   current selection and, for a single TEXT or MTEXT, lets you retype its
   content right there (Enter or **Apply text**). **Set Layer** on the

@@ -533,6 +533,54 @@ namespace FdDraft.Tests
             Assert.Near(10, poly.Vertices[1].Location.X, 1e-9, "undo restores the polyline vertex");
         }
 
+        public static void TestLeaderEntityAddsAndRenders()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var leader = new ACadSharp.Entities.Leader
+            {
+                ArrowHeadEnabled = true,
+                Style = ACadSharp.Tables.DimensionStyle.Default,
+            };
+            leader.Vertices.Add(new CSMath.XYZ(0, 0, 0));
+            leader.Vertices.Add(new CSMath.XYZ(5, 5, 0));
+            var undo = new UndoStack();
+
+            // Adding it to the document resolves Style against doc.DimensionStyles (registers
+            // "Standard" if the document doesn't have it yet) - this is the real failure mode to
+            // catch: a Leader built off-document with a detached DimensionStyle instance.
+            undo.Push(new AddEntitiesCommand(doc.ModelSpace, new ACadSharp.Entities.Entity[] { leader }, "Leader"));
+            Assert.True(doc.ModelSpace.Entities.Any(e => e == leader), "leader added to model space");
+            Assert.True(doc.DimensionStyles.Any(s => s.Name == leader.Style.Name), "its dimension style is registered in the document");
+
+            var scene = new SceneBuilder(doc).Model();
+            int prims = scene.Groups.Sum(g => g.Prims.Count);
+            Assert.True(prims >= 2, "the leader draws its shaft and an arrowhead, not just gets skipped");
+
+            undo.Undo();
+            Assert.True(!doc.ModelSpace.Entities.Any(e => e == leader), "undo removes it");
+        }
+
+        public static void TestLeaderEntitySurvivesDwgRoundTrip()
+        {
+            // Unlike TestDraftsIntoTemplateAndReadsBack this needs no firm .dwt - a real DWG
+            // write/read of a fresh document, to catch a writer-side issue with the Leader's
+            // DimensionStyle table reference that an in-memory-only test could miss.
+            var doc = new ACadSharp.CadDocument();
+            var leader = new ACadSharp.Entities.Leader { ArrowHeadEnabled = true, Style = ACadSharp.Tables.DimensionStyle.Default };
+            leader.Vertices.Add(new CSMath.XYZ(1, 2, 0));
+            leader.Vertices.Add(new CSMath.XYZ(6, 7, 0));
+            doc.ModelSpace.Entities.Add(leader);
+            string path = Path.Combine(Path.GetTempPath(), "fdd-leader-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            var readBack = back.ModelSpace.Entities.OfType<ACadSharp.Entities.Leader>().Single();
+            Assert.True(readBack.ArrowHeadEnabled, "arrowhead flag survives the round trip");
+            Assert.True(readBack.Vertices.Count == 2, "both vertices survive");
+            Assert.Near(6, readBack.Vertices[1].X, 1e-6, "vertex position survives");
+            Assert.True(readBack.Style != null && readBack.Style.Name == "Standard", "the dimension style reference survives and resolves");
+        }
+
         public static void TestModelAtFallsBackToPaperWhenNoViewport()
         {
             // A sheet with a real, working viewport: outside it, a pick is ambiguous (null).
