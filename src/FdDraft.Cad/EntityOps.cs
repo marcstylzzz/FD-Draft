@@ -256,3 +256,125 @@ namespace FdDraft.Cad.Editing
         }
     }
 }
+
+namespace FdDraft.Cad.Editing
+{
+    /// <summary>
+    /// FLIP: moves a bearing/distance (or curve-data) label to the other side of the course it
+    /// labels. The label's anchor is mirrored across the course - the course's own line for a
+    /// straight course, radially through the curve for an arc - and its top/bottom anchoring is
+    /// swapped, so text that sat just above the line now hangs just below it at the same gap,
+    /// still reading the same way. Rotation is untouched.
+    /// </summary>
+    public static class LabelFlip
+    {
+        /// <summary>The course span nearest <paramref name="p"/> among the linework
+        /// candidates (Lines, Arcs, and every span of LwPolylines/Polyline2Ds).</summary>
+        public static bool NearestCourse(IEnumerable<Entity> candidates, Vec2 p, out Construct.Span course, out double distance)
+        {
+            course = default; distance = double.MaxValue; bool found = false;
+            foreach (var e in candidates)
+            {
+                IEnumerable<Construct.Span> spans = e switch
+                {
+                    Line l => new[] { Construct.Span.Straight(new Vec2(l.StartPoint.X, l.StartPoint.Y), new Vec2(l.EndPoint.X, l.EndPoint.Y)) },
+                    ACadSharp.Entities.Arc a => new[] { ArcSpan(a) },
+                    LwPolyline lp when lp.Vertices.Count >= 2 => Construct.Spans(lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), lp.Vertices.Select(v => v.Bulge).ToList(), lp.IsClosed),
+                    Polyline2D p2 when p2.Vertices.Count >= 2 => Construct.Spans(p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), p2.Vertices.Select(v => v.Bulge).ToList(), p2.IsClosed),
+                    _ => Array.Empty<Construct.Span>(),
+                };
+                foreach (var s in spans)
+                {
+                    if (Vec2.Distance(s.A, s.B) < 1e-9) continue;
+                    double d = s.DistanceAndSide(p, out _);
+                    if (d < distance) { distance = d; course = s; found = true; }
+                }
+            }
+            return found;
+        }
+
+        private static Construct.Span ArcSpan(ACadSharp.Entities.Arc a)
+        {
+            double sweep = a.EndAngle - a.StartAngle;
+            while (sweep <= 0) sweep += Angles.TwoPi;
+            var c = new Vec2(a.Center.X, a.Center.Y);
+            var s = new Vec2(c.X + a.Radius * Math.Cos(a.StartAngle), c.Y + a.Radius * Math.Sin(a.StartAngle));
+            var e = new Vec2(c.X + a.Radius * Math.Cos(a.EndAngle), c.Y + a.Radius * Math.Sin(a.EndAngle));
+            return Construct.Span.Arc(s, e, c, a.Radius, sweep);
+        }
+
+        /// <summary>A point mirrored to the other side of a course: across its line, or
+        /// radially through an arc (same gap from the curve, on the other side of it).</summary>
+        public static Vec2 Across(Construct.Span course, Vec2 p)
+        {
+            if (!course.IsArc) return Construct.Reflect(p, course.A, course.B);
+            var d = p - course.Center;
+            double len = d.Length;
+            if (len < 1e-12) return p;
+            return course.Center + d * ((2 * course.Radius - len) / len);
+        }
+
+        /// <summary>The anchor FLIP mirrors: a TEXT's alignment point when it is aligned (as
+        /// every FD-Draft label is), otherwise its insertion point; an MTEXT's insertion point.</summary>
+        public static Vec2? Anchor(Entity e) => e switch
+        {
+            TextEntity t when t.HorizontalAlignment != TextHorizontalAlignment.Left || t.VerticalAlignment != TextVerticalAlignmentType.Baseline
+                => new Vec2(t.AlignmentPoint.X, t.AlignmentPoint.Y),
+            TextEntity t => new Vec2(t.InsertPoint.X, t.InsertPoint.Y),
+            MText m => new Vec2(m.InsertPoint.X, m.InsertPoint.Y),
+            _ => null,
+        };
+
+        /// <summary>
+        /// Flips each TEXT/MTEXT label in <paramref name="labels"/> across the course nearest
+        /// it among <paramref name="courses"/> (within <paramref name="maxDistance"/>), as one
+        /// undo step. Returns null when nothing could be flipped; <paramref name="flipped"/>
+        /// counts the labels moved.
+        /// </summary>
+        public static IEditCommand? Flip(IEnumerable<Entity> labels, IList<Entity> courses, double maxDistance, out int flipped)
+        {
+            var edits = new List<IEditCommand>();
+            foreach (var e in labels)
+            {
+                var anchor = Anchor(e);
+                if (anchor == null) continue;
+                if (!NearestCourse(courses, anchor.Value, out var course, out double d) || d > maxDistance) continue;
+                var to = Across(course, anchor.Value);
+                switch (e)
+                {
+                    case TextEntity t:
+                    {
+                        var oldIns = t.InsertPoint; var oldAl = t.AlignmentPoint; var oldV = t.VerticalAlignment;
+                        var at = new XYZ(to.X, to.Y, oldAl.Z);
+                        var newV = oldV switch
+                        {
+                            TextVerticalAlignmentType.Top => TextVerticalAlignmentType.Bottom,
+                            TextVerticalAlignmentType.Bottom or TextVerticalAlignmentType.Baseline => TextVerticalAlignmentType.Top,
+                            _ => oldV,
+                        };
+                        // A left/baseline TEXT anchors at its insertion point; once it is re-anchored
+                        // at the top it becomes an aligned text anchored at its alignment point.
+                        edits.Add(new SetPropertyCommand<(XYZ Ins, XYZ Al, TextVerticalAlignmentType V)>(
+                            (oldIns, oldAl, oldV), (at, at, newV),
+                            s => { t.InsertPoint = s.Ins; t.AlignmentPoint = s.Al; t.VerticalAlignment = s.V; }, "Flip label"));
+                        break;
+                    }
+                    case MText m:
+                    {
+                        var oldIns = m.InsertPoint; var oldAp = m.AttachmentPoint;
+                        int ap = (int)oldAp; int row = (ap - 1) / 3, col = (ap - 1) % 3;
+                        var newAp = (AttachmentPointType)((2 - row) * 3 + col + 1);
+                        var at = new XYZ(to.X, to.Y, oldIns.Z);
+                        edits.Add(new SetPropertyCommand<(XYZ Ins, AttachmentPointType Ap)>(
+                            (oldIns, oldAp), (at, newAp),
+                            s => { m.InsertPoint = s.Ins; m.AttachmentPoint = s.Ap; }, "Flip label"));
+                        break;
+                    }
+                }
+            }
+            flipped = edits.Count;
+            if (edits.Count == 0) return null;
+            return edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Flip " + edits.Count + " labels");
+        }
+    }
+}

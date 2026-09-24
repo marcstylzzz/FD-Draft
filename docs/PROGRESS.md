@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.9 (`Directory.Build.props`).
+- **Current version:** 0.4.10 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  45 tests as of v0.4.9, all passing.
+  46 tests as of v0.4.10, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -111,10 +111,14 @@ on Windows; that's still Marc's job when he runs a build.
   (lines, arcs, circles, LwPolylines with mitred corners and concentric
   curves). Entity construction in `FdDraft.Cad.Editing.EntityOps`, the math
   in `FdDraft.Core.Geometry.Construct`.
-- **v0.4.9** (current): polyline vertex insert/delete - VXDEL (pick a
+- **v0.4.9**: polyline vertex insert/delete - VXDEL (pick a
   vertex to remove; the joined span goes straight), VXADD (pick a spot on a
   span; an arc is split on its curve exactly), and matching Delete vertex /
   Insert after buttons in Properties. LwPolyline only.
+- **v0.4.10** (current): FLIP - selected bearing/distance/curve labels move
+  to the other side of their nearest course (mirrored across the line, or
+  radially through an arc) with top/bottom anchoring swapped. Purely
+  geometric; no course<->label link needed.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -129,7 +133,7 @@ on Windows; that's still Marc's job when he runs a build.
   solvable without a change on the ACadSharp side.
 - **No true DIMENSION entity** yet (distance/angle dimensioning, as opposed
   to a leader).
-- **No flip labels**, no dedicated sheet-setup panel (scale-only changes
+- No dedicated sheet-setup panel (scale-only changes
   currently mean re-running the whole Draft FD-Pro job flow). Vertex
   insert/delete covers LwPolyline only (not Polyline2D).
 - **North-up viewports only** (no twist for a rotated lot); splines written
@@ -139,8 +143,7 @@ on Windows; that's still Marc's job when he runs a build.
 
 ## Suggested next steps (in roughly the order they'd naturally come up)
 
-1. Flip labels (mirror a bearing/distance label to the other side of its
-   course) - self-contained, no new data model needed.
+1. ~~Flip labels~~ - done in v0.4.10.
 2. ~~Partial polyline-vertex erase~~ - done in v0.4.9 (LwPolyline).
 3. A dedicated sheet-setup panel (scale/layout changes without re-running
    the full Draft FD-Pro job pipeline).

@@ -845,5 +845,45 @@ namespace FdDraft.Tests
             Assert.Near(5, on.Length, 1e-9, "projected onto the radius-5 curve");
             Assert.Equal(2, VertexEditing.NearestVertex(Poly(false, (0, 0, 0), (5, 0, 0), (9, 1, 0)), new Vec2(8, 1), out _), "nearest vertex");
         }
+            // ---- FLIP labels (v0.4.10) -----------------------------------------------------------
+
+        private static ACadSharp.Entities.TextEntity Label(string text, double e, double n, ACadSharp.Entities.TextVerticalAlignmentType v) => new ACadSharp.Entities.TextEntity
+        {
+            Value = text, InsertPoint = new CSMath.XYZ(e, n, 0), AlignmentPoint = new CSMath.XYZ(e, n, 0), Height = 0.2,
+            HorizontalAlignment = ACadSharp.Entities.TextHorizontalAlignment.Center, VerticalAlignment = v,
+        };
+
+        public static void TestFlipMovesLabelsToTheOtherSideOfTheirCourse()
+        {
+            // An east-west course with the bearing just above it and the distance just below,
+            // the way Annotator places them; plus an unrelated course further away.
+            var course = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(10, 0, 0));
+            var other = new ACadSharp.Entities.Line(new CSMath.XYZ(0, 5, 0), new CSMath.XYZ(10, 5, 0));
+            var bearing = Label("N90°00'00\"E", 5, 0.1, ACadSharp.Entities.TextVerticalAlignmentType.Bottom);
+            var distance = Label("10.000", 5, -0.1, ACadSharp.Entities.TextVerticalAlignmentType.Top);
+            var undo = new UndoStack();
+
+            var cmd = LabelFlip.Flip(new ACadSharp.Entities.Entity[] { bearing, distance }, new ACadSharp.Entities.Entity[] { course, other }, 2.0, out int flipped);
+            undo.Push(cmd!);
+            Assert.Equal(2, flipped, "both labels flipped");
+            Assert.Near(-0.1, bearing.AlignmentPoint.Y, 1e-9, "bearing now just below the course");
+            Assert.True(bearing.VerticalAlignment == ACadSharp.Entities.TextVerticalAlignmentType.Top, "and hangs from its anchor");
+            Assert.Near(0.1, distance.AlignmentPoint.Y, 1e-9, "distance now just above");
+            Assert.True(distance.VerticalAlignment == ACadSharp.Entities.TextVerticalAlignmentType.Bottom, "and sits on its anchor");
+            Assert.Near(5, bearing.AlignmentPoint.X, 1e-9, "still at the same place along the course");
+            undo.Undo();
+            Assert.Near(0.1, bearing.AlignmentPoint.Y, 1e-9, "one undo restores the bearing");
+            Assert.True(bearing.VerticalAlignment == ACadSharp.Entities.TextVerticalAlignmentType.Bottom, "and its anchoring");
+            Assert.Near(-0.1, distance.AlignmentPoint.Y, 1e-9, "and the distance");
+
+            // Curve data flips radially: outside the radius-10 arc -> the same gap inside it.
+            var arc = new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(0, 0, 0), Radius = 10, StartAngle = 0, EndAngle = Math.PI / 2 };
+            var outer = Label("R=10.000", 10.3 / Math.Sqrt(2), 10.3 / Math.Sqrt(2), ACadSharp.Entities.TextVerticalAlignmentType.Bottom);
+            LabelFlip.Flip(new ACadSharp.Entities.Entity[] { outer }, new ACadSharp.Entities.Entity[] { arc }, 2.0, out _);
+            Assert.Near(9.7, new Vec2(outer.AlignmentPoint.X, outer.AlignmentPoint.Y).Length, 1e-9, "same gap, inside the curve");
+
+            var far = Label("LOT 5", 50, 50, ACadSharp.Entities.TextVerticalAlignmentType.Middle);
+            Assert.True(LabelFlip.Flip(new ACadSharp.Entities.Entity[] { far }, new ACadSharp.Entities.Entity[] { course }, 2.0, out _) == null, "a label nowhere near a course is left alone");
+        }
     }
 }

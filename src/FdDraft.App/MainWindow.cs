@@ -213,6 +213,7 @@ namespace FdDraft.App
             modify.Items.Add(Item("_Copy", "COPY", StartCopy));
             modify.Items.Add(Item("M_irror", "MIRROR", StartMirror));
             modify.Items.Add(Item("_Offset", "OFFSET", StartOffset));
+            modify.Items.Add(Item("_Flip label to other side", "FLIP", FlipSelectedLabels));
             modify.Items.Add(new Separator());
             modify.Items.Add(Item("Set _layer of selection", "", SetSelectionLayer));
             var view = new MenuItem { Header = "_View" };
@@ -252,6 +253,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Stretch", "Move one shared vertex, keeping connected lines joined (STRETCH)", StartStretch));
             bar.Items.Add(B("Copy", "Copy the selected entities (COPY)", StartCopy));
             bar.Items.Add(B("Mirror", "Mirror the selected entities across a line (MIRROR)", StartMirror));
+            bar.Items.Add(B("Flip", "Move the selected bearing/distance labels to the other side of their course (FLIP)", FlipSelectedLabels));
             bar.Items.Add(B("Offset", "Parallel copy of lines, arcs, circles and polylines at a distance (OFFSET)", StartOffset));
             bar.Items.Add(new Separator());
             bar.Items.Add(new TextBlock { Text = "Layer:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
@@ -333,6 +335,7 @@ namespace FdDraft.App
                 case "STRETCH": case "S": StartStretch(); break;
                 case "COPY": case "CO": case "CP": StartCopy(); break;
                 case "VXDEL": StartVertexDelete(); break;
+                case "FLIP": case "FL": FlipSelectedLabels(); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
                 case "OFFSET": case "O": StartOffset(); break;
@@ -360,6 +363,7 @@ namespace FdDraft.App
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
             Log("  VXDEL / VXADD   select a polyline, then pick a vertex to remove / a spot on it to add one (also buttons in Properties)");
+            Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
             Log("  MIRROR  select entities, MIRROR, pick two points on the mirror line, then Y/N to erase the originals");
             Log("  OFFSET  select lines/arcs/circles/polylines, OFFSET, type the distance, pick the side");
@@ -1507,6 +1511,26 @@ namespace FdDraft.App
                 Log("  offset " + Plural(pairs.Count, "entity", "entities") + " by " + dist.ToString("0.###", CultureInfo.InvariantCulture)
                     + (pairs.Count < entities.Count ? "  (" + (entities.Count - pairs.Count) + " skipped: unsupported type or collapsed curve)" : ""));
             };
+        }
+
+        /// <summary>FLIP: moves each selected bearing/distance/curve label to the other side of
+        /// the course nearest it (in the same block - Model, or a paper-native sheet).</summary>
+        private void FlipSelectedLabels()
+        {
+            if (_doc == null) return;
+            var labels = SelectedEntities().Where(e => e is TextEntity || e is MText).ToList();
+            if (labels.Count == 0) { Log("  select the label(s) to flip first (bearing, distance or curve text), then type FLIP"); return; }
+            // Courses are looked for in whatever block(s) the labels live in.
+            var courses = labels.Select(e => e.Owner).OfType<BlockRecord>().Distinct()
+                .SelectMany(b => b.Entities).Where(e => e is Line || e is Arc || e is LwPolyline || e is Polyline2D).ToList();
+            double h = labels.Max(e => e is TextEntity t ? t.Height : e is MText m ? m.Height : 0);
+            var cmd = LabelFlip.Flip(labels, courses, Math.Max(h, 1e-6) * 10, out int flipped);
+            if (cmd == null) { Log("  no course close enough to flip across - FLIP is for labels sitting beside their line or curve"); return; }
+            _undo.Push(cmd);
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            Log("  flipped " + Plural(flipped, "label", "labels") + (flipped < labels.Count ? " (" + (labels.Count - flipped) + " had no course beside them)" : "") + "  (Ctrl+Z to undo)");
         }
 
         private static string Plural(int n, string one, string many) => n + " " + (n == 1 ? one : many);

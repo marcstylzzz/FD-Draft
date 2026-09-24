@@ -126,6 +126,18 @@ it on Windows is the real test.
   corner, and a tangent curve stays tangent. The side comes from the span
   nearest the pick. Dimensions are left out of COPY for now (their picture
   block is per-dimension).
+- **FLIP** (`LabelFlip` in `FdDraft.Cad.Editing`): for each selected
+  TEXT/MTEXT, finds the nearest course span (Lines, Arcs and every span of
+  the polylines in the label's own block, within 10 text heights), mirrors
+  the label's anchor across it - across the line for a straight course,
+  radially through the curve for an arc - and swaps its top/bottom
+  anchoring. Annotator places a bearing bottom-anchored just above its
+  course and a distance top-anchored just below, so that lands each at the
+  same gap on the other side with the rotation untouched; flipping both
+  swaps them. All labels flip as one undo step (`SetPropertyCommand` over a
+  tuple of the fields that change). This needs no course↔label link: it is
+  purely geometric, one label at a time, and never re-derives any text - the
+  deferred relabel-after-STRETCH problem is unaffected.
 - **Polyline vertex insert/delete** (LwPolyline): `DeleteVertexCommand`
   removes one vertex and straightens the span that arrived at it (merging
   two arcs has no exact answer, and a straight join is what a drafter
@@ -221,7 +233,7 @@ it on Windows is the real test.
 - Relabel courses after a STRETCH (the vertex moves and connected lines stay
   joined, but their bearing/distance/area labels are not yet re-derived -
   there is still no persisted link between a course and its label text).
-- Flip labels; a dedicated sheet setup panel (rather than reusing Draft FD-Pro
+- A dedicated sheet setup panel (rather than reusing Draft FD-Pro
   job) for scale-only changes without re-running the whole pipeline.
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
