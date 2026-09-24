@@ -80,9 +80,12 @@ FdDraft.App project in Visual Studio).
   actually used).
 - **Codes** panel lists the job's codes; **Properties** summarises the
   current selection and, for a single entity, grows editable fields for it:
-  a TEXT/MTEXT's content (Enter or **Apply text**), and a text's height or a
-  Circle/Arc's radius (**Apply**). **Set Layer** on the toolbar reassigns
-  the whole selection to the current layer.
+  a TEXT/MTEXT's content (Enter or **Apply text**), plus, depending on the
+  entity, its text height, rotation, a Circle/Arc's radius, an Arc's start
+  and end angle, or a Line's endpoint coordinates (**Apply**). Editing
+  several fields at once and clicking Apply undoes them together as one
+  step. **Set Layer** on the toolbar reassigns the whole selection to the
+  current layer.
 - Opening any DWG logs which sheets actually have a plan drawn on them - a
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.

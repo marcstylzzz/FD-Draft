@@ -55,9 +55,12 @@ namespace FdDraft.App
         private readonly TextBox _properties = new TextBox { IsReadOnly = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), AcceptsReturn = true };
         private readonly TextBox _textEdit = new TextBox { IsEnabled = false, Margin = new Thickness(4) };
         private readonly Button _textEditApply = new Button { Content = "Apply text", IsEnabled = false, Margin = new Thickness(4, 0, 4, 4), Padding = new Thickness(6, 2, 6, 2) };
-        private readonly TextBlock _numberLabel = new TextBlock { Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11, Visibility = Visibility.Collapsed };
-        private readonly TextBox _numberEdit = new TextBox { IsEnabled = false, Margin = new Thickness(4), Visibility = Visibility.Collapsed };
+        private readonly StackPanel _numberFields = new StackPanel();
         private readonly Button _numberEditApply = new Button { Content = "Apply", IsEnabled = false, Margin = new Thickness(4, 0, 4, 4), Padding = new Thickness(6, 2, 6, 2), Visibility = Visibility.Collapsed };
+        /// <summary>The Properties panel's numeric fields for the current single selection -
+        /// rebuilt by <see cref="UpdateProperties"/>, applied together by
+        /// <see cref="ApplySelectedNumberEdit"/> as one <c>CompositeCommand</c>.</summary>
+        private readonly List<(TextBox Box, double Current, Action<double> Set, string Description)> _numberRows = new List<(TextBox, double, Action<double>, string)>();
         private readonly ListView _codes = new ListView();
         private readonly UndoStack _undo = new UndoStack();
 
@@ -117,8 +120,7 @@ namespace FdDraft.App
             editRow.Children.Add(new TextBlock { Text = "Text of the selected label:", Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
             editRow.Children.Add(_textEdit);
             editRow.Children.Add(_textEditApply);
-            editRow.Children.Add(_numberLabel);
-            editRow.Children.Add(_numberEdit);
+            editRow.Children.Add(_numberFields);
             editRow.Children.Add(_numberEditApply);
             DockPanel.SetDock(editRow, Dock.Bottom);
             propsPanel.Children.Add(editRow);
@@ -152,7 +154,6 @@ namespace FdDraft.App
             _textEditApply.Click += (s, e) => ApplySelectedTextEdit();
             _textEdit.KeyDown += (s, e) => { if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift) { ApplySelectedTextEdit(); e.Handled = true; } };
             _numberEditApply.Click += (s, e) => ApplySelectedNumberEdit();
-            _numberEdit.KeyDown += (s, e) => { if (e.Key == Key.Enter) { ApplySelectedNumberEdit(); e.Handled = true; } };
             _canvas.CursorMoved += OnCursor;
             _canvas.Picked += OnPick;
             _canvas.EntityClicked += OnEntityClicked;
@@ -784,34 +785,41 @@ namespace FdDraft.App
 
         /// <summary>Commits an edit made in the Properties tab's number box - a Circle/Arc's
         /// radius, or a TEXT/MTEXT's height - to the single selected entity, as an undo step.</summary>
+        /// <summary>Commits every changed field in the Properties tab's numeric rows (built by
+        /// <see cref="UpdateProperties"/> for the type of the single selected entity) as one
+        /// undo step - so editing an arc's radius and both angles together is a single Ctrl+Z.</summary>
         private void ApplySelectedNumberEdit()
         {
-            var entities = SelectedEntities();
-            if (entities.Count != 1) return;
-            if (!double.TryParse(_numberEdit.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || value <= 0)
+            if (_numberRows.Count == 0) return;
+            var edits = new List<IEditCommand>();
+            foreach (var row in _numberRows)
             {
-                Log("  not a positive number");
-                return;
+                if (!double.TryParse(row.Box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+                {
+                    Log("  \"" + row.Box.Text + "\" is not a number - that field was left as is");
+                    continue;
+                }
+                if (Math.Abs(row.Current - value) <= 1e-12) continue;
+                edits.Add(new SetPropertyCommand<double>(row.Current, value, row.Set, row.Description));
             }
-            string what;
-            switch (entities[0])
-            {
-                // Arc must come before Circle: Arc derives from Circle in ACadSharp.
-                case Arc a when Math.Abs(a.Radius - value) > 1e-12:
-                    _undo.Push(new SetPropertyCommand<double>(a.Radius, value, v => a.Radius = v, "Set radius")); what = "radius"; break;
-                case Circle c when Math.Abs(c.Radius - value) > 1e-12:
-                    _undo.Push(new SetPropertyCommand<double>(c.Radius, value, v => c.Radius = v, "Set radius")); what = "radius"; break;
-                case TextEntity te when Math.Abs(te.Height - value) > 1e-12:
-                    _undo.Push(new SetPropertyCommand<double>(te.Height, value, v => te.Height = v, "Set text height")); what = "text height"; break;
-                case MText mt when Math.Abs(mt.Height - value) > 1e-12:
-                    _undo.Push(new SetPropertyCommand<double>(mt.Height, value, v => mt.Height = v, "Set text height")); what = "text height"; break;
-                default:
-                    return;
-            }
+            if (edits.Count == 0) return;
+            _undo.Push(edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Edit properties"));
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
             UpdateProperties();
-            Log("  " + what + " updated  (Ctrl+Z to undo)");
+            Log("  updated " + edits.Count + " field" + (edits.Count == 1 ? "" : "s") + "  (Ctrl+Z to undo)");
+        }
+
+        /// <summary>Adds one label+textbox row to the Properties panel's numeric fields for the
+        /// current single selection, tracked in <see cref="_numberRows"/> so
+        /// <see cref="ApplySelectedNumberEdit"/> can commit every changed one together.</summary>
+        private void AddNumberRow(string label, double current, Action<double> set, string description)
+        {
+            var box = new TextBox { Text = current.ToString("0.####", CultureInfo.InvariantCulture), Margin = new Thickness(4, 0, 4, 4) };
+            box.KeyDown += (s, e) => { if (e.Key == Key.Enter) { ApplySelectedNumberEdit(); e.Handled = true; } };
+            _numberFields.Children.Add(new TextBlock { Text = label, Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
+            _numberFields.Children.Add(box);
+            _numberRows.Add((box, current, set, description));
         }
 
         private void UpdateProperties()
@@ -820,10 +828,10 @@ namespace FdDraft.App
             _textEdit.Text = "";
             _textEdit.IsEnabled = false;
             _textEditApply.IsEnabled = false;
-            _numberEdit.Text = "";
-            _numberEdit.IsEnabled = false;
+            _numberFields.Children.Clear();
+            _numberRows.Clear();
             _numberEditApply.IsEnabled = false;
-            _numberLabel.Visibility = _numberEdit.Visibility = _numberEditApply.Visibility = Visibility.Collapsed;
+            _numberEditApply.Visibility = Visibility.Collapsed;
             if (entities.Count == 1)
             {
                 string? content = entities[0] switch { TextEntity te => te.Value, MText mt => mt.Value, _ => null };
@@ -833,21 +841,40 @@ namespace FdDraft.App
                     _textEdit.IsEnabled = true;
                     _textEditApply.IsEnabled = true;
                 }
-                // Arc must come before Circle: Arc derives from Circle in ACadSharp.
-                (string Label, double Value)? number = entities[0] switch
+                const double toDeg = 180.0 / Math.PI, toRad = Math.PI / 180.0;
+                switch (entities[0])
                 {
-                    Arc a => ("Radius:", a.Radius),
-                    Circle c => ("Radius:", c.Radius),
-                    TextEntity te => ("Text height:", te.Height),
-                    MText mt => ("Text height:", mt.Height),
-                    _ => null,
-                };
-                if (number != null)
+                    // Arc must come before Circle: Arc derives from Circle in ACadSharp.
+                    case Arc a:
+                        AddNumberRow("Radius:", a.Radius, v => a.Radius = v, "Set radius");
+                        AddNumberRow("Start angle (deg):", a.StartAngle * toDeg, v => a.StartAngle = v * toRad, "Set start angle");
+                        AddNumberRow("End angle (deg):", a.EndAngle * toDeg, v => a.EndAngle = v * toRad, "Set end angle");
+                        break;
+                    case Circle c:
+                        AddNumberRow("Radius:", c.Radius, v => c.Radius = v, "Set radius");
+                        break;
+                    case TextEntity te:
+                        AddNumberRow("Text height:", te.Height, v => te.Height = v, "Set text height");
+                        AddNumberRow("Rotation (deg):", te.Rotation * toDeg, v => te.Rotation = v * toRad, "Set text rotation");
+                        break;
+                    case MText mt:
+                        AddNumberRow("Text height:", mt.Height, v => mt.Height = v, "Set text height");
+                        // MText.Rotation is read-only, derived from AlignmentPoint as a direction
+                        // vector (not a position) - set that instead to change it.
+                        AddNumberRow("Rotation (deg):", mt.Rotation * toDeg, v => mt.AlignmentPoint = new XYZ(Math.Cos(v * toRad), Math.Sin(v * toRad), 0), "Set text rotation");
+                        break;
+                    case Line ln:
+                        // Editing an endpoint here does not drag anything connected to it, unlike
+                        // STRETCH - this is for typing an exact coordinate, AutoCAD-Properties-style.
+                        AddNumberRow("Start E:", ln.StartPoint.X, v => ln.StartPoint = new XYZ(v, ln.StartPoint.Y, ln.StartPoint.Z), "Set line start");
+                        AddNumberRow("Start N:", ln.StartPoint.Y, v => ln.StartPoint = new XYZ(ln.StartPoint.X, v, ln.StartPoint.Z), "Set line start");
+                        AddNumberRow("End E:", ln.EndPoint.X, v => ln.EndPoint = new XYZ(v, ln.EndPoint.Y, ln.EndPoint.Z), "Set line end");
+                        AddNumberRow("End N:", ln.EndPoint.Y, v => ln.EndPoint = new XYZ(ln.EndPoint.X, v, ln.EndPoint.Z), "Set line end");
+                        break;
+                }
+                if (_numberRows.Count > 0)
                 {
-                    _numberLabel.Text = number.Value.Label;
-                    _numberEdit.Text = number.Value.Value.ToString("0.####", CultureInfo.InvariantCulture);
-                    _numberLabel.Visibility = _numberEdit.Visibility = _numberEditApply.Visibility = Visibility.Visible;
-                    _numberEdit.IsEnabled = true;
+                    _numberEditApply.Visibility = Visibility.Visible;
                     _numberEditApply.IsEnabled = true;
                 }
             }

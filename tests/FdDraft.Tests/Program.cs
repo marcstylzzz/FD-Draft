@@ -508,6 +508,44 @@ namespace FdDraft.Tests
             Assert.Near(0.2, text.Height, 1e-9, "undo text height restores the old value");
         }
 
+        public static void TestCompositeCommandUndoesAllFieldsAsOneStep()
+        {
+            var arc = new ACadSharp.Entities.Arc { Radius = 5, StartAngle = 0, EndAngle = Math.PI / 2 };
+            var undo = new UndoStack();
+            // A Properties-panel edit touching more than one field (radius and both angles)
+            // commits as one CompositeCommand, so a single Ctrl+Z undoes every field together.
+            var edits = new IEditCommand[]
+            {
+                new SetPropertyCommand<double>(arc.Radius, 8, v => arc.Radius = v, "Set radius"),
+                new SetPropertyCommand<double>(arc.StartAngle, 0.1, v => arc.StartAngle = v, "Set start angle"),
+                new SetPropertyCommand<double>(arc.EndAngle, 2.0, v => arc.EndAngle = v, "Set end angle"),
+            };
+            undo.Push(new CompositeCommand(edits, "Edit properties"));
+            Assert.Near(8, arc.Radius, 1e-9, "radius applied"); Assert.Near(0.1, arc.StartAngle, 1e-9, "start angle applied"); Assert.Near(2.0, arc.EndAngle, 1e-9, "end angle applied");
+
+            undo.Undo();
+            Assert.Near(5, arc.Radius, 1e-9, "one undo restores radius"); Assert.Near(0, arc.StartAngle, 1e-9, "and start angle"); Assert.Near(Math.PI / 2, arc.EndAngle, 1e-9, "and end angle - all in the same step");
+
+            undo.Redo();
+            Assert.Near(8, arc.Radius, 1e-9, "one redo reapplies radius"); Assert.Near(0.1, arc.StartAngle, 1e-9, "and start angle"); Assert.Near(2.0, arc.EndAngle, 1e-9, "and end angle");
+        }
+
+        public static void TestMTextRotationViaAlignmentPointDirection()
+        {
+            // MText.Rotation is read-only in ACadSharp, derived from AlignmentPoint treated as a
+            // direction vector - this is the trick the Properties panel's rotation field uses to
+            // actually change it, so it needs its own test rather than relying on SetPropertyCommand's
+            // own generic coverage.
+            var mt = new ACadSharp.Entities.MText { AlignmentPoint = new CSMath.XYZ(1, 0, 0) };
+            Assert.Near(0, mt.Rotation, 1e-9, "starts at 0 degrees");
+            double toRad = Math.PI / 180.0;
+            var undo = new UndoStack();
+            undo.Push(new SetPropertyCommand<double>(mt.Rotation, 90, v => mt.AlignmentPoint = new CSMath.XYZ(Math.Cos(v * toRad), Math.Sin(v * toRad), 0), "Set text rotation"));
+            Assert.Near(Math.PI / 2, mt.Rotation, 1e-9, "rotation is now 90 degrees (radians)");
+            undo.Undo();
+            Assert.Near(0, mt.Rotation, 1e-9, "undo restores 0 degrees");
+        }
+
         public static void TestStretchVertexKeepsConnectedLinesTogether()
         {
             var doc = new ACadSharp.CadDocument();

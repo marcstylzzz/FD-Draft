@@ -139,12 +139,20 @@ it on Windows is the real test.
   type-specific geometry: a line's bearing/distance, an arc or circle's
   radius, a text's content). When exactly one entity is selected, the panel
   also grows editable fields for that type - TEXT/MTEXT get their content
-  (Enter or **Apply text**) via `EditTextCommand`, and a text's height or a
-  Circle/Arc's radius get a numeric field (**Apply**) via the generic
-  `SetPropertyCommand<T>`, which takes a setter delegate so one command class
-  covers any scalar property rather than a bespoke class per field. All
-  ordinary undo steps. **Set Layer** on the toolbar reassigns the whole
-  selection to the current layer via `ChangeLayerCommand`, also undoable.
+  (Enter or **Apply text**) via `EditTextCommand`. Numeric fields are built
+  per entity type and applied together via the generic
+  `SetPropertyCommand<T>` (a setter delegate, so one command class covers
+  any scalar property rather than a bespoke class per field): a Circle's
+  radius; an Arc's radius, start angle and end angle (degrees); a
+  TextEntity's height and rotation (degrees); an MText's height and rotation
+  (MText.Rotation is computed, read-only, from `AlignmentPoint` treated as a
+  direction vector, so "setting" it means writing
+  `AlignmentPoint = (cos, sin, 0)` instead); a Line's start/end E,N. Changing
+  more than one field and clicking Apply pushes a `CompositeCommand`
+  wrapping every changed field's `SetPropertyCommand`, so they undo/redo
+  together as one step rather than one Ctrl+Z per field. **Set Layer** on
+  the toolbar reassigns the whole selection to the current layer via
+  `ChangeLayerCommand`, also undoable.
 - Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
   Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
   template and standards.
@@ -185,10 +193,12 @@ it on Windows is the real test.
   real dimension-style-driven landing gap; a true DIMENSION entity (for
   distance/angle dimensioning, as opposed to a leader) is likewise not built
   yet.
-- Properties editing now covers layer, text content, a text's height and a
-  Circle/Arc's radius; still read-only for a line's endpoints (STRETCH is
-  the way to move one, but there's no numeric-entry alternative), a text's
-  rotation, and an arc's start/end angle.
+- Properties editing now covers layer, text content, a text's height and
+  rotation, a Circle/Arc's radius, an Arc's start/end angle, and a Line's
+  endpoint coordinates (multi-field edits undo as one step). Still missing:
+  a numeric field for an LwPolyline/Polyline2D vertex (STRETCH moves one by
+  picking, but there's no type-in alternative), and a way to renumber which
+  vertex is which on a closed polyline.
 
 ## After that: the document assistant (hybrid)
 

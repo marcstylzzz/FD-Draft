@@ -170,6 +170,24 @@ namespace FdDraft.Cad.Editing
         public void Redo() => _set(_new);
     }
 
+    /// <summary>Groups several already-applied commands (e.g. a Properties panel edit that
+    /// touches more than one field, like an arc's start and end angle together) into a single
+    /// undo step. Sub-commands undo in reverse order and redo in the order they were given.</summary>
+    public sealed class CompositeCommand : IEditCommand
+    {
+        private readonly List<IEditCommand> _commands;
+        public string Description { get; }
+
+        public CompositeCommand(IEnumerable<IEditCommand> commands, string description)
+        {
+            _commands = commands.ToList();
+            Description = description;
+        }
+
+        public void Undo() { for (int i = _commands.Count - 1; i >= 0; i--) _commands[i].Undo(); }
+        public void Redo() { foreach (var c in _commands) c.Redo(); }
+    }
+
     /// <summary>One endpoint of a Line, or one vertex of an LwPolyline/Polyline2D, that
     /// <see cref="StretchVertexCommand"/> can move independently of the rest of the entity.
     /// Found by <see cref="VertexEditing.FindCoincident"/>.</summary>
