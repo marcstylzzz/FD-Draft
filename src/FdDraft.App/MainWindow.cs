@@ -61,6 +61,9 @@ namespace FdDraft.App
         /// rebuilt by <see cref="UpdateProperties"/>, applied together by
         /// <see cref="ApplySelectedNumberEdit"/> as one <c>CompositeCommand</c>.</summary>
         private readonly List<(TextBox Box, double Current, Action<double> Set, string Description)> _numberRows = new List<(TextBox, double, Action<double>, string)>();
+        /// <summary>Which vertex of a selected LwPolyline/Polyline2D the Properties panel's E/N
+        /// fields edit - typed into a small "Vertex #" box, since a polyline can have many.</summary>
+        private int _propertiesVertexIndex;
         private readonly ListView _codes = new ListView();
         private readonly UndoStack _undo = new UndoStack();
 
@@ -822,6 +825,39 @@ namespace FdDraft.App
             _numberRows.Add((box, current, set, description));
         }
 
+        /// <summary>Keeps <see cref="_propertiesVertexIndex"/> in range for a polyline with
+        /// <paramref name="count"/> vertices (the selection can change to a shorter polyline
+        /// while a later index was showing).</summary>
+        private int ClampVertexIndex(int count)
+        {
+            if (_propertiesVertexIndex < 0) _propertiesVertexIndex = 0;
+            if (_propertiesVertexIndex >= count) _propertiesVertexIndex = count - 1;
+            return _propertiesVertexIndex;
+        }
+
+        /// <summary>Adds the "Vertex #" selector (type a 0-based index, Enter to jump to it) plus
+        /// E/N fields for that one vertex of a selected LwPolyline/Polyline2D - STRETCH moves a
+        /// vertex by picking it, this is the type-in alternative, AutoCAD-Properties-style.</summary>
+        private void AddVertexRows(VertexRef vref, int count)
+        {
+            var indexBox = new TextBox { Text = _propertiesVertexIndex.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(4, 0, 4, 4) };
+            indexBox.KeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Enter) return;
+                if (int.TryParse(indexBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int idx))
+                {
+                    _propertiesVertexIndex = idx;
+                    UpdateProperties();
+                }
+                e.Handled = true;
+            };
+            _numberFields.Children.Add(new TextBlock { Text = "Vertex # (0.." + (count - 1) + "), Enter to jump:", Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
+            _numberFields.Children.Add(indexBox);
+            var p = vref.Get();
+            AddNumberRow("Vertex E:", p.X, v => vref.Set(new XYZ(v, vref.Get().Y, 0)), "Set vertex position");
+            AddNumberRow("Vertex N:", p.Y, v => vref.Set(new XYZ(vref.Get().X, v, 0)), "Set vertex position");
+        }
+
         private void UpdateProperties()
         {
             var entities = SelectedEntities();
@@ -870,6 +906,12 @@ namespace FdDraft.App
                         AddNumberRow("Start N:", ln.StartPoint.Y, v => ln.StartPoint = new XYZ(ln.StartPoint.X, v, ln.StartPoint.Z), "Set line start");
                         AddNumberRow("End E:", ln.EndPoint.X, v => ln.EndPoint = new XYZ(v, ln.EndPoint.Y, ln.EndPoint.Z), "Set line end");
                         AddNumberRow("End N:", ln.EndPoint.Y, v => ln.EndPoint = new XYZ(ln.EndPoint.X, v, ln.EndPoint.Z), "Set line end");
+                        break;
+                    case LwPolyline lp when lp.Vertices.Count > 0:
+                        AddVertexRows(new VertexRef(lp, ClampVertexIndex(lp.Vertices.Count)), lp.Vertices.Count);
+                        break;
+                    case Polyline2D p2 when p2.Vertices.Count > 0:
+                        AddVertexRows(new VertexRef(p2, ClampVertexIndex(p2.Vertices.Count)), p2.Vertices.Count);
                         break;
                 }
                 if (_numberRows.Count > 0)

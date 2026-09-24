@@ -589,6 +589,31 @@ namespace FdDraft.Tests
             Assert.Near(10, poly.Vertices[1].Location.X, 1e-9, "undo restores the polyline vertex");
         }
 
+        public static void TestPropertiesPanelCanTypeInAPolylineVertex()
+        {
+            // The Properties panel's "Vertex #" fields are the type-in alternative to STRETCH's
+            // pick-and-drag: SetPropertyCommand<double> over a VertexRef, one field at a time,
+            // rather than StretchVertexCommand's move-every-coincident-vertex-together behavior.
+            var poly = new ACadSharp.Entities.LwPolyline();
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(0, 0)));
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(10, 0)));
+            poly.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(10, 10)));
+
+            var vref = new VertexRef(poly, 1);
+            var undo = new UndoStack();
+            var edits = new IEditCommand[]
+            {
+                new SetPropertyCommand<double>(vref.Get().X, 15, v => vref.Set(new CSMath.XYZ(v, vref.Get().Y, 0)), "Set vertex position"),
+                new SetPropertyCommand<double>(vref.Get().Y, -2, v => vref.Set(new CSMath.XYZ(vref.Get().X, v, 0)), "Set vertex position"),
+            };
+            undo.Push(new CompositeCommand(edits, "Edit properties"));
+            Assert.Near(15, poly.Vertices[1].Location.X, 1e-9, "vertex E typed in"); Assert.Near(-2, poly.Vertices[1].Location.Y, 1e-9, "vertex N typed in");
+            Assert.Near(0, poly.Vertices[0].Location.X, 1e-9, "adjacent vertex untouched");
+
+            undo.Undo();
+            Assert.Near(10, poly.Vertices[1].Location.X, 1e-9, "one undo restores both fields"); Assert.Near(0, poly.Vertices[1].Location.Y, 1e-9, "one undo restores both fields");
+        }
+
         public static void TestLeaderEntityAddsAndRenders()
         {
             var doc = new ACadSharp.CadDocument();

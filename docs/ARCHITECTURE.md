@@ -147,12 +147,15 @@ it on Windows is the real test.
   TextEntity's height and rotation (degrees); an MText's height and rotation
   (MText.Rotation is computed, read-only, from `AlignmentPoint` treated as a
   direction vector, so "setting" it means writing
-  `AlignmentPoint = (cos, sin, 0)` instead); a Line's start/end E,N. Changing
-  more than one field and clicking Apply pushes a `CompositeCommand`
-  wrapping every changed field's `SetPropertyCommand`, so they undo/redo
-  together as one step rather than one Ctrl+Z per field. **Set Layer** on
-  the toolbar reassigns the whole selection to the current layer via
-  `ChangeLayerCommand`, also undoable.
+  `AlignmentPoint = (cos, sin, 0)` instead); a Line's start/end E,N; and, for
+  an LwPolyline/Polyline2D, one vertex's E,N via a `VertexRef` (the same type
+  `StretchVertexCommand` uses) - a "Vertex # (0..N-1), Enter to jump" box
+  picks which vertex the E/N fields below it edit, since a polyline can have
+  many. Changing more than one field and clicking Apply pushes a
+  `CompositeCommand` wrapping every changed field's `SetPropertyCommand`, so
+  they undo/redo together as one step rather than one Ctrl+Z per field.
+  **Set Layer** on the toolbar reassigns the whole selection to the current
+  layer via `ChangeLayerCommand`, also undoable.
 - Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
   Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
   template and standards.
@@ -194,11 +197,11 @@ it on Windows is the real test.
   distance/angle dimensioning, as opposed to a leader) is likewise not built
   yet.
 - Properties editing now covers layer, text content, a text's height and
-  rotation, a Circle/Arc's radius, an Arc's start/end angle, and a Line's
-  endpoint coordinates (multi-field edits undo as one step). Still missing:
-  a numeric field for an LwPolyline/Polyline2D vertex (STRETCH moves one by
-  picking, but there's no type-in alternative), and a way to renumber which
-  vertex is which on a closed polyline.
+  rotation, a Circle/Arc's radius, an Arc's start/end angle, a Line's
+  endpoint coordinates, and one LwPolyline/Polyline2D vertex's E,N at a time
+  (multi-field edits undo as one step). Still missing: inserting or deleting
+  a vertex from Properties (STRETCH and this both only move an existing
+  one), and a way to renumber which vertex is which on a closed polyline.
 
 ## After that: the document assistant (hybrid)
 
