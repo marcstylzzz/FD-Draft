@@ -16,6 +16,8 @@
     <Product>FD-Draft</Product>
     <Version>0.3.0</Version>
     <Deterministic>true</Deterministic>
+    <!-- Run on the newest .NET installed (e.g. only the .NET 10 SDK) instead of demanding .NET 8. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
   <PropertyGroup Condition="'$(FD_OFFLINE)' == '1'">
     <UseAppHost>false</UseAppHost>
