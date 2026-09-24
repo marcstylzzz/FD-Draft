@@ -1016,5 +1016,51 @@ namespace FdDraft.Tests
             Assert.Equal("10.000", mirrored.Text, "same measured text");
             Assert.True(mirrored.Block.Entities.OfType<ACadSharp.Entities.MText>().Single().InsertPoint.Y > -12, "text still sits above its dimension line, reading forwards");
         }
+            // ---- sheet scale (VPSCALE, v0.4.14) ---------------------------------------------------
+
+        public static void TestSheetScaleRezoomsViewportTitleBlockAndAnnotation()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var layout = new ACadSharp.Objects.Layout("SHEET-11X17");
+            doc.Layouts.Add(layout);
+            // A 200 x 100 mm plan viewport showing 50 m of height: 1:500 in metres on a mm sheet.
+            var vp = new ACadSharp.Entities.Viewport { Center = new CSMath.XYZ(150, 100, 0), Width = 200, Height = 100, ViewHeight = 50, ViewCenter = new CSMath.XY(1000, 2000) };
+            layout.AddViewport(vp);
+            var sheet = layout.AssociatedBlock.Entities;
+            var scaleText = new ACadSharp.Entities.TextEntity { Value = "SCALE 1:500", InsertPoint = new CSMath.XYZ(10, 10, 0) };
+            var tick0 = new ACadSharp.Entities.TextEntity { Value = "0", InsertPoint = new CSMath.XYZ(10, 15, 0) };
+            var tick20 = new ACadSharp.Entities.TextEntity { Value = "20m", InsertPoint = new CSMath.XYZ(50, 15, 0) };
+            var note = new ACadSharp.Entities.TextEntity { Value = "PLAN OF SURVEY", InsertPoint = new CSMath.XYZ(10, 80, 0) };
+            foreach (var t in new[] { scaleText, tick0, tick20, note }) sheet.Add(t);
+
+            var label = new ACadSharp.Entities.TextEntity { Value = "N45°E 10.000", Height = 1.25 };
+            doc.ModelSpace.Entities.Add(label);
+            var sym = new ACadSharp.Tables.BlockRecord("SIB");
+            doc.BlockRecords.Add(sym);
+            var ins = new ACadSharp.Entities.Insert(sym) { XScale = 2, YScale = 2, ZScale = 2 };
+            doc.ModelSpace.Entities.Add(ins);
+
+            Assert.Equal(500.0, SheetScale.StatedDenominator(layout, "SCALE 1:#"), "reads the sheet's stated scale");
+            var r = SheetScale.Change(doc, layout, 250, resizeAnnotation: true);
+            var undo = new UndoStack();
+            undo.Push(r.Command!);
+            Assert.Near(25, vp.ViewHeight, 1e-9, "viewport zoomed to 1:250");
+            Assert.Near(1000, vp.ViewCenter.X, 1e-9, "about its own centre");
+            Assert.Equal("SCALE 1:250", scaleText.Value, "title block scale text");
+            Assert.Equal("10m", tick20.Value, "scale-bar tick relabelled");
+            Assert.Equal("0", tick0.Value, "zero tick stays");
+            Assert.Equal("PLAN OF SURVEY", note.Value, "unrelated text untouched");
+            Assert.Near(0.625, label.Height, 1e-9, "model label halved to keep its paper size");
+            Assert.Near(1, ins.XScale, 1e-9, "symbol halved too");
+
+            undo.Undo();
+            Assert.Near(50, vp.ViewHeight, 1e-9, "one undo restores the viewport");
+            Assert.Equal("SCALE 1:500", scaleText.Value, "and the title block");
+            Assert.Equal("20m", tick20.Value, "and the scale bar");
+            Assert.Near(1.25, label.Height, 1e-9, "and the labels");
+            Assert.Near(2, ins.YScale, 1e-9, "and the symbols");
+
+            Assert.True(SheetScale.Change(doc, layout, 500, true).Command == null, "same scale: nothing to do");
+        }
     }
 }

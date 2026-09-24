@@ -226,6 +226,8 @@ namespace FdDraft.App
             var view = new MenuItem { Header = "_View" };
             view.Items.Add(Item("Zoom _extents", "ZE", () => _canvas.ZoomExtents()));
             view.Items.Add(Item("_Snap on/off", "F3", ToggleSnap));
+            view.Items.Add(new Separator());
+            view.Items.Add(Item("Sheet s_cale…", "VPSCALE", () => StartSheetScale("")));
             var help = new MenuItem { Header = "_Help" };
             help.Items.Add(Item("_Commands", "HELP", ShowHelp));
             menu.Items.Add(file); menu.Items.Add(edit); menu.Items.Add(survey); menu.Items.Add(draw); menu.Items.Add(modify); menu.Items.Add(view); menu.Items.Add(help);
@@ -349,6 +351,7 @@ namespace FdDraft.App
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
+                case "VPSCALE": case "SCALE": StartSheetScale(arg); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
                 case "OFFSET": case "O": StartOffset(); break;
@@ -392,6 +395,7 @@ namespace FdDraft.App
             Log("  DIM     aligned dimension: pick two points, then the dimension line's position, then the text height");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
+            Log("  VPSCALE [1:n]   change the current sheet's scale: viewport, title-block scale, scale bar, and label sizes");
             Log("  MODEL / LAYOUT <name>   switch sheet · SNAP (F3) toggles snapping · Esc cancels the active tool");
         }
 
@@ -1707,6 +1711,59 @@ namespace FdDraft.App
                 EndTool();
                 if (corners.Count < 3) { Log("  *cancelled - an area needs at least three corners*"); return; }
                 Log("  area " + AreaText(FigureMeasure.Area(corners, null)) + ", perimeter " + FigureMeasure.Perimeter(corners, null, true).ToString("F3", CultureInfo.InvariantCulture) + " (" + corners.Count + " corners)");
+            };
+        }
+
+        /// <summary>VPSCALE [1:n]: change the current sheet's plot scale in place - viewport,
+        /// title-block scale text and scale bar, and optionally the model labels' size.</summary>
+        private void StartSheetScale(string arg)
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var layout = _sheet == "Model" ? null : _doc.Layouts.FirstOrDefault(l => l.Name.Equals(_sheet, StringComparison.OrdinalIgnoreCase));
+            if (layout == null) { Log("  switch to the sheet whose scale you want to change first (VPSCALE works on a layout, not Model)"); return; }
+            if (SheetScale.PlanViewport(layout) == null) { Log("  " + _sheet + " has no plan viewport to rescale"); return; }
+            string anchor = _std?.ScaleBarAnchor ?? "SCALE 1:#";
+            var stated = SheetScale.StatedDenominator(layout, anchor);
+            BeginTool("VPSCALE");
+            _canvas.ToolActive = false;
+            double den = 0;
+
+            bool TryDen(string t, out double d)
+            {
+                t = t.Trim();
+                int colon = t.IndexOf(':');
+                if (colon >= 0) t = t.Substring(colon + 1);
+                return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out d) && d > 0;
+            }
+
+            void AskResize()
+            {
+                _prompt.Text = "Sheet scale - resize the model labels and symbols to suit? [Y/N] <Y>:";
+                Log("  resize the model-space labels, symbols and dimension text so they keep their size on paper? Y/N (Enter = Y)");
+                _awaitingLine = s =>
+                {
+                    bool resize = !s.Trim().StartsWith("N", StringComparison.OrdinalIgnoreCase);
+                    var r = SheetScale.Change(_doc!, layout, den, resize, anchor);
+                    EndTool();
+                    foreach (var n in r.Notes) Log("  " + n);
+                    if (r.Command == null) return;
+                    _undo.Push(r.Command);
+                    _dirty = true; UpdateTitle();
+                    var center = _canvas.View.Center; var zoom = _canvas.View.Zoom;
+                    Rebuild(fit: false);
+                    _canvas.ZoomTo(center, zoom);
+                    Log("  (Ctrl+Z undoes the whole scale change)");
+                };
+            }
+
+            if (arg.Length > 0 && TryDen(arg, out den)) { AskResize(); return; }
+            _prompt.Text = "Sheet scale - new scale 1:n" + (stated != null ? " <now 1:" + stated.Value.ToString("0.###", CultureInfo.InvariantCulture) + ">" : "") + ":";
+            Log("VPSCALE  " + _sheet + (stated != null ? " is at 1:" + stated.Value.ToString("0.###", CultureInfo.InvariantCulture) : "") + " - type the new scale, e.g. 1:250 or 250 (Esc cancels)");
+            _awaitingLine = s =>
+            {
+                if (s.Length == 0) { EndTool(); Log("  *cancelled*"); return; }
+                if (!TryDen(s, out den)) { Log("  type the scale as 1:n or just n, e.g. 1:250"); return; }
+                AskResize();
             };
         }
 

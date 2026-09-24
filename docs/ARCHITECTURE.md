@@ -242,6 +242,18 @@ it on Windows is the real test.
   they undo/redo together as one step rather than one Ctrl+Z per field.
   **Set Layer** on the toolbar reassigns the whole selection to the current
   layer via `ChangeLayerCommand`, also undoable.
+- **VPSCALE** (`FdDraft.Cad.Editing.SheetScale`): the scale-only sheet
+  setup. The current scale is read from the sheet's own "SCALE 1:n" text
+  (the standards' scale-bar anchor), falling back to the plan viewport's
+  ViewHeight/Height as metres on a mm sheet. The plan viewport (the sheet's
+  largest working one - detail viewports keep their scale) gets ViewHeight
+  × new/old, keeping its ViewCenter; every sheet text containing "1:old"
+  gets "1:new"; tick labels 3-10 mm above the anchor are relabelled with
+  the same rule and `TitleBlockFiller.RelabelTick` the drafter uses; and,
+  optionally, every model-space TEXT/MTEXT height, block scale and
+  FD-Draft dimension text height is multiplied by the same ratio so it
+  keeps its paper size. One `CompositeCommand`. Label *positions* are not
+  moved, so a full relayout at the new scale is still Ctrl+D.
 - Re-running the sheet/scale choice on an already-open job is Ctrl+D again -
   Draft FD-Pro job re-opens the ranked list pre-filled with the last job,
   template and standards.
@@ -273,8 +285,8 @@ it on Windows is the real test.
 - Relabel courses after a STRETCH (the vertex moves and connected lines stay
   joined, but their bearing/distance/area labels are not yet re-derived -
   there is still no persisted link between a course and its label text).
-- A dedicated sheet setup panel (rather than reusing Draft FD-Pro
-  job) for scale-only changes without re-running the whole pipeline.
+- A sheet setup panel for page size/layout changes (VPSCALE now covers
+  scale-only changes in place).
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
   `internal` to ACadSharp - not reachable from FD-Draft) or an MTEXT with a

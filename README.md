@@ -116,12 +116,18 @@ FdDraft.App project in Visual Studio).
   it for a polyline. Editing several fields at once and clicking Apply undoes
   them together as one step. **Set Layer** on the toolbar reassigns the
   whole selection to the current layer.
+- **Sheet scale** (VPSCALE, View menu): change the current sheet's scale
+  in place - type `1:250` and the plan viewport re-zooms about its centre,
+  the title block's `1:n` and the scale-bar ticks are rewritten, and
+  (unless you answer N) the model's labels, symbols and dimension text are
+  resized to keep their size on paper. One Ctrl+Z undoes it all. For a full
+  relayout of the labels at the new scale, re-draft with Ctrl+D.
 - Opening any DWG logs which sheets actually have a plan drawn on them - a
   legacy DWG commonly carries several unused blank sheet-size layouts, and
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, AREA, LINE, ARC, TEXT, LEADER, DIM, MOVE, ROTATE, STRETCH,
-  COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, VXDEL, VXADD, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 
