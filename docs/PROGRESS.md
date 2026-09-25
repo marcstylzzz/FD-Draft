@@ -38,6 +38,11 @@ on Windows; that's still Marc's job when he runs a build.
 
 ## Working conventions (established this project, keep following them)
 
+- **Commands for Marc**: he runs them in a fresh Command Prompt, which opens
+  in `C:\Users\marcs` - always write Windows commands to work from there
+  (the repo is `C:\Dev\FD-Draft`). To update: close FD-Draft, then
+  `C:\Dev\FD-Draft\update.cmd` (pulls, builds, starts the app).
+
 - Every commit: bump `<Version>` in `Directory.Build.props`, run both
   scripts above clean, update `README.md` and `docs/ARCHITECTURE.md` (the
   feature list and the "Next in the app" section), then commit and push.
