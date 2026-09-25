@@ -165,8 +165,13 @@ it on Windows is the real test.
   before v0.4.27, or by other software) fall back to position: a node or
   block on a point (5 mm), a text reading a point's number anywhere near
   it, or a label within 4 text heights of one point. Clicking such an
-  entity selects and centres its row in the Points list; selecting a row
-  highlights all of the point's entities in view.
+  entity selects and centres its row in whichever list tab is open (Points:
+  its point; Layers: its layer; Codes: `PointLinks.CodeOf` - its "CODE"
+  tag, which Draft writes on figure linework, else its point's code, exact
+  or longest matching prefix, else the single code whose layer it's on);
+  it never switches tabs. Selecting a Points row highlights all of the
+  point's entities in view. The lists keep the normal selection blue when
+  unfocused (`InactiveSelectionHighlightBrushKey` overridden).
 - **Moving text** (`EntityTransform`, v0.4.25): ACadSharp's
   `TextEntity.ApplyTransform` moves only the insertion point, but aligned
   TEXT (every label FD-Draft drafts) is placed by `AlignmentPoint`, in

@@ -21,36 +21,75 @@ namespace FdDraft.Cad
         public const string AppName = "FDDRAFT";
         private const string Key = "POINT";
 
+        private const string CodeKey = "CODE";
+
         /// <summary>Tags <paramref name="e"/> with its point number. Call once the entity is in
         /// the document, so the application name is registered in the DWG.</summary>
-        public static void Tag(Entity e, int pointId)
+        public static void Tag(Entity e, int pointId) => Set(e, Key, new ExtendedDataInteger32(pointId));
+
+        /// <summary>Tags linework with the FD-Pro figure code it was drafted from.</summary>
+        public static void TagCode(Entity e, string code)
         {
-            if (e.ExtendedData.TryGet(AppName, out var existing)) { existing.Records.Clear(); Fill(existing, pointId); return; }
-            var xd = new ExtendedData();
-            Fill(xd, pointId);
-            e.ExtendedData.Add(AppName, xd);
+            if (!string.IsNullOrWhiteSpace(code)) Set(e, CodeKey, new ExtendedDataString(code.Trim()));
         }
 
-        private static void Fill(ExtendedData xd, int pointId)
+        /// <summary>The figure code linework was tagged with, if any.</summary>
+        public static string? TaggedCode(Entity e) => Get(e, CodeKey) is ExtendedDataString s ? s.Value : null;
+
+        /// <summary>Sets one "KEY, value" pair in FD-Draft's extended data, leaving any others.</summary>
+        private static void Set(Entity e, string key, ExtendedDataRecord value)
         {
-            xd.Records.Add(new ExtendedDataString(Key));
-            xd.Records.Add(new ExtendedDataInteger32(pointId));
+            if (!e.ExtendedData.TryGet(AppName, out var xd))
+            {
+                xd = new ExtendedData();
+                e.ExtendedData.Add(AppName, xd);
+            }
+            var r = xd.Records;
+            for (int i = 0; i + 1 < r.Count; i++)
+                if (r[i] is ExtendedDataString s && s.Value == key) { r[i + 1] = value; return; }
+            r.Add(new ExtendedDataString(key));
+            r.Add(value);
+        }
+
+        private static ExtendedDataRecord? Get(Entity e, string key)
+        {
+            if (!e.ExtendedData.TryGet(AppName, out var xd)) return null;
+            var r = xd.Records;
+            for (int i = 0; i + 1 < r.Count; i++)
+                if (r[i] is ExtendedDataString s && s.Value == key) return r[i + 1];
+            return null;
+        }
+
+        /// <summary>
+        /// The FD-Pro code an entity belongs to, as a key in <paramref name="codes"/>: its own tag;
+        /// else its survey point's code; else the one code whose layer it is on (null when
+        /// several codes share that layer and nothing else says which).
+        /// </summary>
+        public static FeatureCode? CodeOf(Entity e, IReadOnlyList<SurveyPoint> points, IReadOnlyList<FeatureCode> codes)
+        {
+            if (codes.Count == 0) return null;
+            string? code = TaggedCode(e) ?? Find(e, points)?.Code;
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                var exact = codes.FirstOrDefault(c => c.Key.Equals(code, StringComparison.OrdinalIgnoreCase));
+                if (exact != null) return exact;
+                // A shot coded with a suffix ("FDS2", "TRA-1") belongs to the longest code it starts with.
+                var prefix = codes.Where(c => c.Key.Length > 0 && code.StartsWith(c.Key, StringComparison.OrdinalIgnoreCase)).OrderByDescending(c => c.Key.Length).FirstOrDefault();
+                if (prefix != null) return prefix;
+            }
+            var onLayer = codes.Where(c => c.LayerName.Equals(e.Layer?.Name ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
+            return onLayer.Count == 1 ? onLayer[0] : null;
         }
 
         /// <summary>The point number an entity was tagged with, if any.</summary>
         public static int? Tagged(Entity e)
         {
-            if (!e.ExtendedData.TryGet(AppName, out var xd)) return null;
-            var r = xd.Records;
-            for (int i = 0; i + 1 < r.Count; i++)
-                if (r[i] is ExtendedDataString s && s.Value == Key)
-                    return r[i + 1] switch
-                    {
-                        ExtendedDataInteger32 n => n.Value,
-                        ExtendedDataInteger16 n => n.Value,
-                        _ => (int?)null,
-                    };
-            return null;
+            return Get(e, Key) switch
+            {
+                ExtendedDataInteger32 n => n.Value,
+                ExtendedDataInteger16 n => n.Value,
+                _ => (int?)null,
+            };
         }
 
         /// <summary>

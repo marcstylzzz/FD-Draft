@@ -94,8 +94,12 @@ namespace FdDraft.Cad
                 switch (e)
                 {
                     case DraftPolyline pl:
-                        ms.Entities.Add(Poly(pl.Layer, pl.Vertices, pl.Bulges, pl.Closed));
+                    {
+                        var poly = Poly(pl.Layer, pl.Vertices, pl.Bulges, pl.Closed);
+                        ms.Entities.Add(poly);
+                        PointLinks.TagCode(poly, pl.Code);
                         break;
+                    }
                     case DraftSpline sp:
                         // A dense polyline through the fitted curve: exact at every shot point.
                         ms.Entities.Add(Poly(sp.Layer, sp.Sample(12), null, false));

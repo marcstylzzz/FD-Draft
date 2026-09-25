@@ -89,12 +89,13 @@ FdDraft.App project in Visual Studio).
   makes its layer current and starts LINE; Useful Tools are one-click
   FD-Draft commands. It's all one editable file, `%APPDATA%\FD-Draft\palette.ini`
   (✎ on the palette opens it; saving it updates the palette).
-- **Points list follows the plan**: click anything belonging to a survey
-  point - its node, symbol, point number, elevation or code/monument label -
-  and its row in the Points list is selected and scrolled to the middle
-  (the Points tab comes forward, unless you're working in Properties). Click
-  a row in the list and that point's entities are highlighted on the plan;
-  double-click still zooms to it.
+- **The list on the left follows the plan**: click something on the plan
+  and whichever tab is open follows it, selected in blue and scrolled to
+  the middle - **Points**: its survey point (node, symbol, number,
+  elevation or code label); **Layers**: its layer; **Codes**: its FD-Pro
+  code (drafted linework carries its figure code). It never switches tabs.
+  Click a row in the Points list and that point's entities are highlighted
+  on the plan; double-click still zooms to it.
 - **Drag to move**: press on any entity - a label, a line, a symbol - and
   drag it where you want it; if it's part of the selection the whole
   selection goes with it. One Ctrl+Z undoes it. Clicking anywhere on a

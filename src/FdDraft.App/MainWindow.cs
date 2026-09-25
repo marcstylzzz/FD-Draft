@@ -66,7 +66,7 @@ namespace FdDraft.App
         private int _propertiesVertexIndex;
         private readonly ListView _codes = new ListView();
         private readonly TabControl _leftTabs = new TabControl { Margin = new Thickness(4, 4, 0, 4) };
-        private TabItem? _pointsTab, _propertiesTab;
+        private TabItem? _pointsTab, _propertiesTab, _layersTab, _codesTab;
         /// <summary>Set while the Points list is being moved to follow a click on the plan, so
         /// that change doesn't turn round and reselect things on the plan.</summary>
         private bool _syncingPoints;
@@ -128,10 +128,19 @@ namespace FdDraft.App
             main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var left = _leftTabs;
-            left.Items.Add(new TabItem { Header = "Layers", Content = _layers });
+            _layersTab = new TabItem { Header = "Layers", Content = _layers };
+            left.Items.Add(_layersTab);
             _pointsTab = new TabItem { Header = "Points", Content = _points };
             left.Items.Add(_pointsTab);
-            left.Items.Add(new TabItem { Header = "Codes", Content = _codes });
+            _codesTab = new TabItem { Header = "Codes", Content = _codes };
+            left.Items.Add(_codesTab);
+            // A row picked from the plan stays the normal selection blue even though the list
+            // doesn't have the keyboard focus (WPF's default for that is a pale grey).
+            foreach (var list in new Control[] { _points, _layers, _codes })
+            {
+                list.Resources[SystemColors.InactiveSelectionHighlightBrushKey] = SystemColors.HighlightBrush;
+                list.Resources[SystemColors.InactiveSelectionHighlightTextBrushKey] = SystemColors.HighlightTextBrush;
+            }
             var propsPanel = new DockPanel();
             var editRow = new StackPanel();
             editRow.Children.Add(new TextBlock { Text = "Text of the selected label:", Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
@@ -803,10 +812,12 @@ namespace FdDraft.App
                     if (c.IsTrueColor) swatch = Color.FromRgb(c.R, c.G, c.B);
                     else if (c.Index <= 0 || c.Index == 7 || c.Index >= 256) swatch = Colors.Black;
                     else { var rgb = ACadSharp.Color.GetIndexRGB((byte)c.Index); swatch = Color.FromRgb(rgb[0], rgb[1], rgb[2]); }
-                    var row = new StackPanel { Orientation = Orientation.Horizontal };
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Tag = layer.Name };
                     row.Children.Add(check);
                     row.Children.Add(new Rectangle { Width = 12, Height = 12, Fill = new SolidColorBrush(swatch), Stroke = Brushes.Gray, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-                    row.Children.Add(new TextBlock { Text = layer.Name + (frozen ? "  (frozen)" : ""), Foreground = frozen ? Brushes.Gray : Brushes.Black, VerticalAlignment = VerticalAlignment.Center });
+                    var name = new TextBlock { Text = layer.Name + (frozen ? "  (frozen)" : ""), VerticalAlignment = VerticalAlignment.Center };
+                    if (frozen) name.Foreground = Brushes.Gray; // otherwise inherits, so it turns white when selected
+                    row.Children.Add(name);
                     _layers.Items.Add(row);
                 }
             }
@@ -972,42 +983,58 @@ namespace FdDraft.App
         }
 
         /// <summary>
-        /// If the clicked entity belongs to a survey point (its node, symbol, number, elevation or
-        /// monument/code label), select that point's row in the Points list and scroll it to the
-        /// middle - bringing the Points tab forward unless the Properties tab is in use.
+        /// Keeps the open list on the left in step with what was clicked on the plan: on the
+        /// Points tab, its survey point; on Layers, its layer; on Codes, its FD-Pro code - selected
+        /// and scrolled to the middle. Never switches tabs.
         /// </summary>
         private void ShowPointOf(ulong handle)
         {
-            if (_job == null || _doc == null || !(_doc.GetCadObject(handle) is Entity e)) return;
-            var pt = PointLinks.Find(e, _job.Points);
-            if (pt == null || !(_points.ItemsSource is IEnumerable<PointRow> rows)) return;
-            var row = rows.FirstOrDefault(r => r.Point == pt.Id);
-            if (row == null) return;
+            if (_doc == null || !(_doc.GetCadObject(handle) is Entity e)) return;
+            var tab = _leftTabs.SelectedItem;
             _syncingPoints = true;
             try
             {
-                if (_leftTabs.SelectedItem != _propertiesTab && _pointsTab != null) _leftTabs.SelectedItem = _pointsTab;
-                _points.SelectedItem = row;
-                CenterPointRow(row);
+                if (tab == _pointsTab && _job != null && _points.ItemsSource is List<PointRow> rows)
+                {
+                    var pt = PointLinks.Find(e, _job.Points);
+                    var row = pt == null ? null : rows.FirstOrDefault(r => r.Point == pt.Id);
+                    if (row != null) { _points.SelectedItem = row; CenterItem(_points, rows.IndexOf(row), rows.Count); }
+                    else _points.SelectedItem = null;
+                }
+                else if (tab == _layersTab)
+                {
+                    string layer = e.Layer?.Name ?? "0";
+                    var items = _layers.Items.Cast<object>().ToList();
+                    int index = items.FindIndex(r => r is FrameworkElement fe && string.Equals(fe.Tag as string, layer, StringComparison.OrdinalIgnoreCase));
+                    _layers.SelectedIndex = index;
+                    if (index >= 0) CenterItem(_layers, index, items.Count);
+                }
+                else if (tab == _codesTab && _job != null && _codes.ItemsSource is List<FeatureCode> codes)
+                {
+                    var code = PointLinks.CodeOf(e, _job.Points, codes);
+                    _codes.SelectedItem = code;
+                    if (code != null) CenterItem(_codes, codes.IndexOf(code), codes.Count);
+                }
             }
             finally { _syncingPoints = false; }
-            _coords.Text = "point " + pt.Id + "  " + NE(new Vec2(pt.Easting, pt.Northing)) + "  " + pt.Code;
+            if (_job != null && PointLinks.Find(e, _job.Points) is SurveyPoint p)
+                _coords.Text = "point " + p.Id + "  " + NE(new Vec2(p.Easting, p.Northing)) + "  " + p.Code;
         }
 
-        /// <summary>Scrolls the Points list so <paramref name="row"/> sits in the middle of it.</summary>
-        private void CenterPointRow(PointRow row)
+        /// <summary>Scrolls a list so item <paramref name="index"/> of <paramref name="count"/> sits in its middle.</summary>
+        private static void CenterItem(ItemsControl list, int index, int count)
         {
-            _points.UpdateLayout();
-            _points.ScrollIntoView(row);
-            var sv = FindChild<ScrollViewer>(_points);
-            if (sv == null || !(_points.ItemsSource is IList<PointRow> list)) return;
-            int index = list.IndexOf(row);
             if (index < 0) return;
+            list.UpdateLayout();
+            if (list is ListBox lb) lb.ScrollIntoView(list.Items[index]);
+            else if (list is DataGrid dg) dg.ScrollIntoView(list.Items[index]);
+            var sv = FindChild<ScrollViewer>(list);
+            if (sv == null) return;
             if (sv.CanContentScroll)
                 sv.ScrollToVerticalOffset(Math.Max(0, index - sv.ViewportHeight / 2 + 0.5)); // offsets are in rows
             else
             {
-                double rowH = sv.ExtentHeight / Math.Max(1, list.Count);
+                double rowH = sv.ExtentHeight / Math.Max(1, count);
                 sv.ScrollToVerticalOffset(Math.Max(0, index * rowH - (sv.ViewportHeight - rowH) / 2));
             }
         }

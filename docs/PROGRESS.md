@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.29 (`Directory.Build.props`).
+- **Current version:** 0.4.30 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  73 tests as of v0.4.29, all passing.
+  74 tests as of v0.4.30, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -235,7 +235,7 @@ on Windows; that's still Marc's job when he runs a build.
   run against a real .ctb from Marc's PC or a real printer - ask him to try
   his firm's .ctb and plotter. Left out on purpose: shaded viewports, print
   stamp, background printing, .stb named plot styles.
-- **v0.4.29** (current): the right-docked, hover-to-slide-out tool palette
+- **v0.4.29**: the right-docked, hover-to-slide-out tool palette
   Marc asked for (tabs Text Styles / Useful Tools / Line Styles, from his
   MSCAD screenshots), driven by `%APPDATA%\FD-Draft\palette.ini`. The
   default entries' layers/heights are guesses except where the ProVision
@@ -244,6 +244,11 @@ on Windows; that's still Marc's job when he runs a build.
   View, Xref Manager, Text to Multiline Text, Add Sheet and Title Block,
   Layers Off, Symbol Librarian) were left off; FD-Draft's own tools fill
   that tab instead.
+- **v0.4.30** (current): Marc's follow-ups on the point sync - selection
+  shows in blue (not WPF's pale unfocused grey); it no longer switches to
+  the Points tab, it updates whichever list is open; and it now also
+  follows on the Layers tab (the item's layer) and the Codes tab (the
+  item's code - Draft tags figure linework with its code).
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

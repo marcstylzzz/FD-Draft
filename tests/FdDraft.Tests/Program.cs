@@ -1745,5 +1745,44 @@ namespace FdDraft.Tests
             Assert.Equal(2, custom.Tabs[0].Tools.Count, "an empty entry is skipped");
             Assert.Near(0, custom.Tabs[0].Tools[1].HeightMm, 1e-12, "a bad height is ignored, not a crash");
         }
+            public static void TestEntitiesFindTheirCode()
+        {
+            var codes = new List<FeatureCode>
+            {
+                new FeatureCode { Key = "FDS", Description = "Found standard iron bar", LayerName = "PLAN-FOUND" },
+                new FeatureCode { Key = "FC", Description = "Chain link fence", LayerName = "FENCE" },
+                new FeatureCode { Key = "FW", Description = "Wood fence", LayerName = "FENCE" },
+                new FeatureCode { Key = "BLDG", Description = "Building", LayerName = "BUILDING" },
+            };
+            var points = new List<SurveyPoint> { new SurveyPoint { Id = 100, Easting = 10, Northing = 10, Code = "FDS2" } };
+            var doc = new ACadSharp.CadDocument();
+            var fence = new ACadSharp.Tables.Layer("FENCE"); doc.Layers.Add(fence);
+            var bldg = new ACadSharp.Tables.Layer("BUILDING"); doc.Layers.Add(bldg);
+
+            // Drafted linework carries its code, even though FC and FW share the FENCE layer.
+            var wood = new ACadSharp.Entities.LwPolyline { Layer = fence };
+            doc.ModelSpace.Entities.Add(wood);
+            PointLinks.TagCode(wood, "FW");
+            Assert.Equal("FW", PointLinks.CodeOf(wood, points, codes)?.Key, "tagged linework");
+
+            // A point entity: its point's code, "FDS2" -> FDS by prefix. Both tags coexist.
+            var node = new ACadSharp.Entities.Point(new CSMath.XYZ(10, 10, 0));
+            doc.ModelSpace.Entities.Add(node);
+            PointLinks.Tag(node, 100);
+            PointLinks.TagCode(node, "FDS2");
+            Assert.Equal(100, PointLinks.Tagged(node), "point tag kept alongside the code tag");
+            Assert.Equal("FDS", PointLinks.CodeOf(node, points, codes)?.Key, "code with a suffix matches its code");
+
+            string path = Path.Combine(Path.GetTempPath(), "fdd-codelink-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            Assert.Equal("FW", PointLinks.TaggedCode(back.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single()), "code tag saved in the DWG");
+
+            // Untagged: by layer, only when one code owns it.
+            var line = new ACadSharp.Entities.Line { Layer = bldg };
+            Assert.Equal("BLDG", PointLinks.CodeOf(line, points, codes)?.Key, "the only code on BUILDING");
+            var loose = new ACadSharp.Entities.Line { Layer = fence };
+            Assert.True(PointLinks.CodeOf(loose, points, codes) == null, "FENCE is shared by FC and FW - no guess");
+        }
     }
 }
