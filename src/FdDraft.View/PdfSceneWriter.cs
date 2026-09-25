@@ -21,7 +21,7 @@ namespace FdDraft.View
         private const double PtPerMm = 72.0 / 25.4;
 
         // Helvetica advance widths (1/1000 em) for WinAnsi 32..126, from the Adobe AFM.
-        private static readonly int[] Widths =
+        internal static readonly int[] Widths =
         {
             278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556,
             556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
@@ -29,7 +29,16 @@ namespace FdDraft.View
             556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
         };
 
-        private const double CapHeight = 0.718; // Helvetica cap height, em
+        internal const double CapHeight = 0.718; // Helvetica cap height, em
+
+        /// <summary>How wide <paramref name="text"/> runs at a cap height of
+        /// <paramref name="capHeight"/>, in the same units - the Helvetica metrics the PDF plots
+        /// with, so text measured here (MTEXT word wrap) lines up with what plots.</summary>
+        public static double MeasureText(string text, double capHeight)
+        {
+            double em = TextWidth(WinAnsi(text));
+            return em * capHeight / CapHeight;
+        }
 
         /// <summary>Scene to PDF. For a layout the page is the sheet; for model space, <paramref name="modelPageMm"/> is used.</summary>
         public static void Write(Scene scene, string path, string title, Rect? modelPageMm = null)

@@ -72,7 +72,10 @@ are compile errors. It is a thin shell:
   model units. A sheet is drawn in paper mm, with model space shown through each
   viewport (scaled, clipped, with per-viewport frozen layers), blocks expanded,
   ByLayer/ByBlock colours resolved, layer-0-in-blocks inheritance applied, and
-  MTEXT formatting stripped. The same list feeds the canvas, the SVG preview and
+  MTEXT formatting stripped, and each MTEXT paragraph word-wrapped to its
+  box width (`RectangleWidth`) using the same Helvetica metrics the PDF
+  plots with (`PdfSceneWriter.MeasureText`) - otherwise a long title-block
+  note runs off the sheet as one line. The same list feeds the canvas, the SVG preview and
   the PDF plot, so the screen, the preview and the PDF always agree.
 - **DrawingCanvas** paints that list with culling, cached text and frozen pens.
   It handles zoom at the cursor, pan and snap markers.

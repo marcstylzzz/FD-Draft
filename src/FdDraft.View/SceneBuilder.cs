@@ -299,6 +299,9 @@ namespace FdDraft.View
         {
             var lines = PlainMText(mt.Value);
             if (lines.Count == 0) return;
+            // AutoCAD wraps each paragraph to the MTEXT's box width; without that, a long note
+            // runs off the sheet as one line.
+            if (mt.RectangleWidth > 0) lines = Wrap(lines, mt.RectangleWidth, mt.Height);
             int ap = (int)mt.AttachmentPoint; // 1..9: TL TC TR ML MC MR BL BC BR
             var h = ap % 3 == 1 ? HAlign.Left : ap % 3 == 2 ? HAlign.Center : HAlign.Right;
             double pitch = mt.Height * 1.667 * (mt.LineSpacing <= 0 ? 1 : mt.LineSpacing);
@@ -318,6 +321,37 @@ namespace FdDraft.View
                     Rotation = rot + t.Rotation, H = h, V = VAlign.Top, Rgb = rgb, Layer = layer, Handle = handle,
                 });
             }
+        }
+
+        /// <summary>
+        /// Word-wraps paragraphs to <paramref name="width"/> at cap height <paramref name="height"/>
+        /// (Helvetica metrics, as the PDF plots). A single word wider than the box stays whole on
+        /// its own line, as in AutoCAD; leading spaces (used in notes for hanging indents) are kept.
+        /// </summary>
+        public static List<string> Wrap(List<string> paragraphs, double width, double height)
+        {
+            var result = new List<string>();
+            foreach (var para in paragraphs)
+            {
+                if (para.Length == 0 || PdfSceneWriter.MeasureText(para, height) <= width) { result.Add(para); continue; }
+                int lead = para.Length - para.TrimStart(' ').Length;
+                var words = para.Substring(lead).Split(' ');
+                var line = new System.Text.StringBuilder(new string(' ', lead));
+                bool empty = true;
+                foreach (var w in words)
+                {
+                    string candidate = empty ? line + w : line + " " + w;
+                    if (!empty && PdfSceneWriter.MeasureText(candidate, height) > width)
+                    {
+                        result.Add(line.ToString());
+                        line.Clear().Append(w);
+                    }
+                    else { line.Clear().Append(candidate); }
+                    empty = false;
+                }
+                result.Add(line.ToString());
+            }
+            return result;
         }
 
         /// <summary>%%d, %%c, %%p and %%nnn control codes as the characters they draw.</summary>

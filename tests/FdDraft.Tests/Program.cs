@@ -1421,5 +1421,23 @@ namespace FdDraft.Tests
             normal.AssociatedBlock.Entities.Add(added);
             Assert.True(ViewportRules.IsPaperBackground(bg, 431.8, 279.4) && !ViewportRules.IsPaperBackground(added, 431.8, 279.4), "with two, #1 is the background and the other the plan");
         }
+            public static void TestMTextWrapsToItsBoxWidth()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var note = new ACadSharp.Entities.MText
+            {
+                Value = "THE INTENDED PLOT SIZE OF THIS PLAN IS 559mm IN WIDTH BY 432mm IN HEIGHT WHEN PLOTTED AT A SCALE OF 1:300.\\PSECOND PARAGRAPH",
+                InsertPoint = new CSMath.XYZ(0, 100, 0), Height = 2, RectangleWidth = 100, AttachmentPoint = ACadSharp.Entities.AttachmentPointType.TopLeft,
+            };
+            doc.ModelSpace.Entities.Add(note);
+            var lines = new SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == PrimKind.Text).OrderByDescending(p => p.Center.Y).ToList();
+            Assert.True(lines.Count >= 3, "the long paragraph wraps onto more than one line: " + string.Join(" | ", lines.Select(l => l.Text)));
+            Assert.True(lines.All(l => PdfSceneWriter.MeasureText(l.Text, 2) <= 100 + 1e-9), "every line fits the box");
+            Assert.Equal("SECOND PARAGRAPH", lines.Last().Text, "paragraph breaks still start a new line");
+            Assert.True(string.Join(" ", lines.Take(lines.Count - 1).Select(l => l.Text)).StartsWith("THE INTENDED PLOT SIZE OF THIS PLAN IS 559mm"), "words kept in order");
+
+            note.RectangleWidth = 0;
+            Assert.Equal(2, new SceneBuilder(doc).Model().AllPrims().Count(p => p.Kind == PrimKind.Text), "no box width: no wrapping, one line per paragraph");
+        }
     }
 }
