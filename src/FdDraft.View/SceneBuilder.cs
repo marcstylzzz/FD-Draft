@@ -59,7 +59,12 @@ namespace FdDraft.View
             // Model space through each viewport first, so the sheet's own linework draws on top.
             foreach (var vp in paperEntities.OfType<Viewport>())
             {
-                if (vp.RepresentsPaper || vp.Status.HasFlag(ViewportStatusFlags.ViewportOff) || vp.ViewHeight <= 0 || vp.Height <= 0) continue;
+                if (!ViewportRules.ShowsModel(vp, pw, ph))
+                {
+                    if (vp.Status.HasFlag(ViewportStatusFlags.ViewportOff) && !ViewportRules.IsPaperBackground(vp, pw, ph))
+                        _scene.Notes.Add("a viewport on " + layout.Name + " is switched off in the drawing, so its view of model space isn't shown");
+                    continue;
+                }
                 if (IsHiddenLayer(vp.Layer)) { /* the viewport frame's layer does not hide its contents */ }
                 double s = vp.Height / vp.ViewHeight;
                 var toPaper = Affine.Translate(vp.Center.X, vp.Center.Y)

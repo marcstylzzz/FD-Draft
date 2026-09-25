@@ -29,7 +29,7 @@ namespace FdDraft.Cad.Editing
         /// <summary>The viewport a sheet's plan is shown through: its largest working one.</summary>
         public static Viewport? PlanViewport(ACadSharp.Objects.Layout layout) =>
             layout.AssociatedBlock.Entities.OfType<Viewport>()
-                .Where(v => !v.RepresentsPaper && v.ViewHeight > 0 && v.Height > 0 && v.Width > 0)
+                .Where(v => FdDraft.View.ViewportRules.ShowsModel(v, layout))
                 .OrderByDescending(v => v.Width * v.Height)
                 .FirstOrDefault();
 
@@ -66,7 +66,7 @@ namespace FdDraft.Cad.Editing
             var edits = new List<IEditCommand>();
             double oldVh = vp.ViewHeight;
             edits.Add(new SetPropertyCommand<double>(oldVh, oldVh * k, v => vp.ViewHeight = v, "Viewport scale"));
-            int others = layout.AssociatedBlock.Entities.OfType<Viewport>().Count(v => v != vp && !v.RepresentsPaper && v.ViewHeight > 0);
+            int others = layout.AssociatedBlock.Entities.OfType<Viewport>().Count(v => v != vp && FdDraft.View.ViewportRules.ShowsModel(v, layout));
             if (others > 0) r.Notes.Add(others + " other viewport(s) on the sheet (details, key plans) keep their own scale");
 
             // Title block: every "1:old" becomes "1:new"; tick labels just above the anchor are relabelled.

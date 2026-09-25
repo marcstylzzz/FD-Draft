@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FdDraft.Core\FdDraft.Core.csproj" />
+    <ProjectReference Include="..\FdDraft.View\FdDraft.View.csproj" />
     <ProjectReference Include="..\..\external\ACadSharp\src\ACadSharp\ACadSharp.csproj" SetTargetFramework="TargetFramework=net8.0" />
   </ItemGroup>
 </Project>

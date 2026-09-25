@@ -293,6 +293,18 @@ it on Windows is the real test.
   they undo/redo together as one step rather than one Ctrl+Z per field.
   **Set Layer** on the toolbar reassigns the whole selection to the current
   layer via `ChangeLayerCommand`, also undoable.
+- **Which viewport is the paper background** (`FdDraft.View.ViewportRules`,
+  v0.4.22): ACadSharp doesn't read a viewport's number from the DWG -
+  `Viewport.Id` is its position among the viewports in the sheet's block,
+  and `RepresentsPaper` is just "Id == 1". A DWG read adds viewports in file
+  order and never inserts a background one, so a sheet tab that holds only
+  its plan viewport (common for tabs never opened in AutoCAD) reads back
+  with the plan as #1 and was being skipped as "paper" - the tab then showed
+  only its title block. Now a #1 viewport only counts as the background when
+  it is not alone, or when its view centre lies around the sheet itself
+  rather than out at the survey's coordinates. SceneBuilder, VPSCALE and
+  MVIEW all use this rule, and a plan viewport switched off in the DWG is
+  noted in the log rather than silently not drawn.
 - **MVIEW** (`SheetViewports`): a new plan viewport on the current sheet,
   built exactly as `TemplateDrafter.AddViewport` builds the pipeline's
   (north up, zoom-locked, on the standards' viewport layer), filling two

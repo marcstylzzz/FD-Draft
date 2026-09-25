@@ -1386,5 +1386,38 @@ namespace FdDraft.Tests
             undo.Undo();
             Assert.True(SheetScale.PlanViewport(layout) == null, "undo takes it off again");
         }
+            public static void TestALonePlanViewportIsNotMistakenForThePaperBackground()
+        {
+            // A sheet tab never opened in AutoCAD can hold only its plan viewport. ACadSharp numbers
+            // viewports by position, so that one comes out as #1 - "represents paper" - and used to
+            // be skipped, leaving the tab showing only its title block.
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(Ln(309500, 4869100, 309560, 4869140));
+            var layout = new ACadSharp.Objects.Layout("RPLAN-22X34") { PaperWidth = 863.6, PaperHeight = 558.8 };
+            doc.Layouts.Add(layout);
+            // Reading a DWG adds viewports in file order and never inserts a background one, so a
+            // tab whose only viewport is its plan reads back as this: the lone #1 viewport, set up
+            // to look at the survey. (In memory ACadSharp won't let the background one be removed,
+            // so the lone one is turned into the plan viewport instead - the same end state.)
+            var plan = layout.AssociatedBlock.Entities.OfType<ACadSharp.Entities.Viewport>().Single();
+            plan.Center = new CSMath.XYZ(360, 280, 0); plan.Width = 680; plan.Height = 520;
+            plan.ViewCenter = new CSMath.XY(309530, 4869120); plan.ViewHeight = 520 * 0.25;
+            plan.Status = ACadSharp.Entities.ViewportStatusFlags.CurrentlyAlwaysEnabled;
+            Assert.True(plan.RepresentsPaper, "ACadSharp calls the lone viewport #1 / paper - the trap");
+            Assert.True(!ViewportRules.IsPaperBackground(plan, 863.6, 558.8), "but it looks at the survey's coordinates, so it's the plan");
+            var scene = new SceneBuilder(doc).Layout("RPLAN-22X34");
+            Assert.True(scene.Groups.Any(g => g.Clip.HasValue && g.Prims.Any()), "the survey shows through it");
+            Assert.True(SheetScale.PlanViewport(layout) == plan, "VPSCALE finds it too");
+
+            // The ordinary case is unchanged: with a real background viewport, #1 is still paper.
+            var normal = new ACadSharp.Objects.Layout("11X17") { PaperWidth = 431.8, PaperHeight = 279.4 };
+            doc.Layouts.Add(normal);
+            var bg = normal.AssociatedBlock.Entities.OfType<ACadSharp.Entities.Viewport>().Single();
+            bg.ViewCenter = new CSMath.XY(215, 140); bg.ViewHeight = 279.4; bg.Height = 279.4; bg.Width = 431.8;
+            Assert.True(ViewportRules.IsPaperBackground(bg, 431.8, 279.4), "a lone viewport looking at the sheet itself is the background");
+            var added = SheetViewports.Create(new Rect(20, 20, 300, 260), new Vec2(309530, 4869120), 0.25, doc.Layers["0"]);
+            normal.AssociatedBlock.Entities.Add(added);
+            Assert.True(ViewportRules.IsPaperBackground(bg, 431.8, 279.4) && !ViewportRules.IsPaperBackground(added, 431.8, 279.4), "with two, #1 is the background and the other the plan");
+        }
     }
 }

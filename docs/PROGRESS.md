@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.21 (`Directory.Build.props`).
+- **Current version:** 0.4.22 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  63 tests as of v0.4.21, all passing.
+  64 tests as of v0.4.22, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -65,13 +65,13 @@ on Windows; that's still Marc's job when he runs a build.
   desktop app shell (canvas, sheets, snaps, inverse, save/plot).
 - **v0.4.0**: selection, erase, undo/redo, MOVE/ROTATE, and COGO drafting
   (LINE by bearing/distance, ARC by three points, TEXT, application icon).
-- **Bug investigation** (no code fix needed): Marc opened a real
-  MSCAD-authored DWG (`17 Empire Blvd Wellington.dwg`) and reported (a)
-  "Draft" picking the demo job instead of the open job, and (b) sheets
-  appearing empty. Both root-caused as correct existing behavior, not bugs:
-  Draft always drafts from a raw FD-Pro job folder regardless of what DWG is
-  open (by design), and that file's 11x17 layout is genuinely blank in the
-  source DWG. This led directly to the next two features below, so the
+- **Bug investigation**: Marc opened a real MSCAD-authored DWG
+  (`17 Empire Blvd Wellington.dwg`) and reported (a) "Draft" picking the
+  demo job instead of the open job, and (b) sheets appearing empty. (a) is
+  by design (Draft always drafts from a raw FD-Pro job folder). (b) was
+  diagnosed at the time as the file's sheets being genuinely blank - that
+  turned out to be wrong; see v0.4.22 (lone plan viewports were being
+  skipped as the paper background). This led directly to the next two features below, so the
   drafter isn't left guessing.
 - **v0.4.1**: log which sheets actually have a plan drawn on them (a legacy
   DWG often carries several blank unused layouts); auto-detect and reuse a
@@ -156,7 +156,7 @@ on Windows; that's still Marc's job when he runs a build.
   work on Polyline2D too, by swapping in a rebuilt polyline
   (`ReplacePolyline2DCommand`) - ACadSharp's HashSet-backed vertex
   collection scrambles order if vertices are removed and re-added.
-- **v0.4.21** (current): MVIEW - add a plan viewport to a sheet (two
+- **v0.4.21**: MVIEW - add a plan viewport to a sheet (two
   corners + scale, Enter = fit at the next standard scale). Prompted by
   Marc re-reporting the "17 Empire Blvd Wellington.dwg" 11X17 tab as empty
   while model space has the survey: still correct (that tab has no
@@ -165,6 +165,17 @@ on Windows; that's still Marc's job when he runs a build.
   pre-v0.4.2 build (no Stretch/Set Layer buttons, leaders "not drawn yet"),
   so the v0.4.1 blank-sheet log line wasn't showing for him - remind him to
   `git pull --recurse-submodules` and rebuild.
+- **v0.4.22** (current): **correction** to the "17 Empire Blvd" diagnosis
+  above. Marc's screenshot of RPLAN-22X34 showed no plan either, so "the
+  plan is drawn in paper space on 17X22/RPLAN-22X34" was wrong - that was
+  inferred from primitive counts, which title-block/schedule tables inflate
+  too. Real cause (most likely): ACadSharp numbers viewports by position,
+  so a tab whose only viewport is its plan reads back with it as #1 =
+  "represents paper", and SceneBuilder skipped it on every tab. Fixed with
+  `FdDraft.View.ViewportRules` (a lone #1 viewport looking at survey
+  coordinates is the plan). Not yet confirmed against the real file - it
+  wasn't available in this session; ask Marc to re-open it after pulling.
+  FdDraft.Cad now references FdDraft.View (for that rule).
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
