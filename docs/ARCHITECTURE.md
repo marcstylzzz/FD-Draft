@@ -243,6 +243,16 @@ it on Windows is the real test.
   else the Draft dialog's last standards file, else the built-in defaults.
   No collision sliding (that needs the job's points) - FLIP or MOVE a label
   that lands on something.
+- **Annotate styles** (v0.4.32): `FdDraft.Core.Drafting.CourseAnnotation`
+  lays out MSCAD's eight auto labels for a straight course by the same
+  standards as Draft's labels; "above"/"below" is the reading direction's
+  up, decided by the pick. The on-line styles return a gap (0..1 along the
+  course, the text's Helvetica width plus a text gap each side), and
+  `CourseLabelling.Annotate` breaks the linework there: a Line is cut and a
+  second added; an LwPolyline is replaced by open pieces (a closed one opens
+  at the gap), keeping its code tag; Polyline2D isn't broken (label on the
+  line, noted). An arc span gets its curve data instead. One undo step per
+  pick.
 - **FLIP** (`LabelFlip` in `FdDraft.Cad.Editing`): for each selected
   TEXT/MTEXT, finds the nearest course span (Lines, Arcs and every span of
   the polylines in the label's own block, within 10 text heights), mirrors

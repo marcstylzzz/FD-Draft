@@ -133,6 +133,13 @@ FdDraft.App project in Visual Studio).
   and perimeter of each selected closed polyline or circle, arcs included;
   with nothing closed selected, pick the corners and it keeps a running
   total.
+- **Annotate toolbar** - MSCAD's eight auto labels: split bearing (on the
+  centre of the line, the line broken around it), bearing off line, split
+  distance, distance off line, bearing/distance, bearing-distance (one
+  line), bearing/distance // line and distance/bearing // line (stacked on
+  the picked side). Pick lines one after another; for the off-line styles,
+  pick on the side the label should go. Esc or right-click ends. Commands:
+  BRGON, BRGOFF, DISTON, DISTOFF, BRGDIST, BRGDASH, BRGDISTL, DISTBRGL.
 - **Label** adds bearing and distance (or radius/arc/chord for a curve) to
   the selected lines, arcs and polyline spans, by exactly the rules Draft
   uses - the firm's text heights, layers, styles and bearing format - at

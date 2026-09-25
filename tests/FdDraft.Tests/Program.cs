@@ -1832,5 +1832,91 @@ namespace FdDraft.Tests
             var light = new SceneBuilder(doc).Model();
             Assert.True(!light.DarkBackground && light.AllPrims().First().Rgb == 0x000000u, "default (CLI, SVG, tests) is unchanged: black on white");
         }
+            // ---- MSCAD annotate styles (v0.4.32) ---------------------------------------------------
+
+        public static void TestCourseAnnotationStyles()
+        {
+            var std = FirmStandards.Default();
+            double mpm = 0.5; // 1:500 in metres
+            var a = new Vec2(0, 0); var b = new Vec2(40, 0);   // 40 m due east
+            var abovePick = new Vec2(20, 3); var belowPick = new Vec2(20, -3);
+            CourseLabelResult L(CourseLabelStyle s, Vec2 pick) => CourseAnnotation.Layout(a, b, pick, s, std, mpm);
+            string dist = 40.0.ToString("F" + std.DistanceDecimals, System.Globalization.CultureInfo.InvariantCulture);
+
+            var split = L(CourseLabelStyle.BearingOnLine, abovePick);
+            Assert.Equal(1, split.Texts.Count, "one bearing");
+            Assert.Near(0, split.Texts[0].Position.Y, 1e-9, "centred on the line");
+            Assert.True(split.Texts[0].V == VAlign.Middle, "middle-anchored so it sits in the gap");
+            Assert.True(split.GapFrom < 0.5 && split.GapTo > 0.5 && Math.Abs(split.GapFrom!.Value + split.GapTo!.Value - 1) < 1e-9, "a gap centred on the line");
+            double gapM = (split.GapTo!.Value - split.GapFrom.Value) * 40;
+            Assert.True(gapM > 2 && gapM < 12, "gap about the bearing's width at 1:500: " + gapM);
+            Assert.Equal(dist, L(CourseLabelStyle.DistanceOnLine, abovePick).Texts[0].Text, "distance on line");
+
+            var offAbove = L(CourseLabelStyle.BearingOffLine, abovePick).Texts[0];
+            var offBelow = L(CourseLabelStyle.BearingOffLine, belowPick).Texts[0];
+            Assert.True(offAbove.Position.Y > 0 && offAbove.V == VAlign.Bottom, "off line, picked above: above, sitting on its anchor");
+            Assert.True(offBelow.Position.Y < 0 && offBelow.V == VAlign.Top, "picked below: below, hanging from its anchor");
+            Assert.True(L(CourseLabelStyle.DistanceOffLine, belowPick).Texts[0].Position.Y < 0, "distance off line follows the pick");
+
+            var both = L(CourseLabelStyle.BearingDistance, belowPick).Texts;
+            Assert.True(both[0].Kind == TextKind.Bearing && both[0].Position.Y > 0 && both[1].Position.Y < 0, "bearing above, distance below, whatever the pick");
+
+            var dash = L(CourseLabelStyle.BearingDashDistance, abovePick).Texts.Single();
+            Assert.True(dash.Text.StartsWith("N90") && dash.Text.EndsWith(dist) && dash.Position.Y > 0, "one line: bearing then distance, on the picked side");
+
+            var stackedAbove = L(CourseLabelStyle.BearingOverDistance, abovePick).Texts;
+            var brg = stackedAbove.Single(t => t.Kind == TextKind.Bearing); var dst = stackedAbove.Single(t => t.Kind == TextKind.Distance);
+            Assert.True(brg.Position.Y > dst.Position.Y && dst.Position.Y > 0, "bearing over distance, both above");
+            var stackedBelow = L(CourseLabelStyle.BearingOverDistance, belowPick).Texts;
+            Assert.True(stackedBelow.Single(t => t.Kind == TextKind.Bearing).Position.Y > stackedBelow.Single(t => t.Kind == TextKind.Distance).Position.Y
+                && stackedBelow.All(t => t.Position.Y < 0), "still bearing over distance when both go below");
+            var db = L(CourseLabelStyle.DistanceOverBearing, abovePick).Texts;
+            Assert.True(db.Single(t => t.Kind == TextKind.Distance).Position.Y > db.Single(t => t.Kind == TextKind.Bearing).Position.Y, "distance over bearing");
+            // The two stacked lines don't overlap: the gap between them is at least a text gap.
+            double upper = brg.Position.Y, lowerTop = dst.Position.Y + std.DistanceTextMm * mpm;
+            Assert.True(upper >= lowerTop - 1e-9, "stacked lines clear of each other");
+        }
+            public static void TestAnnotateStylesOnDrawingEntities()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var undo = new UndoStack();
+
+            // Split bearing on a Line: the line becomes two with a gap round the centred bearing.
+            var line = Ln(0, 0, 40, 0);
+            doc.ModelSpace.Entities.Add(line);
+            undo.Push(CourseLabelling.Annotate(line, new Vec2(20, 1), CourseLabelStyle.BearingOnLine, doc, std, 0.5, L, out _)!);
+            var lines = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Line>().ToList();
+            Assert.Equal(2, lines.Count, "the line is broken in two");
+            Assert.True(line.EndPoint.X < 20 && lines.Any(l => l != line && l.StartPoint.X > 20 && Math.Abs(l.EndPoint.X - 40) < 1e-9), "a gap either side of the middle");
+            var brg = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Single();
+            Assert.True(brg.Value.StartsWith("N90") && Math.Abs(brg.AlignmentPoint.Y) < 1e-9 && Math.Abs(brg.AlignmentPoint.X - 20) < 1e-9, "bearing centred in the gap");
+            undo.Undo();
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Line>().Single() == line && Math.Abs(line.EndPoint.X - 40) < 1e-9, "one undo rejoins the line");
+            Assert.True(!doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(), "and removes the label");
+
+            // Split distance on a closed lot: picked on its east side, it opens there into one polyline.
+            var lot = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (0.0, 10.0), (30.0, 10.0), (30.0, 40.0), (0.0, 40.0) })
+                lot.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            doc.ModelSpace.Entities.Add(lot);
+            PointLinks.TagCode(lot, "BDY");
+            undo.Push(CourseLabelling.Annotate(lot, new Vec2(30.5, 25), CourseLabelStyle.DistanceOnLine, doc, std, 0.5, L, out _)!);
+            var opened = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single();
+            Assert.True(opened != lot && !opened.IsClosed, "the closed lot is replaced by an open one");
+            Assert.Equal(6, opened.Vertices.Count, "four corners plus the two gap ends");
+            Assert.True(Math.Abs(opened.Vertices[0].Location.X - 30) < 1e-9 && opened.Vertices[0].Location.Y > 25, "starts just past the gap");
+            Assert.True(Math.Abs(opened.Vertices[5].Location.X - 30) < 1e-9 && opened.Vertices[5].Location.Y < 25, "ends just before it");
+            Assert.Equal("BDY", PointLinks.TaggedCode(opened), "keeps its code tag");
+            undo.Undo();
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single() == lot, "undo brings the closed lot back");
+
+            // Off-line style: nothing is broken, the label goes on the picked side.
+            undo.Push(CourseLabelling.Annotate(lot, new Vec2(15, 8), CourseLabelStyle.BearingOverDistance, doc, std, 0.5, L, out _)!);
+            var two = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().ToList();
+            Assert.True(two.Count == 2 && two.All(t => t.AlignmentPoint.Y < 10), "bearing and distance both below the south line, where it was picked");
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single() == lot, "the lot is untouched");
+        }
     }
 }

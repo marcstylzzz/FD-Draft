@@ -20,6 +20,7 @@ using CSMath;
 using FdDraft.Cad;
 using FdDraft.Cad.Editing;
 using FdDraft.Core;
+using FdDraft.Core.Drafting;
 using FdDraft.Core.Geometry;
 using FdDraft.Core.Job;
 using FdDraft.Core.Layout;
@@ -336,6 +337,7 @@ namespace FdDraft.App
             tray.ToolBars.Add(bar);
             tray.ToolBars.Add(BuildViewBar());
             tray.ToolBars.Add(BuildSnapBar());
+            tray.ToolBars.Add(BuildAnnotateBar());
             return tray;
         }
 
@@ -387,6 +389,79 @@ namespace FdDraft.App
             none.Click += (s, e) => { foreach (var b in _snapButtons.Values) b.IsChecked = false; };
             bar.Items.Add(none);
             return bar;
+        }
+
+        /// <summary>MSCAD's course annotate tools, by their MSCAD names, with FD-Draft command names.</summary>
+        private static readonly (CourseLabelStyle Style, string Command, string Short, string Name)[] AnnotateTools =
+        {
+            (CourseLabelStyle.BearingOnLine, "BRGON", "Brg ⊢⊣", "Auto split bearing / place bearing on centre of line"),
+            (CourseLabelStyle.BearingOffLine, "BRGOFF", "Brg ↑", "Auto bearing off line"),
+            (CourseLabelStyle.DistanceOnLine, "DISTON", "Dist ⊢⊣", "Auto distance (on centre of line)"),
+            (CourseLabelStyle.DistanceOffLine, "DISTOFF", "Dist ↑", "Auto distance off line"),
+            (CourseLabelStyle.BearingDistance, "BRGDIST", "Brg/Dist", "Auto bearing/distance (bearing one side, distance the other)"),
+            (CourseLabelStyle.BearingDashDistance, "BRGDASH", "Brg-Dist", "Auto bearing-distance (one line of text)"),
+            (CourseLabelStyle.BearingOverDistance, "BRGDISTL", "Brg/Dist ∥", "Auto bearing/distance // line (bearing over distance, picked side)"),
+            (CourseLabelStyle.DistanceOverBearing, "DISTBRGL", "Dist/Brg ∥", "Auto distance/bearing // line (distance over bearing, picked side)"),
+        };
+
+        private ToolBar BuildAnnotateBar()
+        {
+            var bar = new ToolBar { Band = 2 };
+            foreach (var t in AnnotateTools)
+            {
+                var b = new Button { Content = t.Short, ToolTip = t.Name + " (" + t.Command + ") - pick lines one after another; for the off-line styles, pick on the side the label goes", Padding = new Thickness(6, 2, 6, 2) };
+                var style = t.Style;
+                b.Click += (s, e) => StartAnnotate(style);
+                bar.Items.Add(b);
+            }
+            return bar;
+        }
+
+        /// <summary>
+        /// One of MSCAD's annotate tools: pick a line or polyline span, it's labelled in the chosen
+        /// style (on the picked side where that matters, the line broken around the text for the
+        /// "on line" styles); stays active for the next pick until Esc or right-click.
+        /// </summary>
+        private void StartAnnotate(CourseLabelStyle style)
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            if (_activeTool.Length > 0) EndTool();
+            var info = AnnotateTools.First(t => t.Style == style);
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
+            BeginTool(info.Command);
+            bool side = style != CourseLabelStyle.BearingOnLine && style != CourseLabelStyle.DistanceOnLine && style != CourseLabelStyle.BearingDistance;
+            _prompt.Text = info.Name + " - pick a line" + (side ? " on the side the label goes" : "") + ":";
+            Log(info.Name.ToUpperInvariant() + "  pick lines to label (scale from " + basis + "); Esc or right-click ends");
+            int count = 0;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                double tol = Math.Max(10 / _canvas.View.Zoom, 1e-6);
+                Entity? best = null; double bestD = tol;
+                foreach (var e in CurrentEntityOwner().Entities)
+                {
+                    if (!(e is Line || e is Arc || e is LwPolyline || e is Polyline2D)) continue;
+                    foreach (var sp in EntityOps.SpansOf(e))
+                    {
+                        double d = sp.DistanceAndSide(model.Value, out _);
+                        if (d < bestD) { bestD = d; best = e; }
+                    }
+                }
+                if (best == null) { Log("  no line there - pick on a line or polyline"); return; }
+                var cmd = CourseLabelling.Annotate(best, model.Value, style, _doc!, std, mpm, GetOrCreateLayer, out string note, g2g);
+                if (cmd == null) { Log("  can't label that"); return; }
+                _undo.Push(cmd);
+                count++;
+                _dirty = true; UpdateTitle();
+                var c = _canvas.View.Center; var z = _canvas.View.Zoom;
+                Rebuild(fit: false);
+                _canvas.ZoomTo(c, z);
+                Log("  labelled" + (note.Length > 0 ? " (" + note + ")" : "") + "  (Ctrl+Z undoes it)");
+            };
+            _awaitingLine = s => { EndTool(); Log("  *" + count + " labelled*"); };
         }
 
         private void SetSnapMode(SnapModes mode, bool on)
@@ -589,6 +664,14 @@ namespace FdDraft.App
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
                 case "LABEL": case "LB": LabelSelection(); break;
+                case "BRGON": StartAnnotate(CourseLabelStyle.BearingOnLine); break;
+                case "BRGOFF": StartAnnotate(CourseLabelStyle.BearingOffLine); break;
+                case "DISTON": StartAnnotate(CourseLabelStyle.DistanceOnLine); break;
+                case "DISTOFF": StartAnnotate(CourseLabelStyle.DistanceOffLine); break;
+                case "BRGDIST": StartAnnotate(CourseLabelStyle.BearingDistance); break;
+                case "BRGDASH": StartAnnotate(CourseLabelStyle.BearingDashDistance); break;
+                case "BRGDISTL": StartAnnotate(CourseLabelStyle.BearingOverDistance); break;
+                case "DISTBRGL": StartAnnotate(CourseLabelStyle.DistanceOverBearing); break;
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
@@ -630,6 +713,8 @@ namespace FdDraft.App
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
             Log("  VXDEL / VXADD   select a polyline, then pick a vertex to remove / a spot on it to add one (also buttons in Properties)");
+            Log("  Annotate toolbar (MSCAD's auto labels): BRGON split bearing · BRGOFF bearing off line · DISTON split distance · DISTOFF distance off line");
+            Log("          BRGDIST bearing/distance · BRGDASH bearing-distance · BRGDISTL bearing/distance // line · DISTBRGL distance/bearing // line");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
