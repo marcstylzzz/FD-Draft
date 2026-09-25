@@ -81,6 +81,14 @@ FdDraft.App project in Visual Studio).
   or wherever you browse to with the … button; monochrome and grayscale
   are built in. A .ctb maps each colour number to a pen colour,
   lineweight and screening, just as it does in AutoCAD.
+- **Tool palette** (right edge): hover a tab - Text Styles, Useful Tools,
+  Line Styles - and its buttons slide out over the drawing; they tuck away
+  when the mouse leaves (📌 keeps them open). A Text Styles button makes its
+  layer current and starts TEXT in its style at its paper height, scaled to
+  the sheet (PART NUMBER, PIN NUMBER, ROAD NAME...); a Line Styles button
+  makes its layer current and starts LINE; Useful Tools are one-click
+  FD-Draft commands. It's all one editable file, `%APPDATA%\FD-Draft\palette.ini`
+  (✎ on the palette opens it; saving it updates the palette).
 - **Points list follows the plan**: click anything belonging to a survey
   point - its node, symbol, point number, elevation or code/monument label -
   and its row in the Points list is selected and scrolled to the middle

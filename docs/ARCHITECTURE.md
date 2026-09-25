@@ -144,6 +144,18 @@ it on Windows is the real test.
   together, so lines that meet at a survey point stay joined. This is the
   actual "grip edit" a course correction needs, as opposed to MOVE/ROTATE
   which only ever transform whole entities rigidly.
+- **Tool palette** (v0.4.29): `FdDraft.Core.Standards.ToolPalette` reads
+  palette.ini - one section per tab, `LABEL = text | layer= | style= |
+  height=(paper mm) | tip=`, `LABEL = line | layer=`, or `LABEL = <command>` -
+  and ships `DefaultText` (Marc's MSCAD tabs, pointed at the ProVision
+  template's layers/styles where known; the rest are guesses to edit). The
+  app's `ToolPaletteDock` is a 28 px tab strip docked right of the canvas
+  (tab names rotated to read upward) plus a panel overlaid on the canvas's
+  right edge whose width animates 0 ↔ 270 on hover, closing 450 ms after the
+  mouse leaves both, unless pinned. A text preset's height is paper mm ×
+  the sheet's model-per-mm (`LabelModelPerMm`, same as LABEL), and TEXT
+  then takes the typed text verbatim (no "height text" prefix, so "12 MAIN
+  STREET" stays whole) in the preset's style if the drawing has it.
 - **Point links** (`FdDraft.Cad.PointLinks`, v0.4.27): Draft tags every
   entity it draws for a survey point - node, symbol parts, point number,
   elevation, monument/code label - with extended data (AppId "FDDRAFT",

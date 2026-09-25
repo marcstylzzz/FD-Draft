@@ -71,6 +71,7 @@ namespace FdDraft.App
         /// that change doesn't turn round and reselect things on the plan.</summary>
         private bool _syncingPoints;
         private readonly UndoStack _undo = new UndoStack();
+        private readonly ToolPaletteDock _palette = new ToolPaletteDock();
 
         private CadDocument? _doc;
         private string? _path;
@@ -155,7 +156,13 @@ namespace FdDraft.App
             _sheets.SelectionChanged += (s, e) => { if (_sheets.SelectedItem is string name && name != _sheet) ShowSheet(name); };
             DockPanel.SetDock(_sheets, Dock.Bottom); drawing.Children.Add(_sheets);
             var frame = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)), BorderThickness = new Thickness(1), Child = _canvas };
-            drawing.Children.Add(frame);
+            // The tool palette: its tab strip docked at the right edge, its panel sliding out over the drawing.
+            DockPanel.SetDock(_palette.Strip, Dock.Right);
+            drawing.Children.Add(_palette.Strip);
+            var canvasArea = new Grid();
+            canvasArea.Children.Add(frame);
+            canvasArea.Children.Add(_palette.Flyout);
+            drawing.Children.Add(canvasArea);
             Grid.SetColumn(drawing, 2); main.Children.Add(drawing);
             root.Children.Add(main);
 
@@ -179,6 +186,7 @@ namespace FdDraft.App
             _canvas.BoxSelected += OnBoxSelected;
             _canvas.Dragged += OnDragged;
             Closing += OnClosing;
+            Activated += (s, e) => { if (_reloadPaletteOnActivate) { _reloadPaletteOnActivate = false; LoadPalette(); } };
             PreviewKeyDown += OnKey;
 
             Bind(Key.O, ModifierKeys.Control, () => OpenDrawing(null));
@@ -191,6 +199,9 @@ namespace FdDraft.App
             Bind(Key.Y, ModifierKeys.Control, DoRedo);
             Bind(Key.A, ModifierKeys.Control, SelectAll);
 
+            _palette.ToolClicked += RunPaletteTool;
+            _palette.EditRequested += EditPalette;
+            LoadPalette();
             UpdateStatus();
             Log("FD-Draft " + typeof(DraftPipeline).Assembly.GetName().Version?.ToString(3) + ". Ctrl+D drafts an FD-Pro job; type HELP for commands.");
         }
@@ -226,7 +237,7 @@ namespace FdDraft.App
             var draw = new MenuItem { Header = "_Draw" };
             draw.Items.Add(Item("_Line", "LINE", StartLine));
             draw.Items.Add(Item("_Arc (3 points)", "ARC", StartArc));
-            draw.Items.Add(Item("_Text", "TEXT", StartText));
+            draw.Items.Add(Item("_Text", "TEXT", () => StartText()));
             draw.Items.Add(Item("_Leader", "LEADER", StartLeader));
             draw.Items.Add(Item("_Dimension (aligned)", "DIM", () => StartDimension()));
             draw.Items.Add(Item("Dimension (li_near)", "DIMLIN", () => StartDimension(linear: true)));
@@ -256,6 +267,9 @@ namespace FdDraft.App
             view.Items.Add(new Separator());
             view.Items.Add(Item("Sheet s_cale…", "VPSCALE", () => StartSheetScale("")));
             view.Items.Add(Item("Add _viewport to sheet", "MVIEW", StartMview));
+            view.Items.Add(new Separator());
+            view.Items.Add(Item("Edit tool _palette…", "", EditPalette));
+            view.Items.Add(Item("_Reload tool palette", "PALETTE", () => { LoadPalette(); Log("  tool palette reloaded"); }));
             var help = new MenuItem { Header = "_Help" };
             help.Items.Add(Item("_Commands", "HELP", ShowHelp));
             menu.Items.Add(file); menu.Items.Add(edit); menu.Items.Add(survey); menu.Items.Add(draw); menu.Items.Add(modify); menu.Items.Add(view); menu.Items.Add(help);
@@ -283,7 +297,7 @@ namespace FdDraft.App
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Line", "Draw lines by bearing and distance (LINE)", StartLine));
             bar.Items.Add(B("Arc", "Draw an arc through three points (ARC)", StartArc));
-            bar.Items.Add(B("Text", "Place text (TEXT)", StartText));
+            bar.Items.Add(B("Text", "Place text (TEXT)", () => StartText()));
             bar.Items.Add(B("Leader", "Draw a leader with text (LEADER)", StartLeader));
             bar.Items.Add(B("Dim", "Aligned dimension between two points (DIM; DIMLIN for horizontal/vertical, DIMRAD for a radius)", () => StartDimension()));
             bar.Items.Add(new Separator());
@@ -373,6 +387,7 @@ namespace FdDraft.App
                 case "LINE": case "L": StartLine(); break;
                 case "ARC": StartArc(); break;
                 case "TEXT": case "T": StartText(); break;
+                case "PALETTE": LoadPalette(); Log("  tool palette reloaded from " + PaletteFile); break;
                 case "LEADER": case "LE": StartLeader(); break;
                 case "DIM": case "DIMALIGNED": case "DAL": StartDimension(); break;
                 case "DIMLIN": case "DLI": StartDimension(linear: true); break;
@@ -452,6 +467,7 @@ namespace FdDraft.App
             Log("  VPINFO [sheet|ALL]   list each viewport on the sheet (all sheets from Model) and whether it shows model space");
             Log("  MVIEW   on a sheet tab: pick two corners, then a scale - shows model space on that sheet");
             Log("  VPSCALE [1:n]   change the current sheet's scale: viewport, title-block scale, scale bar, and label sizes");
+            Log("  Tool palette: hover the tabs on the right edge (📌 keeps it open, ✎ edits it) · PALETTE reloads palette.ini");
             Log("  MODEL / LAYOUT <name>   switch sheet · SNAP (F3) toggles snapping · Esc cancels the active tool");
         }
 
@@ -542,6 +558,67 @@ namespace FdDraft.App
             {
                 Log("  could not save: " + ex.Message);
             }
+        }
+
+        // ---- tool palette ------------------------------------------------------------------------
+
+        private static string PaletteFile => System.IO.Path.Combine(System.IO.Path.GetDirectoryName(AppSettings.FilePath)!, "palette.ini");
+
+        /// <summary>Reads palette.ini (writing the starting palette the first time).</summary>
+        private void LoadPalette()
+        {
+            try
+            {
+                if (!File.Exists(PaletteFile))
+                {
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(PaletteFile)!);
+                    File.WriteAllText(PaletteFile, ToolPalette.DefaultText);
+                }
+                _palette.Load(ToolPalette.Parse(File.ReadAllLines(PaletteFile)));
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                _palette.Load(ToolPalette.Parse(ToolPalette.DefaultText.Split('\n')));
+                Log("  couldn't read the tool palette file (" + ex.Message + ") - using the starting palette");
+            }
+        }
+
+        /// <summary>Opens palette.ini in Notepad; the palette reloads when FD-Draft next gets focus.</summary>
+        private void EditPalette()
+        {
+            LoadPalette(); // makes sure the file exists
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("notepad.exe", "\"" + PaletteFile + "\"") { UseShellExecute = true });
+                Log("  editing " + PaletteFile + " - save it, and the palette updates when you come back to FD-Draft");
+                _reloadPaletteOnActivate = true;
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception || ex is InvalidOperationException)
+            {
+                Log("  couldn't open Notepad: " + ex.Message + " - the palette file is " + PaletteFile);
+            }
+        }
+
+        private bool _reloadPaletteOnActivate;
+
+        /// <summary>A palette button: make its layer current, then start its tool (a text or line
+        /// preset) or type its command.</summary>
+        private void RunPaletteTool(PaletteTool tool)
+        {
+            if (_activeTool.Length > 0) { EndTool(); Log("  *cancelled*"); }
+            if (tool.Kind == PaletteToolKind.Command) { RunCommand(tool.Command); return; }
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            if (tool.Layer.Length > 0)
+            {
+                var layer = GetOrCreateLayer(tool.Layer);
+                _layerCombo.SelectedItem = layer.Name;
+            }
+            if (tool.Kind == PaletteToolKind.Line) { Log(tool.Label + ":"); StartLine(); return; }
+            double? height = null;
+            string basis = "";
+            if (tool.HeightMm > 0) height = tool.HeightMm * LabelModelPerMm(LabelStandards(), out basis);
+            Log(tool.Label + ":" + (height.HasValue ? string.Format(CultureInfo.InvariantCulture, " {0:0.###} mm on paper = {1:0.###} high ({2})", tool.HeightMm, height.Value, basis) : ""));
+            StartText(height, tool.Style);
         }
 
         /// <summary>The Print dialog's settings for this session (per drawing).</summary>
@@ -1494,12 +1571,19 @@ namespace FdDraft.App
             };
         }
 
-        private void StartText()
+        /// <param name="presetHeight">A palette preset's height (drawing units): the text is then
+        /// taken exactly as typed - no "height text" prefix, so "12 MAIN STREET" stays whole.</param>
+        /// <param name="style">A palette preset's text style, used if the drawing has it.</param>
+        private void StartText(double? presetHeight = null, string style = "")
         {
             if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
             string layer = CurrentLayer();
+            ACadSharp.Tables.TextStyle? textStyle = null;
+            if (style.Length > 0 && !_doc.TextStyles.TryGetValue(style, out textStyle))
+                Log("  text style " + style + " isn't in this drawing - using the drawing's standard style");
             BeginTool("TEXT");
-            Log("TEXT  on layer " + layer + " - pick the insertion point, then type the text (or \"height text\"; Esc to cancel)");
+            Log("TEXT  on layer " + layer + (textStyle != null ? ", style " + textStyle.Name : "") + " - pick the insertion point, then type the text"
+                + (presetHeight.HasValue ? "" : " (or \"height text\"") + "; Esc to cancel)");
             _prompt.Text = "Text - insertion point:";
             Vec2? at = null;
             _awaitingPoint = p =>
@@ -1508,14 +1592,17 @@ namespace FdDraft.App
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 at = model.Value;
                 _canvas.ToolActive = false;
-                _prompt.Text = "Text - content (or \"height text\", default height 0.2):";
+                _prompt.Text = presetHeight.HasValue ? "Text - content:" : "Text - content (or \"height text\", default height 0.2):";
                 Log("  at " + NE(model.Value) + " - type the text");
             };
             _awaitingLine = s =>
             {
                 if (s.Length == 0) { EndTool(); Log("  *cancelled - no text*"); return; }
-                ParseHeightAndText(s, out double h, out string content);
+                double h; string content;
+                if (presetHeight.HasValue) { h = presetHeight.Value; content = s; }
+                else ParseHeightAndText(s, out h, out content);
                 var entity = new TextEntity { Value = content, InsertPoint = new XYZ(at!.Value.X, at.Value.Y, 0), Height = h, Layer = GetOrCreateLayer(layer) };
+                if (textStyle != null) entity.Style = textStyle;
                 _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { entity }, "Text"));
                 _dirty = true; UpdateTitle();
                 EndTool();

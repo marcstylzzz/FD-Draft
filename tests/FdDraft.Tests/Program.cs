@@ -1724,5 +1724,26 @@ namespace FdDraft.Tests
             LayoutPlotSetup.Write(layout, model, null, LayoutPlotSetup.PdfPrinter);
             Assert.True(LayoutPlotSetup.Read(layout, out _, out _).FitToPaper, "fit kept");
         }
+            // ---- tool palette (v0.4.29) ------------------------------------------------------------
+
+        public static void TestToolPaletteFileParses()
+        {
+            var p = ToolPalette.Parse(ToolPalette.DefaultText.Split('\n'));
+            Assert.True(p.Tabs.Select(t => t.Name).SequenceEqual(new[] { "Text Styles", "Useful Tools", "Line Styles" }), "three tabs, in file order");
+            var part = p.Tabs[0].Tools.Single(t => t.Label == "PART NUMBER");
+            Assert.True(part.Kind == PaletteToolKind.Text && part.Layer == "PLAN-Other-Label" && part.Style == "L100-2.5MM", "text preset: layer and style");
+            Assert.Near(2.5, part.HeightMm, 1e-9, "text preset: paper height");
+            Assert.Equal(14, p.Tabs[0].Tools.Count, "all fourteen text styles, in order");
+            Assert.Equal("NO PLOT", p.Tabs[0].Tools.Last().Label, "last text style");
+            var boundary = p.Tabs[2].Tools[0];
+            Assert.True(boundary.Kind == PaletteToolKind.Line && boundary.Layer == "PLAN-SubjectBoundary", "line preset");
+            var area = p.Tabs[1].Tools.Single(t => t.Label == "Area");
+            Assert.True(area.Kind == PaletteToolKind.Command && area.Command == "AREA" && area.Tip.Length > 0, "command tool with a tip");
+
+            var custom = ToolPalette.Parse(new[] { "[Mine]", "Rescale 250 = VPSCALE 1:250", "Bad =", "EASEMENT = text | layer=PLAN-Easement | height=oops" });
+            Assert.Equal("VPSCALE 1:250", custom.Tabs[0].Tools[0].Command, "a command with an argument");
+            Assert.Equal(2, custom.Tabs[0].Tools.Count, "an empty entry is skipped");
+            Assert.Near(0, custom.Tabs[0].Tools[1].HeightMm, 1e-12, "a bad height is ignored, not a crash");
+        }
     }
 }
