@@ -107,16 +107,23 @@ namespace FdDraft.Cad
                         DrawSymbol(ms, s, modelPerMm);
                         break;
                     case DraftText t:
-                        ms.Entities.Add(Text(t, modelPerMm));
+                    {
+                        var te = Text(t, modelPerMm);
+                        ms.Entities.Add(te);
+                        if (t.PointId.HasValue) PointLinks.Tag(te, t.PointId.Value);
                         break;
+                    }
                 }
             }
         }
 
         private void DrawSymbol(BlockRecord owner, DraftSymbol s, double modelPerMm)
         {
+            // Every part is tagged with the point number, so clicking it finds the point.
+            void Add(Entity e) { owner.Entities.Add(e); PointLinks.Tag(e, s.PointId); }
+
             // A node at the true elevation, for snapping and for a surface later.
-            owner.Entities.Add(new Point { Location = new XYZ(s.Position.X, s.Position.Y, s.Elevation), Layer = Layer(s.Layer) });
+            Add(new Point { Location = new XYZ(s.Position.X, s.Position.Y, s.Elevation), Layer = Layer(s.Layer) });
 
             if (s.BlockName.Length > 0)
             {
@@ -124,7 +131,7 @@ namespace FdDraft.Cad
                 {
                     // Template blocks are drawn so that 1 block unit = BlockUnitMm on paper.
                     double k = _std.BlockUnitMm * modelPerMm;
-                    owner.Entities.Add(new Insert(block)
+                    Add(new Insert(block)
                     {
                         InsertPoint = new XYZ(s.Position.X, s.Position.Y, 0),
                         XScale = k, YScale = k, ZScale = k,
@@ -148,14 +155,14 @@ namespace FdDraft.Cad
                         var donut = new LwPolyline { Layer = Layer(s.Layer), ConstantWidth = r, IsClosed = true };
                         donut.Vertices.Add(new LwPolyline.Vertex { Location = new XY(c.X - r / 2, c.Y), Bulge = 1 });
                         donut.Vertices.Add(new LwPolyline.Vertex { Location = new XY(c.X + r / 2, c.Y), Bulge = 1 });
-                        owner.Entities.Add(donut);
+                        Add(donut);
                     }
-                    else owner.Entities.Add(new Circle { Center = new XYZ(c.X, c.Y, 0), Radius = r, Layer = Layer(s.Layer) });
+                    else Add(new Circle { Center = new XYZ(c.X, c.Y, 0), Radius = r, Layer = Layer(s.Layer) });
                 }
                 else
                 {
                     var pts = part.Points.Select(p => s.Position + p * size).ToList();
-                    owner.Entities.Add(Poly(s.Layer, pts, null, part.Closed));
+                    Add(Poly(s.Layer, pts, null, part.Closed));
                 }
             }
         }

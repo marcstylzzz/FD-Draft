@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using FdDraft.Cad;
 using FdDraft.Cad.Editing;
 using FdDraft.Core;
 using FdDraft.Core.Drafting;
@@ -1548,6 +1549,38 @@ namespace FdDraft.Tests
             Assert.True(tall.Y1 >= 0 && tall.Y2 <= 672, "a too-tall saved window is trimmed above the taskbar: " + tall);
             var low = WindowFit.Place(new Rect(100, 300, 900, 900), work, desk);
             Assert.True(low.Y2 <= 672 && Math.Abs(low.Height - 600) < 1e-9, "one hanging below the taskbar is moved up, not shrunk: " + low);
+        }
+            // ---- clicking a point's entities finds the point (v0.4.27) ---------------------------
+
+        public static void TestPointLinksSurviveDwgAndFallBackToPosition()
+        {
+            var points = new List<SurveyPoint>
+            {
+                new SurveyPoint { Id = 103, Easting = 306493.050, Northing = 4894691.035, Elevation = 97.481, Code = "MH" },
+                new SurveyPoint { Id = 106, Easting = 306493.053, Northing = 4894691.055, Elevation = 97.495, Code = "MH" },
+            };
+            var doc = new ACadSharp.CadDocument();
+            // Point 106's elevation label, dragged well away from its point, tagged the way Draft tags it.
+            var elev = new ACadSharp.Entities.TextEntity { Value = "97.50", InsertPoint = new CSMath.XYZ(306480, 4894700, 0), AlignmentPoint = new CSMath.XYZ(306480, 4894700, 0), Height = 0.3, VerticalAlignment = ACadSharp.Entities.TextVerticalAlignmentType.Top };
+            doc.ModelSpace.Entities.Add(elev);
+            PointLinks.Tag(elev, 106);
+            Assert.Equal(106, PointLinks.Find(elev, points)?.Id, "tagged label finds its point even after being dragged away");
+            PointLinks.Tag(elev, 106); // re-tagging doesn't stack records
+            Assert.Equal(106, PointLinks.Tagged(elev), "re-tag is idempotent");
+
+            string path = Path.Combine(Path.GetTempPath(), "fdd-pointlink-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+            var back = ACadSharp.IO.DwgReader.Read(path).ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Single();
+            Assert.Equal(106, PointLinks.Tagged(back), "the tag is saved in the DWG");
+
+            // Untagged (an older drawing): by position. Points 103 and 106 are 2 cm apart - a node
+            // exactly on 106 must pick 106, not the nearer-in-the-list 103.
+            var node = new ACadSharp.Entities.Point(new CSMath.XYZ(306493.053, 4894691.055, 97.495));
+            Assert.Equal(106, PointLinks.Find(node, points)?.Id, "untagged node on a point");
+            var number = new ACadSharp.Entities.TextEntity { Value = "103", InsertPoint = new CSMath.XYZ(306493.6, 4894691.2, 0), Height = 0.3 };
+            Assert.Equal(103, PointLinks.Find(number, points)?.Id, "untagged point number names its point, even with another point closer");
+            var far = new ACadSharp.Entities.TextEntity { Value = "NOTE", InsertPoint = new CSMath.XYZ(306400, 4894600, 0), Height = 0.3 };
+            Assert.True(PointLinks.Find(far, points) == null, "unrelated text belongs to no point");
         }
     }
 }

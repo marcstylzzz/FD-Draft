@@ -70,6 +70,12 @@ FdDraft.App project in Visual Studio).
   are shown greyed.
 - **Save** (Ctrl+S) writes the DWG. **PDF** (Ctrl+P) plots the current sheet as
   a true-scale vector PDF.
+- **Points list follows the plan**: click anything belonging to a survey
+  point - its node, symbol, point number, elevation or code/monument label -
+  and its row in the Points list is selected and scrolled to the middle
+  (the Points tab comes forward, unless you're working in Properties). Click
+  a row in the list and that point's entities are highlighted on the plan;
+  double-click still zooms to it.
 - **Drag to move**: press on any entity - a label, a line, a symbol - and
   drag it where you want it; if it's part of the selection the whole
   selection goes with it. One Ctrl+Z undoes it. Clicking anywhere on a

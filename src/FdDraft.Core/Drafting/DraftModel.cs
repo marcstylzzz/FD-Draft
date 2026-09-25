@@ -181,6 +181,9 @@ namespace FdDraft.Core.Drafting
         public HAlign H { get; set; } = HAlign.Left;
         public VAlign V { get; set; } = VAlign.Bottom;
         public TextKind Kind { get; set; } = TextKind.Other;
+        /// <summary>The survey point this label belongs to (point number, elevation, monument
+        /// text), so the DWG entity can be tagged with it.</summary>
+        public int? PointId { get; set; }
         /// <summary>Template text style name; empty = the drawing's current style.</summary>
         public string Style { get; set; } = "";
         public override void AddTo(Extents e) => e.Add(Position);

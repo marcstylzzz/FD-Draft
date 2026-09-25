@@ -65,6 +65,11 @@ namespace FdDraft.App
         /// fields edit - typed into a small "Vertex #" box, since a polyline can have many.</summary>
         private int _propertiesVertexIndex;
         private readonly ListView _codes = new ListView();
+        private readonly TabControl _leftTabs = new TabControl { Margin = new Thickness(4, 4, 0, 4) };
+        private TabItem? _pointsTab, _propertiesTab;
+        /// <summary>Set while the Points list is being moved to follow a click on the plan, so
+        /// that change doesn't turn round and reselect things on the plan.</summary>
+        private bool _syncingPoints;
         private readonly UndoStack _undo = new UndoStack();
 
         private CadDocument? _doc;
@@ -121,9 +126,10 @@ namespace FdDraft.App
             main.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var left = new TabControl { Margin = new Thickness(4, 4, 0, 4) };
+            var left = _leftTabs;
             left.Items.Add(new TabItem { Header = "Layers", Content = _layers });
-            left.Items.Add(new TabItem { Header = "Points", Content = _points });
+            _pointsTab = new TabItem { Header = "Points", Content = _points };
+            left.Items.Add(_pointsTab);
             left.Items.Add(new TabItem { Header = "Codes", Content = _codes });
             var propsPanel = new DockPanel();
             var editRow = new StackPanel();
@@ -135,7 +141,8 @@ namespace FdDraft.App
             DockPanel.SetDock(editRow, Dock.Bottom);
             propsPanel.Children.Add(editRow);
             propsPanel.Children.Add(_properties);
-            left.Items.Add(new TabItem { Header = "Properties", Content = propsPanel });
+            _propertiesTab = new TabItem { Header = "Properties", Content = propsPanel };
+            left.Items.Add(_propertiesTab);
             Grid.SetColumn(left, 0); main.Children.Add(left);
             var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brushes.Transparent };
             Grid.SetColumn(splitter, 1); main.Children.Add(splitter);
@@ -161,6 +168,8 @@ namespace FdDraft.App
             _codes.View = codeView;
 
             _points.MouseDoubleClick += (s, e) => { if (_points.SelectedItem is PointRow r) ZoomToPoint(r); };
+            _points.SelectionMode = DataGridSelectionMode.Single;
+            _points.SelectionChanged += (s, e) => { if (!_syncingPoints && _points.SelectedItem is PointRow r) SelectPointEntities(r.Point); };
             _textEditApply.Click += (s, e) => ApplySelectedTextEdit();
             _textEdit.KeyDown += (s, e) => { if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift) { ApplySelectedTextEdit(); e.Handled = true; } };
             _numberEditApply.Click += (s, e) => ApplySelectedNumberEdit();
@@ -799,6 +808,7 @@ namespace FdDraft.App
             if (handle.HasValue)
             {
                 if (!_canvas.Selected.Add(handle.Value) && ctrl) _canvas.Selected.Remove(handle.Value);
+                ShowPointOf(handle.Value);
             }
             UpdateProperties();
             _canvas.InvalidateVisual();
@@ -830,12 +840,79 @@ namespace FdDraft.App
             // The moved entities stay selected, so they can be nudged again.
             _canvas.Selected.Clear();
             foreach (var h in handles) _canvas.Selected.Add(h);
+            if (handles.Count == 1) ShowPointOf(handles.First());
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
             UpdateProperties();
             var shown = inModel.Count > 0 ? modelDelta : paperDelta;
             Log(string.Format(CultureInfo.InvariantCulture, "  moved {0}  dN {1:F3}  dE {2:F3}{3}  (Ctrl+Z to undo)",
                 Plural(entities.Count, "entity", "entities"), shown.Y, shown.X, inModel.Count > 0 ? "" : " mm"));
+        }
+
+        /// <summary>
+        /// If the clicked entity belongs to a survey point (its node, symbol, number, elevation or
+        /// monument/code label), select that point's row in the Points list and scroll it to the
+        /// middle - bringing the Points tab forward unless the Properties tab is in use.
+        /// </summary>
+        private void ShowPointOf(ulong handle)
+        {
+            if (_job == null || _doc == null || !(_doc.GetCadObject(handle) is Entity e)) return;
+            var pt = PointLinks.Find(e, _job.Points);
+            if (pt == null || !(_points.ItemsSource is IEnumerable<PointRow> rows)) return;
+            var row = rows.FirstOrDefault(r => r.Point == pt.Id);
+            if (row == null) return;
+            _syncingPoints = true;
+            try
+            {
+                if (_leftTabs.SelectedItem != _propertiesTab && _pointsTab != null) _leftTabs.SelectedItem = _pointsTab;
+                _points.SelectedItem = row;
+                CenterPointRow(row);
+            }
+            finally { _syncingPoints = false; }
+            _coords.Text = "point " + pt.Id + "  " + NE(new Vec2(pt.Easting, pt.Northing)) + "  " + pt.Code;
+        }
+
+        /// <summary>Scrolls the Points list so <paramref name="row"/> sits in the middle of it.</summary>
+        private void CenterPointRow(PointRow row)
+        {
+            _points.UpdateLayout();
+            _points.ScrollIntoView(row);
+            var sv = FindChild<ScrollViewer>(_points);
+            if (sv == null || !(_points.ItemsSource is IList<PointRow> list)) return;
+            int index = list.IndexOf(row);
+            if (index < 0) return;
+            if (sv.CanContentScroll)
+                sv.ScrollToVerticalOffset(Math.Max(0, index - sv.ViewportHeight / 2 + 0.5)); // offsets are in rows
+            else
+            {
+                double rowH = sv.ExtentHeight / Math.Max(1, list.Count);
+                sv.ScrollToVerticalOffset(Math.Max(0, index * rowH - (sv.ViewportHeight - rowH) / 2));
+            }
+        }
+
+        private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var c = VisualTreeHelper.GetChild(parent, i);
+                if (c is T t) return t;
+                var deeper = FindChild<T>(c);
+                if (deeper != null) return deeper;
+            }
+            return null;
+        }
+
+        /// <summary>A row picked in the Points list: highlight everything on the plan that
+        /// belongs to that point (without moving the view - double-click zooms to it).</summary>
+        private void SelectPointEntities(int pointId)
+        {
+            if (_doc == null || _job == null || _canvas.Scene == null || _activeTool.Length > 0) return;
+            var pts = _job.Points;
+            _canvas.Selected.Clear();
+            foreach (var h in VisibleHandles())
+                if (_doc.GetCadObject(h) is Entity e && PointLinks.Find(e, pts)?.Id == pointId) _canvas.Selected.Add(h);
+            UpdateProperties();
+            _canvas.InvalidateVisual();
         }
 
         private void OnBoxSelected(HashSet<ulong> handles, bool ctrl)

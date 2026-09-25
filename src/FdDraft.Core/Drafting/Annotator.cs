@@ -63,21 +63,21 @@ namespace FdDraft.Core.Drafting
                     {
                         Layer = s.NumberLayer, Style = std.TextStyle("point_number"), Text = s.PointId.ToString(CultureInfo.InvariantCulture),
                         Position = s.Position + new Vec2(off, off * 0.3), HeightMm = std.PointNumberTextMm,
-                        H = HAlign.Left, V = VAlign.Bottom, Kind = TextKind.PointNumber,
+                        H = HAlign.Left, V = VAlign.Bottom, Kind = TextKind.PointNumber, PointId = s.PointId,
                     });
                 if (std.PointElevations && s.ShowElevation)
                     doc.Entities.Add(new DraftText
                     {
                         Layer = s.ElevationLayer, Style = std.TextStyle("elevation"), Text = s.Elevation.ToString(std.ElevationFormat, CultureInfo.InvariantCulture),
                         Position = s.Position + new Vec2(off, -off * 0.3), HeightMm = std.ElevationTextMm,
-                        H = HAlign.Left, V = VAlign.Top, Kind = TextKind.PointElevation,
+                        H = HAlign.Left, V = VAlign.Top, Kind = TextKind.PointElevation, PointId = s.PointId,
                     });
                 if (s.MonumentText.Length > 0)
                     doc.Entities.Add(new DraftText
                     {
                         Layer = doc.Layer(std.MonumentLabelLayer).Name, Style = std.TextStyle("monument"), Text = s.MonumentText,
                         Position = s.Position + new Vec2(-off, off * 0.3), HeightMm = std.MonumentTextMm,
-                        H = HAlign.Right, V = VAlign.Bottom, Kind = TextKind.Monument,
+                        H = HAlign.Right, V = VAlign.Bottom, Kind = TextKind.Monument, PointId = s.PointId,
                     });
             }
 

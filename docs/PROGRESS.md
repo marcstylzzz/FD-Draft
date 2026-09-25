@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.26 (`Directory.Build.props`).
+- **Current version:** 0.4.27 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  68 tests as of v0.4.26, all passing.
+  69 tests as of v0.4.27, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -213,10 +213,17 @@ on Windows; that's still Marc's job when he runs a build.
   move in the canvas, text picked by its box instead of its anchor, and a
   selection highlight drawn on the real box. Possible next: an automatic
   "spread overlapping point labels" tool.
-- **v0.4.26** (current): the window no longer opens taller than the screen
+- **v0.4.26**: the window no longer opens taller than the screen
   (Marc's laptop: the command line and status bar were below the taskbar).
   Opens maximized the first time, remembers size/position/maximized, and
   `WindowFit` pulls a saved window back on screen above the taskbar.
+- **v0.4.27** (current): Marc asked that clicking anything tied to a point
+  (node, elevation, code, icon) highlight and centre it in the Points list.
+  Draft now tags point entities with their point number (XData "FDDRAFT"),
+  with a by-position fallback for untagged drawings; the Points list and
+  the plan select each other. Jobs drafted before this need a re-draft
+  (Ctrl+D) to get tags - until then a label dragged far from its point
+  won't be recognised.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

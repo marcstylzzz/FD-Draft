@@ -120,6 +120,17 @@ it on Windows is the real test.
   together, so lines that meet at a survey point stay joined. This is the
   actual "grip edit" a course correction needs, as opposed to MOVE/ROTATE
   which only ever transform whole entities rigidly.
+- **Point links** (`FdDraft.Cad.PointLinks`, v0.4.27): Draft tags every
+  entity it draws for a survey point - node, symbol parts, point number,
+  elevation, monument/code label - with extended data (AppId "FDDRAFT",
+  records "POINT" + the point number). It is written in the DWG and
+  survives dragging a label away. `DraftText.PointId` carries the number
+  from Annotator to TemplateDrafter. Untagged entities (drawings drafted
+  before v0.4.27, or by other software) fall back to position: a node or
+  block on a point (5 mm), a text reading a point's number anywhere near
+  it, or a label within 4 text heights of one point. Clicking such an
+  entity selects and centres its row in the Points list; selecting a row
+  highlights all of the point's entities in view.
 - **Moving text** (`EntityTransform`, v0.4.25): ACadSharp's
   `TextEntity.ApplyTransform` moves only the insertion point, but aligned
   TEXT (every label FD-Draft drafts) is placed by `AlignmentPoint`, in
