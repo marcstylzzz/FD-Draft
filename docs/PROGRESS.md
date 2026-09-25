@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  64 tests as of v0.4.22, all passing.
+  65 tests as of v0.4.24, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -176,7 +176,7 @@ on Windows; that's still Marc's job when he runs a build.
   coordinates is the plan). Not yet confirmed against the real file - it
   wasn't available in this session; ask Marc to re-open it after pulling.
   FdDraft.Cad now references FdDraft.View (for that rule).
-- **v0.4.23** (current): Marc re-opened the file on v0.4.22 and the per-
+- **v0.4.23**: Marc re-opened the file on v0.4.22 and the per-
   sheet counts were unchanged (11X17 21, 17X22 219, RPLAN-22X34 143, the
   rest 32/51) - so no viewport shows model space there even with the new
   rule; the lone-#1 theory did NOT explain this file. Root cause still
@@ -185,6 +185,21 @@ on Windows; that's still Marc's job when he runs a build.
   misleading "the plan looks drawn on:" log line (prim counts can't tell a
   plan from a title block) with "shows model space" per sheet. Next step:
   get Marc's VPINFO ALL output, or the DWG itself, and look.
+- **17 Empire Blvd - settled** (Marc uploaded the DWG): every one of the ten
+  sheet tabs has exactly one viewport, and it is genuinely the paper
+  background (it looks at sheet coordinates ~450,320, not the survey at
+  309 600 / 4 869 200). Everything on the tabs is on `TitleBlock-*` layers
+  and full of template placeholders (PART OF XXXXX, JOB 24-0XX) - 17X22 is
+  the SRPR title block + legend, RPLAN-22X34 the R-plan schedule. The
+  survey (755 entities) is only in model space and was never put on a
+  sheet. FD-Draft displays it correctly; the fix for Marc is MVIEW.
+  Verified MVIEW's code on the real file: 17X22 at 1:250 shows 979 survey
+  items and survives DWG save + reopen. (The v0.4.22 lone-viewport rule is
+  still correct in general, just not this file's cause.)
+- **v0.4.24** (current): MTEXT word-wraps to its box width (found plotting
+  that file: SRPR notes ran off the sheet). Known leftovers there: a
+  heading using an inline \H scale code runs a little long, and notes that
+  indent with spaces sized for the SHX font overlap their heading slightly.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
