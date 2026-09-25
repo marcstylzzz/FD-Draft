@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.22 (`Directory.Build.props`).
+- **Current version:** 0.4.23 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -165,7 +165,7 @@ on Windows; that's still Marc's job when he runs a build.
   pre-v0.4.2 build (no Stretch/Set Layer buttons, leaders "not drawn yet"),
   so the v0.4.1 blank-sheet log line wasn't showing for him - remind him to
   `git pull --recurse-submodules` and rebuild.
-- **v0.4.22** (current): **correction** to the "17 Empire Blvd" diagnosis
+- **v0.4.22**: **correction** to the "17 Empire Blvd" diagnosis
   above. Marc's screenshot of RPLAN-22X34 showed no plan either, so "the
   plan is drawn in paper space on 17X22/RPLAN-22X34" was wrong - that was
   inferred from primitive counts, which title-block/schedule tables inflate
@@ -176,6 +176,15 @@ on Windows; that's still Marc's job when he runs a build.
   coordinates is the plan). Not yet confirmed against the real file - it
   wasn't available in this session; ask Marc to re-open it after pulling.
   FdDraft.Cad now references FdDraft.View (for that rule).
+- **v0.4.23** (current): Marc re-opened the file on v0.4.22 and the per-
+  sheet counts were unchanged (11X17 21, 17X22 219, RPLAN-22X34 143, the
+  rest 32/51) - so no viewport shows model space there even with the new
+  rule; the lone-#1 theory did NOT explain this file. Root cause still
+  open. Added VPINFO (lists every viewport on a sheet: number, verdict,
+  centre/size, view centre/height, status, layer) and replaced the
+  misleading "the plan looks drawn on:" log line (prim counts can't tell a
+  plan from a title block) with "shows model space" per sheet. Next step:
+  get Marc's VPINFO ALL output, or the DWG itself, and look.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

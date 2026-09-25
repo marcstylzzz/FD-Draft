@@ -376,6 +376,7 @@ namespace FdDraft.App
                 case "ID": StartId(); break;
                 case "VPSCALE": case "SCALE": StartSheetScale(arg); break;
                 case "MVIEW": case "MV": case "VIEWPORT": StartMview(); break;
+                case "VPINFO": ViewportInfo(arg); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
                 case "OFFSET": case "O": StartOffset(); break;
@@ -430,6 +431,7 @@ namespace FdDraft.App
             Log("  DIMANG  angle dimension: pick the vertex, a point on each leg, then the arc location (it picks which angle)");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
+            Log("  VPINFO [sheet|ALL]   list each viewport on the sheet (all sheets from Model) and whether it shows model space");
             Log("  MVIEW   on a sheet tab: pick two corners, then a scale - shows model space on that sheet");
             Log("  VPSCALE [1:n]   change the current sheet's scale: viewport, title-block scale, scale bar, and label sizes");
             Log("  MODEL / LAYOUT <name>   switch sheet · SNAP (F3) toggles snapping · Esc cancels the active tool");
@@ -608,11 +610,13 @@ namespace FdDraft.App
                 catch { /* a malformed layout just won't get a count */ }
             }
             if (counts.Count == 0) return;
-            const int blankThreshold = 25; // a title block alone is usually well under this
-            var drawn = counts.Where(c => c.Prims > blankThreshold).ToList();
-            Log("  sheets: " + string.Join(", ", counts.Select(c => c.Name + " (" + c.Prims + (c.Prims <= blankThreshold ? ", blank" : "") + ")")));
-            if (drawn.Count > 0 && drawn.Count < counts.Count)
-                Log("  the plan looks drawn on: " + string.Join(", ", drawn.Select(c => c.Name)) + " - the other sheets are unused blank options from the template (MVIEW puts model space onto one).");
+            // A count of drawn items can't tell a plan from a busy title block, so say what's known:
+            // whether each sheet has a viewport that actually shows model space.
+            var withView = doc.Layouts.Where(l => l.IsPaperSpace && l.AssociatedBlock.Entities.OfType<Viewport>().Any(v => ViewportRules.ShowsModel(v, l)))
+                .Select(l => l.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            Log("  sheets: " + string.Join(", ", counts.Select(c => c.Name + " (" + c.Prims + " items" + (withView.Contains(c.Name) ? ", shows model space" : "") + ")")));
+            if (withView.Count == 0)
+                Log("  no sheet has a viewport showing model space - any plan on them is drawn straight onto the paper. MVIEW puts model space onto a sheet; VPINFO lists what each sheet's viewports are.");
         }
 
         /// <summary>
@@ -1892,6 +1896,18 @@ namespace FdDraft.App
                     Log("  viewport at 1:" + den.ToString("0.###", CultureInfo.InvariantCulture) + " on " + _sheet + ", centred on the survey  (VPSCALE changes it later; Ctrl+Z to undo)");
                 };
             };
+        }
+
+        /// <summary>VPINFO [sheet]: every viewport on the current sheet (or all sheets), and why each
+        /// does or doesn't show model space - the evidence for a sheet that comes up blank.</summary>
+        private void ViewportInfo(string arg)
+        {
+            if (_doc == null) { Log("  open a drawing first"); return; }
+            var layouts = _doc.Layouts.Where(l => l.IsPaperSpace).OrderBy(l => l.TabOrder)
+                .Where(l => arg.Equals("ALL", StringComparison.OrdinalIgnoreCase) || (arg.Length > 0 ? l.Name.Equals(arg, StringComparison.OrdinalIgnoreCase) : _sheet == "Model" || l.Name.Equals(_sheet, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            if (layouts.Count == 0) { Log("  no sheet named " + arg); return; }
+            foreach (var l in layouts) foreach (var line in ViewportRules.Describe(l)) Log("  " + line);
         }
 
         /// <summary>VPSCALE [1:n]: change the current sheet's plot scale in place - viewport,

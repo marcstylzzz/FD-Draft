@@ -33,6 +33,32 @@ namespace FdDraft.View
         public static bool ShowsModel(Viewport vp, double paperWidth, double paperHeight) =>
             !IsPaperBackground(vp, paperWidth, paperHeight) && !vp.Status.HasFlag(ViewportStatusFlags.ViewportOff) && vp.ViewHeight > 0 && vp.Height > 0 && vp.Width > 0;
 
+        /// <summary>
+        /// One line per viewport on a sheet, with everything that decides whether it shows model
+        /// space - for VPINFO, so a sheet that comes up blank can be diagnosed from the log.
+        /// </summary>
+        public static System.Collections.Generic.List<string> Describe(ACadSharp.Objects.Layout layout)
+        {
+            var lines = new System.Collections.Generic.List<string>();
+            var ents = layout.AssociatedBlock.Entities.ToList();
+            var vps = ents.OfType<Viewport>().ToList();
+            lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0}: paper {1:0.#} x {2:0.#}, {3} viewport(s), {4} other paper entities", layout.Name, layout.PaperWidth, layout.PaperHeight, vps.Count, ents.Count - vps.Count));
+            foreach (var vp in vps)
+            {
+                string verdict = IsPaperBackground(vp, layout.PaperWidth, layout.PaperHeight) ? "paper background"
+                    : ShowsModel(vp, layout) ? "SHOWS MODEL"
+                    : vp.Status.HasFlag(ViewportStatusFlags.ViewportOff) ? "switched off"
+                    : "empty (zero size or view height)";
+                lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "  #{0} {1}: centre {2:0.##},{3:0.##} size {4:0.##} x {5:0.##}; looks at {6:0.###},{7:0.###}, view height {8:0.###}{9}; status {10}; layer {11}",
+                    vp.Id, verdict, vp.Center.X, vp.Center.Y, vp.Width, vp.Height, vp.ViewCenter.X, vp.ViewCenter.Y, vp.ViewHeight,
+                    vp.ViewHeight > 0 && vp.Height > 0 ? " (1:" + (vp.ViewHeight / vp.Height * 1000).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " if m on mm)" : "",
+                    (int)vp.Status, vp.Layer?.Name ?? "?"));
+            }
+            return lines;
+        }
+
         /// <summary>The same, sized from the sheet's own layout.</summary>
         public static bool ShowsModel(Viewport vp, ACadSharp.Objects.Layout layout) => ShowsModel(vp, layout.PaperWidth, layout.PaperHeight);
     }

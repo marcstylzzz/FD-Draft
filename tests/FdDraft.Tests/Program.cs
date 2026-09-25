@@ -1408,6 +1408,8 @@ namespace FdDraft.Tests
             var scene = new SceneBuilder(doc).Layout("RPLAN-22X34");
             Assert.True(scene.Groups.Any(g => g.Clip.HasValue && g.Prims.Any()), "the survey shows through it");
             Assert.True(SheetScale.PlanViewport(layout) == plan, "VPSCALE finds it too");
+            var info = ViewportRules.Describe(layout);
+            Assert.True(info.Count == 2 && info[1].Contains("SHOWS MODEL") && info[1].Contains("1:250"), "VPINFO explains it: " + string.Join(" | ", info));
 
             // The ordinary case is unchanged: with a real background viewport, #1 is still paper.
             var normal = new ACadSharp.Objects.Layout("11X17") { PaperWidth = 431.8, PaperHeight = 279.4 };
