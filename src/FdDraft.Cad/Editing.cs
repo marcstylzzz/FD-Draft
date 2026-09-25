@@ -93,7 +93,7 @@ namespace FdDraft.Cad.Editing
                 // A dimension's picture block is in world coordinates and doesn't follow the
                 // transform on its own; FD-Draft's dimensions redraw theirs.
                 if (DimensionBuilder.IsOurs(e)) DimensionBuilder.Transform((Dimension)e, t);
-                else e.ApplyTransform(t);
+                else EntityTransform.Apply(e, t);
             }
         }
 
@@ -133,6 +133,59 @@ namespace FdDraft.Cad.Editing
 
         public void Undo() { foreach (var (e, old) in _items) if (old != null) e.Layer = old; }
         public void Redo() { foreach (var (e, _) in _items) e.Layer = _new; }
+    }
+
+    /// <summary>
+    /// <see cref="Entity.ApplyTransform"/> plus what ACadSharp leaves out for text:
+    /// a TEXT's (or block attribute's) <c>AlignmentPoint</c> isn't moved - only its insertion
+    /// point is - yet aligned text (every label FD-Draft drafts: centred bearings, point numbers
+    /// anchored bottom-left, ...) is placed by that alignment point, in AutoCAD as in FD-Draft,
+    /// so MOVE/ROTATE/COPY left it where it was. And an MTEXT's direction (its
+    /// <c>AlignmentPoint</c>, read as a vector) isn't turned by a rotation.
+    /// </summary>
+    public static class EntityTransform
+    {
+        public static void Apply(Entity e, Transform t)
+        {
+            switch (e)
+            {
+                case TextEntity te:
+                {
+                    var align = te.AlignmentPoint;
+                    te.ApplyTransform(t);
+                    te.AlignmentPoint = t.ApplyTransform(align);
+                    break;
+                }
+                case MText mt:
+                {
+                    var dir = Direction(t, mt.InsertPoint, mt.AlignmentPoint);
+                    mt.ApplyTransform(t);
+                    if (dir.HasValue) mt.AlignmentPoint = dir.Value;
+                    break;
+                }
+                case Insert ins:
+                {
+                    var aligns = ins.Attributes.Select(a => (a, a.AlignmentPoint)).ToList();
+                    ins.ApplyTransform(t); // transforms each attribute's insertion point itself
+                    foreach (var (a, p) in aligns) a.AlignmentPoint = t.ApplyTransform(p);
+                    break;
+                }
+                default:
+                    e.ApplyTransform(t);
+                    break;
+            }
+        }
+
+        /// <summary>An MTEXT direction vector carried through a transform (null when it has none).</summary>
+        private static XYZ? Direction(Transform t, XYZ at, XYZ dir)
+        {
+            if (Math.Abs(dir.X) < 1e-12 && Math.Abs(dir.Y) < 1e-12) return null;
+            var a = t.ApplyTransform(at);
+            var b = t.ApplyTransform(at + dir);
+            var d = b - a;
+            double len = Math.Sqrt(d.X * d.X + d.Y * d.Y);
+            return len < 1e-12 ? (XYZ?)null : new XYZ(d.X / len, d.Y / len, 0);
+        }
     }
 
     /// <summary>Retypes a single-line text entity's content (TEXT) or a multiline text

@@ -161,6 +161,7 @@ namespace FdDraft.App
             _canvas.Picked += OnPick;
             _canvas.EntityClicked += OnEntityClicked;
             _canvas.BoxSelected += OnBoxSelected;
+            _canvas.Dragged += OnDragged;
             Closing += OnClosing;
             PreviewKeyDown += OnKey;
 
@@ -403,6 +404,7 @@ namespace FdDraft.App
             Log("  PDF     plot the current sheet to a true-scale PDF   (Ctrl+P)");
             Log("  INV     inverse: pick two points for bearing and distance");
             Log("  Click an entity to select it (Ctrl+click adds); Del erases; Ctrl+Z/Ctrl+Y undo/redo");
+            Log("  Drag an entity (a label, a line...) to move it - drag one of a selection to move them all; Ctrl+Z undoes");
             Log("  Drag a box: left-to-right takes what's fully inside, right-to-left anything it touches (Ctrl adds)");
             Log("  SELALL (Ctrl+A) everything in view · SELLAYER <layer>, or SELLAYER alone for the selection's own layer(s)");
             Log("  MOVE    select entities, MOVE, pick base point then destination");
@@ -793,6 +795,40 @@ namespace FdDraft.App
             }
             UpdateProperties();
             _canvas.InvalidateVisual();
+        }
+
+        /// <summary>
+        /// Drag-to-move: the dragged entities move by the drag, as one undo step. On a sheet the
+        /// drag is in paper units, so model-space entities move by it as seen through the viewport
+        /// the drag started in, and paper entities (title block, notes) by the paper distance.
+        /// </summary>
+        private void OnDragged(HashSet<ulong> handles, Vec2 from, Vec2 to)
+        {
+            if (_doc == null || _canvas.Scene == null || _activeTool.Length > 0) return;
+            var entities = handles.Select(h => _doc.GetCadObject(h) as Entity).Where(e => e != null).Cast<Entity>().ToList();
+            if (entities.Count == 0) return;
+            var scene = _canvas.Scene;
+            var vp = scene.IsPaper
+                ? scene.Groups.FirstOrDefault(g => g.Clip.HasValue && g.ToModel.HasValue && from.X >= g.Clip.Value.X1 && from.X <= g.Clip.Value.X2 && from.Y >= g.Clip.Value.Y1 && from.Y <= g.Clip.Value.Y2)
+                : null;
+            var paperDelta = to - from;
+            var modelDelta = vp != null ? vp.ToModel!.Value.Apply(to) - vp.ToModel.Value.Apply(from) : paperDelta;
+            var inModel = entities.Where(e => e.Owner == _doc.ModelSpace).ToList();
+            var onPaper = entities.Where(e => e.Owner != _doc.ModelSpace).ToList();
+            if (scene.IsPaper && vp == null && inModel.Count > 0) { Log("  drag from inside the viewport to move model-space entities"); return; }
+            var cmds = new List<IEditCommand>();
+            if (inModel.Count > 0) cmds.Add(TransformEntitiesCommand.Move(inModel, modelDelta.X, modelDelta.Y, "Move"));
+            if (onPaper.Count > 0) cmds.Add(TransformEntitiesCommand.Move(onPaper, paperDelta.X, paperDelta.Y, "Move"));
+            _undo.Push(cmds.Count == 1 ? cmds[0] : new CompositeCommand(cmds, "Move"));
+            // The moved entities stay selected, so they can be nudged again.
+            _canvas.Selected.Clear();
+            foreach (var h in handles) _canvas.Selected.Add(h);
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            var shown = inModel.Count > 0 ? modelDelta : paperDelta;
+            Log(string.Format(CultureInfo.InvariantCulture, "  moved {0}  dN {1:F3}  dE {2:F3}{3}  (Ctrl+Z to undo)",
+                Plural(entities.Count, "entity", "entities"), shown.Y, shown.X, inModel.Count > 0 ? "" : " mm"));
         }
 
         private void OnBoxSelected(HashSet<ulong> handles, bool ctrl)

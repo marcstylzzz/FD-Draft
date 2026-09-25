@@ -39,7 +39,7 @@ namespace FdDraft.Cad.Editing
                 }
                 if (e is Dimension) continue; // other dimension kinds: their picture block is per-dimension
                 var c = Duplicate(e);
-                c.ApplyTransform(Transform.CreateTranslation(new XYZ(dx, dy, 0)));
+                EntityTransform.Apply(c, Transform.CreateTranslation(new XYZ(dx, dy, 0)));
                 list.Add((e, c));
             }
             return list;

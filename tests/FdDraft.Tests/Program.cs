@@ -1439,5 +1439,92 @@ namespace FdDraft.Tests
             note.RectangleWidth = 0;
             Assert.Equal(2, new SceneBuilder(doc).Model().AllPrims().Count(p => p.Kind == PrimKind.Text), "no box width: no wrapping, one line per paragraph");
         }
+            // ---- moving drafted labels (v0.4.25) --------------------------------------------------
+
+        private static Vec2 DrawnAt(ACadSharp.CadDocument doc, ulong handle) =>
+            new SceneBuilder(doc).Model().AllPrims().First(p => p.Handle == handle && p.Kind == PrimKind.Text).Center;
+
+        public static void TestMovingAndCopyingDraftedLabelsActuallyMovesThem()
+        {
+            var doc = new ACadSharp.CadDocument();
+            // A point number exactly as TemplateDrafter writes it: aligned bottom-left, so AutoCAD
+            // and FD-Draft both place it by its AlignmentPoint.
+            var at = new CSMath.XYZ(306498.873, 4894680.060, 0);
+            var number = new ACadSharp.Entities.TextEntity
+            {
+                Value = "1003", InsertPoint = at, AlignmentPoint = at, Height = 0.4,
+                HorizontalAlignment = ACadSharp.Entities.TextHorizontalAlignment.Left, VerticalAlignment = ACadSharp.Entities.TextVerticalAlignmentType.Bottom,
+            };
+            // A centred bearing label.
+            var bearing = new ACadSharp.Entities.TextEntity
+            {
+                Value = "N45%%d00'00\"E", InsertPoint = new CSMath.XYZ(10, 10, 0), AlignmentPoint = new CSMath.XYZ(10, 10, 0), Height = 0.4,
+                HorizontalAlignment = ACadSharp.Entities.TextHorizontalAlignment.Center, VerticalAlignment = ACadSharp.Entities.TextVerticalAlignmentType.Bottom,
+            };
+            doc.ModelSpace.Entities.Add(number); doc.ModelSpace.Entities.Add(bearing);
+            var undo = new UndoStack();
+
+            undo.Push(TransformEntitiesCommand.Move(new ACadSharp.Entities.Entity[] { number, bearing }, 1.5, -2, "Move"));
+            Assert.Near(at.X + 1.5, DrawnAt(doc, number.Handle).X, 1e-9, "the point number is drawn where it was moved to (E)");
+            Assert.Near(at.Y - 2, DrawnAt(doc, number.Handle).Y, 1e-9, "(N)");
+            Assert.Near(11.5, DrawnAt(doc, bearing.Handle).X, 1e-9, "the centred bearing moved too");
+            Assert.Near(at.X + 1.5, number.InsertPoint.X, 1e-9, "insertion point kept in step for AutoCAD");
+            undo.Undo();
+            Assert.Near(at.X, DrawnAt(doc, number.Handle).X, 1e-9, "undo puts it back");
+
+            // ROTATE turns it about the pivot, anchor and all.
+            undo.Push(TransformEntitiesCommand.Rotate(new ACadSharp.Entities.Entity[] { bearing }, new CSMath.XYZ(0, 0, 0), Math.PI / 2, "Rotate"));
+            Assert.Near(-10, DrawnAt(doc, bearing.Handle).X, 1e-9, "rotated anchor E"); Assert.Near(10, DrawnAt(doc, bearing.Handle).Y, 1e-9, "rotated anchor N");
+            undo.Undo();
+
+            // COPY lands the copy at the offset, not on top of the original.
+            var pairs = EntityOps.Copies(new ACadSharp.Entities.Entity[] { number }, 5, 0);
+            undo.Push(EntityOps.AddBesideSources(pairs, "Copy")!);
+            Assert.Near(at.X + 5, DrawnAt(doc, pairs[0].Copy.Handle).X, 1e-9, "copy drawn at the offset");
+            Assert.Near(at.X, DrawnAt(doc, number.Handle).X, 1e-9, "original stays");
+
+            // ROTATE turns an MTEXT (ACadSharp moves it but never turns it).
+            var note = new ACadSharp.Entities.MText { Value = "LOT 5", InsertPoint = new CSMath.XYZ(0, 0, 0), Height = 0.5, AlignmentPoint = new CSMath.XYZ(1, 0, 0) };
+            doc.ModelSpace.Entities.Add(note);
+            undo.Push(TransformEntitiesCommand.Rotate(new ACadSharp.Entities.Entity[] { note }, new CSMath.XYZ(0, 0, 0), Math.PI / 2, "Rotate"));
+            Assert.Near(Math.PI / 2, note.Rotation, 1e-9, "MTEXT turned 90 degrees");
+            undo.Undo();
+            Assert.Near(0, note.Rotation, 1e-9, "and back");
+
+            // A block's attribute (e.g. a monument's number) moves with the block.
+            var blk = new ACadSharp.Tables.BlockRecord("PLAN-FOUND MONUMENT");
+            doc.BlockRecords.Add(blk);
+            var ins = new ACadSharp.Entities.Insert(blk) { InsertPoint = new CSMath.XYZ(0, 0, 0) };
+            var att = new ACadSharp.Entities.AttributeEntity
+            {
+                Tag = "PT", Value = "12", InsertPoint = new CSMath.XYZ(1, 1, 0), AlignmentPoint = new CSMath.XYZ(1, 1, 0), Height = 0.3,
+                HorizontalAlignment = ACadSharp.Entities.TextHorizontalAlignment.Center,
+            };
+            ins.Attributes.Add(att);
+            doc.ModelSpace.Entities.Add(ins);
+            undo.Push(TransformEntitiesCommand.Move(new ACadSharp.Entities.Entity[] { ins }, 3, 0, "Move"));
+            Assert.Near(4, att.AlignmentPoint.X, 1e-9, "the attribute's anchor moved with its block");
+        }
+            public static void TestClickingAnywhereOnALabelHitsIt()
+        {
+            // Point number "1003", anchored at its bottom-left corner, cap height 1.
+            var number = new Prim { Kind = PrimKind.Text, Text = "1003", Center = new Vec2(100, 100), Height = 1, H = HAlign.Left, V = VAlign.Bottom };
+            double w = PdfSceneWriter.MeasureText("1003", 1);
+            Assert.True(w > 2 && w < 4, "four digits are about 3 cap heights wide: " + w);
+            Assert.Near(0, TextHit.Distance(number, new Vec2(100 + w * 0.75, 100.5)), 1e-12, "a click on the last digits hits it - not just near the anchor corner");
+            Assert.True(TextHit.Distance(number, new Vec2(100 + w + 1, 100.5)) > 0.7, "a click clear of the text misses");
+            Assert.True(TextHit.Distance(number, new Vec2(100.5, 97)) > 1.5, "below it misses");
+
+            // A centred bearing running up at 30 degrees: hit along its own direction.
+            double r = Math.PI / 6;
+            var bearing = new Prim { Kind = PrimKind.Text, Text = "N60°00'00\"E", Center = new Vec2(0, 0), Height = 1, Rotation = r, H = HAlign.Center, V = VAlign.Bottom };
+            double bw = PdfSceneWriter.MeasureText(bearing.Text, 1);
+            var alongRight = new Vec2(Math.Cos(r), Math.Sin(r)) * (bw * 0.4) + new Vec2(-Math.Sin(r), Math.Cos(r)) * 0.5;
+            Assert.Near(0, TextHit.Distance(bearing, alongRight), 1e-12, "a click on its right half, along the rotated baseline, hits");
+            Assert.True(TextHit.Distance(bearing, new Vec2(bw * 0.4, 0) + new Vec2(0, -1.5)) > 0, "the same distance straight east, off the rotated text, misses");
+            var corners = TextHit.Corners(bearing);
+            Assert.Equal(4, corners.Length, "highlight outline has four corners");
+            Assert.Near(r, Math.Atan2(corners[1].Y - corners[0].Y, corners[1].X - corners[0].X), 1e-9, "and runs along the text");
+        }
     }
 }

@@ -36,6 +36,10 @@ namespace FdDraft.App
         /// drag past a few pixels becomes a selection box instead of a click.</summary>
         private WPoint? _boxFrom;
         private bool _boxing;
+        /// <summary>The entity under the cursor when the button went down - dragging from it
+        /// moves it (and the rest of the selection, if it was selected) instead of boxing.</summary>
+        private ulong? _pressedOn;
+        private bool _dragging;
 
         public ViewTransform View { get; } = new ViewTransform();
         public bool SnapEnabled { get; set; } = true;
@@ -57,6 +61,9 @@ namespace FdDraft.App
         /// <summary>The entity handles a drag-box selected (window left-to-right, crossing
         /// right-to-left), and whether Ctrl was held (add to the selection rather than replace it).</summary>
         public event Action<HashSet<ulong>, bool>? BoxSelected;
+        /// <summary>Entities dragged with the mouse: which ones, and the scene points the drag
+        /// went from and to (no snapping - a label goes exactly where it's dropped).</summary>
+        public event Action<HashSet<ulong>, Vec2, Vec2>? Dragged;
 
         public DrawingCanvas()
         {
@@ -176,6 +183,17 @@ namespace FdDraft.App
                 dc.DrawLine(pen, from, _snap.HasValue ? S(_snap.Value.Point) : _mouse);
             }
             if (_snap.HasValue) DrawSnapMarker(dc, _snap.Value);
+            if (_dragging && _boxFrom.HasValue && _pressedOn.HasValue)
+            {
+                // The dragged entities, drawn highlighted at where they'd land.
+                var moving = Selected.Contains(_pressedOn.Value) ? Selected : new HashSet<ulong> { _pressedOn.Value };
+                dc.PushTransform(new TranslateTransform(_mouse.X - _boxFrom.Value.X, _mouse.Y - _boxFrom.Value.Y));
+                foreach (var g in _scene.Groups)
+                    foreach (var prim in g.Prims)
+                        if (prim.Handle != 0 && moving.Contains(prim.Handle)) DrawPrim(dc, prim, dip, visible, highlight: true);
+                dc.Pop();
+                dc.DrawLine(new Pen(Brushes.OrangeRed, 1) { DashStyle = DashStyles.Dash }, _boxFrom.Value, _mouse);
+            }
             if (_boxing && _boxFrom.HasValue)
             {
                 // Window (left to right) solid blue; crossing (right to left) dashed green - the
@@ -235,8 +253,15 @@ namespace FdDraft.App
                     if (at.X < -2000 || at.Y < -2000 || at.X > ActualWidth + 2000 || at.Y > ActualHeight + 2000) return;
                     if (highlight)
                     {
-                        var hb = new WRect(at.X - 2, at.Y - p.Height * View.Zoom - 2, Math.Max(4, p.Text.Length * p.Height * View.Zoom * 0.6) + 4, p.Height * View.Zoom + 4);
-                        dc.DrawRectangle(null, HighlightPen(), hb);
+                        var box = new StreamGeometry();
+                        using (var ctx = box.Open())
+                        {
+                            var corners = TextHit.Corners(p);
+                            ctx.BeginFigure(S(corners[0]), false, true);
+                            ctx.PolyLineTo(new[] { S(corners[1]), S(corners[2]), S(corners[3]) }, true, false);
+                        }
+                        box.Freeze();
+                        dc.DrawGeometry(null, HighlightPen(), box);
                     }
                     if (!_texts.TryGetValue(p, out var ft))
                     {
@@ -358,9 +383,13 @@ namespace FdDraft.App
                 }
                 else
                 {
-                    // Decide on release: a click selects what's under the cursor, a drag boxes.
+                    // Decide on release: a click selects what's under the cursor; a drag from an
+                    // entity moves it, a drag from empty space boxes.
                     _boxFrom = p;
                     _boxing = false;
+                    _dragging = false;
+                    var hit = HitTest(p);
+                    _pressedOn = hit != null && hit.Handle != 0 ? hit.Handle : (ulong?)null;
                     CaptureMouse();
                 }
                 e.Handled = true;
@@ -374,12 +403,27 @@ namespace FdDraft.App
             if (_scene == null) return null;
             Prim? best = null;
             double bestD = tolerancePx;
+            var scenePt = View.ToScene(screenPt.X, screenPt.Y);
             foreach (var g in _scene.Groups)
             {
+                if (g.Clip.HasValue)
+                {
+                    // Only what shows through a viewport can be picked there.
+                    var c = g.Clip.Value;
+                    if (scenePt.X < c.X1 || scenePt.X > c.X2 || scenePt.Y < c.Y1 || scenePt.Y > c.Y2) continue;
+                }
                 foreach (var prim in g.Prims)
                 {
                     if (prim.Handle == 0) continue;
-                    double d = DistanceToPrim(prim, screenPt);
+                    double d;
+                    if (prim.Kind == PrimKind.Text)
+                    {
+                        // Anywhere on the characters counts; a click inside a label's box picks the
+                        // label ahead of linework or a point marker it sits on.
+                        double inScene = TextHit.Distance(prim, scenePt);
+                        d = inScene <= 0 ? -1 : inScene * View.Zoom;
+                    }
+                    else d = DistanceToPrim(prim, screenPt);
                     if (d < bestD) { bestD = d; best = prim; }
                 }
             }
@@ -440,7 +484,14 @@ namespace FdDraft.App
                 bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
                 _boxFrom = null;
                 ReleaseMouseCapture();
-                if (_boxing && _scene != null)
+                if (_dragging && _pressedOn.HasValue && _scene != null)
+                {
+                    _dragging = false; _boxing = false;
+                    var moving = Selected.Contains(_pressedOn.Value) ? new HashSet<ulong>(Selected) : new HashSet<ulong> { _pressedOn.Value };
+                    _pressedOn = null;
+                    Dragged?.Invoke(moving, View.ToScene(from.X, from.Y), View.ToScene(to.X, to.Y));
+                }
+                else if (_boxing && _scene != null)
                 {
                     _boxing = false;
                     var a = View.ToScene(from.X, from.Y);
@@ -477,8 +528,11 @@ namespace FdDraft.App
                 InvalidateVisual();
                 return;
             }
-            if (_boxFrom.HasValue && !_boxing && Math.Abs(_mouse.X - _boxFrom.Value.X) + Math.Abs(_mouse.Y - _boxFrom.Value.Y) > 5) _boxing = true;
-            if (_boxing) { InvalidateVisual(); return; }
+            if (_boxFrom.HasValue && !_boxing && !_dragging && Math.Abs(_mouse.X - _boxFrom.Value.X) + Math.Abs(_mouse.Y - _boxFrom.Value.Y) > 5)
+            {
+                if (_pressedOn.HasValue) _dragging = true; else _boxing = true;
+            }
+            if (_boxing || _dragging) { InvalidateVisual(); return; }
             if (_scene == null) return;
             var world = View.ToScene(_mouse.X, _mouse.Y);
             _snap = SnapEnabled ? _scene.Snap(world, 10 / View.Zoom) : null;

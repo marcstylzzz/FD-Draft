@@ -63,6 +63,10 @@ FdDraft.App project in Visual Studio).
   are shown greyed.
 - **Save** (Ctrl+S) writes the DWG. **PDF** (Ctrl+P) plots the current sheet as
   a true-scale vector PDF.
+- **Drag to move**: press on any entity - a label, a line, a symbol - and
+  drag it where you want it; if it's part of the selection the whole
+  selection goes with it. One Ctrl+Z undoes it. Clicking anywhere on a
+  label's text selects it (it wins over a point marker or line under it).
 - **Select**: click an entity (Ctrl+click adds), or drag a box - left to
   right takes what is wholly inside it (window), right to left anything it
   touches (crossing); Ctrl+drag adds. **Ctrl+A** selects everything in

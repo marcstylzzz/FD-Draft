@@ -116,6 +116,25 @@ it on Windows is the real test.
   together, so lines that meet at a survey point stay joined. This is the
   actual "grip edit" a course correction needs, as opposed to MOVE/ROTATE
   which only ever transform whole entities rigidly.
+- **Moving text** (`EntityTransform`, v0.4.25): ACadSharp's
+  `TextEntity.ApplyTransform` moves only the insertion point, but aligned
+  TEXT (every label FD-Draft drafts) is placed by `AlignmentPoint`, in
+  AutoCAD and FD-Draft alike - so MOVE/ROTATE/COPY used to leave labels
+  where they were. `EntityTransform.Apply` also carries a TEXT's (and each
+  block attribute's) alignment point through the transform, and turns an
+  MTEXT's direction vector (ACadSharp moves an MTEXT but never rotates it).
+  Every transform path (MOVE, ROTATE, drag, COPY) goes through it.
+- **Drag to move / picking text**: the canvas remembers what was under the
+  cursor at mouse-down; a drag of more than 5 px from an entity moves it
+  (the whole selection if it was selected), previewed highlighted at the
+  drop spot, and a drag from empty space is still a selection box. The drop
+  raises `Dragged` with the two scene points (unsnapped, so labels land
+  exactly where dropped); on a sheet, MainWindow converts them through the
+  viewport the drag started in for model-space entities and uses the paper
+  distance for paper entities. Text is picked by its rotated box
+  (`FdDraft.View.TextHit`, Helvetica metrics, same as PDF/wrap), a click
+  inside a label beats linework or a marker under it, and the selection
+  highlight outlines that same box.
 - **COPY / MIRROR / OFFSET** build brand-new entities with
   `FdDraft.Cad.Editing.EntityOps` and add them beside their sources
   (`AddBesideSources`: same owner block - Model or a paper-native sheet - as
