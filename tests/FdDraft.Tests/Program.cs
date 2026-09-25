@@ -1354,5 +1354,37 @@ namespace FdDraft.Tests
             undo.Undo();
             Assert.True(Current() == p && p.Vertices.Count == 4, "undo restores the original");
         }
+            // ---- MVIEW: put model space onto a blank sheet (v0.4.21) ------------------------------
+
+        public static void TestMviewPutsModelSpaceOntoABlankSheet()
+        {
+            var doc = new ACadSharp.CadDocument();
+            // A legacy job: the survey is in model space, and a sheet tab with only a title-block line.
+            doc.ModelSpace.Entities.Add(Ln(309500, 4869100, 309560, 4869140));
+            var layout = new ACadSharp.Objects.Layout("11X17");
+            doc.Layouts.Add(layout);
+            layout.AssociatedBlock.Entities.Add(Ln(10, 10, 420, 10));
+            var before = new SceneBuilder(doc).Layout("11X17");
+            Assert.True(!before.Groups.Any(g => g.Clip.HasValue), "starts with no working viewport - the 'blank sheet' case");
+
+            var area = new Rect(20, 20, 300, 260);
+            double mpp = SheetViewports.FitScale(60, 40, area, 1.0, out double den);
+            Assert.Equal(250.0, den, "60 x 40 m in a 280 x 240 mm box rounds up to 1:250");
+            Assert.Near(0.25, mpp, 1e-12, "0.25 m per mm");
+            var vp = SheetViewports.Create(area, new Vec2(309530, 4869120), mpp, doc.Layers["0"]);
+            var undo = new UndoStack();
+            undo.Push(new AddEntitiesCommand(layout.AssociatedBlock, new ACadSharp.Entities.Entity[] { vp }, "Viewport"));
+            Assert.True(!vp.RepresentsPaper, "a real plan viewport, not the paper background one");
+            Assert.True(SheetScale.PlanViewport(layout) == vp, "found as the sheet's plan viewport");
+
+            var after = new SceneBuilder(doc).Layout("11X17");
+            var vpGroup = after.Groups.SingleOrDefault(g => g.Clip.HasValue);
+            Assert.True(vpGroup != null && vpGroup.Prims.Any(), "the survey now shows through the sheet");
+            var shown = vpGroup!.Prims.SelectMany(p => p.Points).ToList();
+            Assert.True(shown.All(p => p.X >= 20 - 1e-6 && p.X <= 300 + 1e-6 && p.Y >= 20 - 1e-6 && p.Y <= 260 + 1e-6), "drawn inside the viewport, at sheet scale");
+            Assert.True(after.ModelAt(new Vec2(160, 140)).HasValue, "picks inside it resolve to model coordinates");
+            undo.Undo();
+            Assert.True(SheetScale.PlanViewport(layout) == null, "undo takes it off again");
+        }
     }
 }

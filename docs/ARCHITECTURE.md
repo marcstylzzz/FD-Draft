@@ -293,6 +293,16 @@ it on Windows is the real test.
   they undo/redo together as one step rather than one Ctrl+Z per field.
   **Set Layer** on the toolbar reassigns the whole selection to the current
   layer via `ChangeLayerCommand`, also undoable.
+- **MVIEW** (`SheetViewports`): a new plan viewport on the current sheet,
+  built exactly as `TemplateDrafter.AddViewport` builds the pipeline's
+  (north up, zoom-locked, on the standards' viewport layer), filling two
+  picked paper corners and centred on model space's extents. Enter at the
+  scale prompt takes `FitScale`: the smallest standard 1:n that fits the
+  extents with a 5 % margin. This is the answer to a legacy DWG whose sheet
+  tabs are blank - the "represents paper" background viewport (Id 1) never
+  shows model space, so a tab with only that one has no plan until one is
+  added. (Viewport Id is ACadSharp's enumeration position in the block, so
+  the added one is 2.)
 - **VPSCALE** (`FdDraft.Cad.Editing.SheetScale`): the scale-only sheet
   setup. The current scale is read from the sheet's own "SCALE 1:n" text
   (the standards' scale-bar anchor), falling back to the plan viewport's

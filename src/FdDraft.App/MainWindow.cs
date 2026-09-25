@@ -238,6 +238,7 @@ namespace FdDraft.App
             view.Items.Add(Item("_Snap on/off", "F3", ToggleSnap));
             view.Items.Add(new Separator());
             view.Items.Add(Item("Sheet s_cale…", "VPSCALE", () => StartSheetScale("")));
+            view.Items.Add(Item("Add _viewport to sheet", "MVIEW", StartMview));
             var help = new MenuItem { Header = "_Help" };
             help.Items.Add(Item("_Commands", "HELP", ShowHelp));
             menu.Items.Add(file); menu.Items.Add(edit); menu.Items.Add(survey); menu.Items.Add(draw); menu.Items.Add(modify); menu.Items.Add(view); menu.Items.Add(help);
@@ -374,6 +375,7 @@ namespace FdDraft.App
                 case "JOIN": case "J": JoinSelection(); break;
                 case "ID": StartId(); break;
                 case "VPSCALE": case "SCALE": StartSheetScale(arg); break;
+                case "MVIEW": case "MV": case "VIEWPORT": StartMview(); break;
                 case "VXADD": StartVertexInsert(); break;
                 case "MIRROR": case "MI": StartMirror(); break;
                 case "OFFSET": case "O": StartOffset(); break;
@@ -428,6 +430,7 @@ namespace FdDraft.App
             Log("  DIMANG  angle dimension: pick the vertex, a point on each leg, then the arc location (it picks which angle)");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
+            Log("  MVIEW   on a sheet tab: pick two corners, then a scale - shows model space on that sheet");
             Log("  VPSCALE [1:n]   change the current sheet's scale: viewport, title-block scale, scale bar, and label sizes");
             Log("  MODEL / LAYOUT <name>   switch sheet · SNAP (F3) toggles snapping · Esc cancels the active tool");
         }
@@ -609,7 +612,7 @@ namespace FdDraft.App
             var drawn = counts.Where(c => c.Prims > blankThreshold).ToList();
             Log("  sheets: " + string.Join(", ", counts.Select(c => c.Name + " (" + c.Prims + (c.Prims <= blankThreshold ? ", blank" : "") + ")")));
             if (drawn.Count > 0 && drawn.Count < counts.Count)
-                Log("  the plan looks drawn on: " + string.Join(", ", drawn.Select(c => c.Name)) + " - the other sheets are unused blank options from the template.");
+                Log("  the plan looks drawn on: " + string.Join(", ", drawn.Select(c => c.Name)) + " - the other sheets are unused blank options from the template (MVIEW puts model space onto one).");
         }
 
         /// <summary>
@@ -1838,6 +1841,56 @@ namespace FdDraft.App
                 EndTool();
                 if (corners.Count < 3) { Log("  *cancelled - an area needs at least three corners*"); return; }
                 Log("  area " + AreaText(FigureMeasure.Area(corners, null)) + ", perimeter " + FigureMeasure.Perimeter(corners, null, true).ToString("F3", CultureInfo.InvariantCulture) + " (" + corners.Count + " corners)");
+            };
+        }
+
+        /// <summary>MVIEW: put model space onto the current sheet - pick two corners on the paper,
+        /// then a scale (Enter fits the whole survey in at the next standard scale).</summary>
+        private void StartMview()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            var layout = _sheet == "Model" ? null : _doc.Layouts.FirstOrDefault(l => l.Name.Equals(_sheet, StringComparison.OrdinalIgnoreCase));
+            if (layout == null) { Log("  switch to the sheet tab you want the plan on first - MVIEW makes a viewport on a sheet, not in Model"); return; }
+            var model = new SceneBuilder(_doc, _hidden).Model();
+            if (!model.AllPrims().Any()) { Log("  model space is empty - there's nothing to show through a viewport"); return; }
+            var std = LabelStandards();
+            BeginTool("MVIEW");
+            _prompt.Text = "Viewport - first corner on the sheet:";
+            Log("MVIEW  pick two opposite corners of the viewport on " + _sheet + " (inside the frame, clear of the title block)");
+            Vec2? first = null;
+            _awaitingPoint = p =>
+            {
+                // Corners are paper points, even where an existing viewport would map them to model.
+                if (first == null) { first = p; _canvas.RubberFrom = p; _prompt.Text = "Viewport - opposite corner:"; return; }
+                var area = new FdDraft.Core.Standards.Rect(first.Value.X, first.Value.Y, p.X, p.Y);
+                if (area.Width < 5 || area.Height < 5) { Log("  that box is too small - pick the opposite corner further away"); return; }
+                var b = model.Bounds;
+                double fitMpp = SheetViewports.FitScale(b.Width, b.Height, area, std.PaperUnitsPerMm, out double fitDen);
+                var center = new Vec2((b.X1 + b.X2) / 2, (b.Y1 + b.Y2) / 2);
+                _canvas.ToolActive = false; _canvas.RubberFrom = null; _awaitingPoint = null;
+                string fit = fitDen.ToString("0.###", CultureInfo.InvariantCulture);
+                _prompt.Text = "Viewport - scale 1:n <fit 1:" + fit + ">:";
+                Log(string.Format(CultureInfo.InvariantCulture, "  {0:0} x {1:0} on paper - type the scale (e.g. 1:250), or Enter for 1:{2}, which fits the whole survey", area.Width, area.Height, fit));
+                _awaitingLine = s =>
+                {
+                    double mpp = fitMpp, den = fitDen;
+                    var t = s.Trim();
+                    if (t.Length > 0)
+                    {
+                        int colon = t.IndexOf(':');
+                        if (colon >= 0) t = t.Substring(colon + 1);
+                        if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out den) || den <= 0) { Log("  type the scale as 1:n or n, or Enter to fit"); return; }
+                        mpp = den / (1000 * std.PaperUnitsPerMm);
+                    }
+                    var vp = SheetViewports.Create(area, center, mpp, GetOrCreateLayer(std.ViewportLayer));
+                    _undo.Push(new AddEntitiesCommand(layout.AssociatedBlock, new Entity[] { vp }, "Viewport"));
+                    _dirty = true; UpdateTitle();
+                    EndTool();
+                    var c = _canvas.View.Center; var z = _canvas.View.Zoom;
+                    Rebuild(fit: false);
+                    _canvas.ZoomTo(c, z);
+                    Log("  viewport at 1:" + den.ToString("0.###", CultureInfo.InvariantCulture) + " on " + _sheet + ", centred on the survey  (VPSCALE changes it later; Ctrl+Z to undo)");
+                };
             };
         }
 

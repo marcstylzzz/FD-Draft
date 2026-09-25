@@ -136,6 +136,12 @@ FdDraft.App project in Visual Studio).
   it for a polyline. Editing several fields at once and clicking Apply undoes
   them together as one step. **Set Layer** on the toolbar reassigns the
   whole selection to the current layer.
+- **Add viewport to sheet** (MVIEW, View menu): on a sheet tab that shows
+  only its title block - a legacy job's unused sheet-size tabs are like
+  this - pick two corners and a scale (Enter fits the whole survey at the
+  next standard scale), and model space shows through it, locked at scale,
+  on the standards' viewport layer. Opening a DWG logs which tabs actually
+  have a plan on them.
 - **Sheet scale** (VPSCALE, View menu): change the current sheet's scale
   in place - type `1:250` and the plan viewport re-zooms about its centre,
   the title block's `1:n` and the scale-bar ticks are rewritten, and
@@ -147,7 +153,7 @@ FdDraft.App project in Visual Studio).
   they look identical in the tab strip until you check.
 - **Command line**: typing anywhere goes there. Commands are DRAFT, OPEN, NEW,
   SAVE, SAVEAS, PDF, INV, ID, AREA, JOIN, LINE, ARC, TEXT, LEADER, DIM, DIMLIN, DIMRAD, DIMDIA, DIMANG, MOVE, ROTATE, STRETCH,
-  COPY, MIRROR, OFFSET, TRIM, EXTEND, FILLET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
+  COPY, MIRROR, OFFSET, TRIM, EXTEND, FILLET, VXDEL, VXADD, LABEL, FLIP, ERASE, LAYER, UNDO, REDO, CLAYER, MVIEW, VPSCALE, SELALL, SELLAYER, ZE, SNAP, MODEL, LAYOUT <name>, and HELP.
 
 ## Draft a plan from the command line
 

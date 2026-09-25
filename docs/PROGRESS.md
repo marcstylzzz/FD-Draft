@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.20 (`Directory.Build.props`).
+- **Current version:** 0.4.21 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -56,7 +56,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  62 tests as of v0.4.20, all passing.
+  63 tests as of v0.4.21, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -152,10 +152,19 @@ on Windows; that's still Marc's job when he runs a build.
 - **v0.4.19**: DIMDIA (diameter) and DIMANG (3-point angle in
   D°MM'SS", arc placement picks the angle). All five dimension kinds share
   `DimensionBuilder`. DWG round-trip tested.
-- **v0.4.20** (current): VXDEL/VXADD and the Properties vertex buttons now
+- **v0.4.20**: VXDEL/VXADD and the Properties vertex buttons now
   work on Polyline2D too, by swapping in a rebuilt polyline
   (`ReplacePolyline2DCommand`) - ACadSharp's HashSet-backed vertex
   collection scrambles order if vertices are removed and re-added.
+- **v0.4.21** (current): MVIEW - add a plan viewport to a sheet (two
+  corners + scale, Enter = fit at the next standard scale). Prompted by
+  Marc re-reporting the "17 Empire Blvd Wellington.dwg" 11X17 tab as empty
+  while model space has the survey: still correct (that tab has no
+  viewport; the plan is on 17X22/RPLAN-22X34 in paper space), but there was
+  no way to put model space onto a blank tab. Marc was also running a
+  pre-v0.4.2 build (no Stretch/Set Layer buttons, leaders "not drawn yet"),
+  so the v0.4.1 blank-sheet log line wasn't showing for him - remind him to
+  `git pull --recurse-submodules` and rebuild.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

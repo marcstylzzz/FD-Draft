@@ -145,3 +145,52 @@ namespace FdDraft.Cad.Editing
         private static string Fmt(double d) => d.ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
+namespace FdDraft.Cad.Editing
+{
+    /// <summary>
+    /// MVIEW: a new plan viewport on a sheet - the way to put model space onto a layout that
+    /// has none (a legacy job's unused sheet-size tabs, or a sheet whose plan was drawn
+    /// straight onto paper). Built the way the drafting pipeline builds its own: north up,
+    /// locked at scale, on the standards' viewport layer so its edge never plots.
+    /// </summary>
+    public static class SheetViewports
+    {
+        /// <summary>
+        /// A viewport filling the paper rectangle <paramref name="paper"/>, centred on
+        /// <paramref name="modelCenter"/> at <paramref name="modelPerPaper"/> model units per
+        /// paper unit. Add it to the layout's block with an <see cref="AddEntitiesCommand"/>.
+        /// </summary>
+        public static ACadSharp.Entities.Viewport Create(FdDraft.Core.Standards.Rect paper, FdDraft.Core.Geometry.Vec2 modelCenter, double modelPerPaper, ACadSharp.Tables.Layer layer)
+        {
+            return new ACadSharp.Entities.Viewport
+            {
+                Center = new CSMath.XYZ((paper.X1 + paper.X2) / 2, (paper.Y1 + paper.Y2) / 2, 0),
+                Width = paper.Width,
+                Height = paper.Height,
+                ViewTarget = CSMath.XYZ.Zero,
+                ViewDirection = CSMath.XYZ.AxisZ,
+                ViewCenter = new CSMath.XY(modelCenter.X, modelCenter.Y),
+                ViewHeight = paper.Height * modelPerPaper,
+                TwistAngle = 0,
+                Status = ACadSharp.Entities.ViewportStatusFlags.CurrentlyAlwaysEnabled | ACadSharp.Entities.ViewportStatusFlags.ViewportZoomLocking | ACadSharp.Entities.ViewportStatusFlags.UcsIconVisibility,
+                Layer = layer,
+            };
+        }
+
+        /// <summary>Model units per paper unit that fits <paramref name="modelWidth"/> ×
+        /// <paramref name="modelHeight"/> inside the paper rectangle with a 5 % margin, rounded
+        /// up to a standard plan scale (1:n with n from the usual survey series) when
+        /// <paramref name="paperUnitsPerMm"/> says the sheet is in millimetres and the model in metres.</summary>
+        public static double FitScale(double modelWidth, double modelHeight, FdDraft.Core.Standards.Rect paper, double paperUnitsPerMm, out double denominator)
+        {
+            double need = Math.Max(modelWidth / Math.Max(paper.Width, 1e-9), modelHeight / Math.Max(paper.Height, 1e-9)) * 1.05;
+            // model metres per paper unit -> 1:n with paper in mm: n = need * 1000 * paperUnitsPerMm.
+            double raw = need * 1000 * paperUnitsPerMm;
+            double[] series = { 50, 100, 150, 200, 250, 300, 400, 500, 600, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000 };
+            denominator = series.FirstOrDefault(n => n >= raw - 1e-9);
+            if (denominator == 0) denominator = Math.Ceiling(raw / 1000) * 1000;
+            return denominator / (1000 * paperUnitsPerMm);
+        }
+    }
+}
