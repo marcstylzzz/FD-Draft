@@ -28,6 +28,13 @@ FD-Draft/
   samples/demo-lot/        a synthetic FD-Pro job
 ```
 
+## Update
+
+Double-click **`update.cmd`** in the FD-Draft folder: it pulls the latest
+version, builds it and starts the app (close FD-Draft first). By hand, from
+the FD-Draft folder: `git pull --recurse-submodules`, then
+`dotnet build FD-Draft.sln`.
+
 ## Build
 
 Needs the **.NET 10 SDK** (the bundled ACadSharp source uses C# 13). FD-Draft
