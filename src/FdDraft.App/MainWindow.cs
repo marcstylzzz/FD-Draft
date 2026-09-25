@@ -86,8 +86,15 @@ namespace FdDraft.App
         public MainWindow()
         {
             Title = "FD-Draft";
-            Width = 1440; Height = 900;
-            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            // Fit the screen it opens on - a fixed 1440x900 ran off the bottom of a scaled laptop screen.
+            var work = SystemParameters.WorkArea;
+            var place = WindowFit.Place(_settings.WindowBounds,
+                new FdDraft.Core.Standards.Rect(work.Left, work.Top, work.Right, work.Bottom),
+                new FdDraft.Core.Standards.Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                    SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight));
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = place.X1; Top = place.Y1; Width = place.Width; Height = place.Height;
+            if (_settings.WindowMaximized) WindowState = WindowState.Maximized;
             FontFamily = new FontFamily("Segoe UI");
             Background = new SolidColorBrush(Color.FromRgb(0xF3, 0xF3, 0xF3));
             _canvas.SnapEnabled = _settings.Snap;
@@ -2260,7 +2267,15 @@ namespace FdDraft.App
 
         private void OnClosing(object? sender, CancelEventArgs e)
         {
-            if (!ConfirmDiscard()) e.Cancel = true;
+            if (!ConfirmDiscard()) { e.Cancel = true; return; }
+            // Remember the window for next time (its normal size, even when closed maximized).
+            var b = WindowState == WindowState.Normal ? new System.Windows.Rect(Left, Top, Width, Height) : RestoreBounds;
+            if (!b.IsEmpty && b.Width > 0 && b.Height > 0)
+            {
+                _settings.WindowLeft = b.Left; _settings.WindowTop = b.Top; _settings.WindowWidth = b.Width; _settings.WindowHeight = b.Height;
+            }
+            _settings.WindowMaximized = WindowState == WindowState.Maximized;
+            _settings.Save();
         }
 
         private static string Existing(string dir) => !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? dir : "";

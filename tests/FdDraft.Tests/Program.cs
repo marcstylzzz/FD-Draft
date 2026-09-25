@@ -1526,5 +1526,28 @@ namespace FdDraft.Tests
             Assert.Equal(4, corners.Length, "highlight outline has four corners");
             Assert.Near(r, Math.Atan2(corners[1].Y - corners[0].Y, corners[1].X - corners[0].X), 1e-9, "and runs along the text");
         }
+            public static void TestWindowOpensInsideTheScreen()
+        {
+            // 1920x1080 at 150 % scaling, taskbar at the bottom: 1280 x 672 of usable work area.
+            var work = new Rect(0, 0, 1280, 672);
+            var desk = new Rect(0, 0, 1280, 720);
+            var first = WindowFit.Place(null, work, desk);
+            Assert.True(first.X1 >= 0 && first.Y1 >= 0 && first.X2 <= 1280 && first.Y2 <= 672, "first run fits the work area, taskbar clear: " + first);
+            Assert.True(first.Width > 1200 && first.Height > 600, "and uses most of it");
+
+            // Saved on a big monitor that's since been unplugged: back onto this screen.
+            var gone = WindowFit.Place(new Rect(2200, 100, 3640, 1000), work, desk);
+            Assert.True(gone.X2 <= 1280 && gone.Y2 <= 672, "an off-screen saved window is brought back");
+
+            // A saved spot that's still on screen is kept.
+            var kept = WindowFit.Place(new Rect(100, 50, 900, 600), work, desk);
+            Assert.Near(100, kept.X1, 1e-9, "kept left"); Assert.Near(50, kept.Y1, 1e-9, "kept top"); Assert.Near(800, kept.Width, 1e-9, "kept width");
+
+            // Saved taller than this screen: trimmed so the bottom is reachable.
+            var tall = WindowFit.Place(new Rect(0, 0, 1200, 900), work, desk);
+            Assert.True(tall.Y1 >= 0 && tall.Y2 <= 672, "a too-tall saved window is trimmed above the taskbar: " + tall);
+            var low = WindowFit.Place(new Rect(100, 300, 900, 900), work, desk);
+            Assert.True(low.Y2 <= 672 && Math.Abs(low.Height - 600) < 1e-9, "one hanging below the taskbar is moved up, not shrunk: " + low);
+        }
     }
 }

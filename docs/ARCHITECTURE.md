@@ -66,7 +66,11 @@ ticks are recomputed from the template's "SCALE 1:n" text. The layout that owns
 ## The desktop application (v0.3)
 
 FdDraft.App is WPF on .NET 8, with the UI built in code (no XAML) so mistakes
-are compile errors. It is a thin shell:
+are compile errors. It opens maximized the first time, then with the size,
+position and maximized state it was closed with (saved in app.ini) -
+`FdDraft.View.WindowFit` brings a saved window back on screen and keeps its
+bottom edge above the taskbar (a fixed 1440x900 ran off a laptop screen at
+150 % scaling). It is a thin shell:
 
 - **FdDraft.View** builds the display list from the DWG. Model space is drawn in
   model units. A sheet is drawn in paper mm, with model space shown through each
