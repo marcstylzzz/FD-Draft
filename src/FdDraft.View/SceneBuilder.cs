@@ -112,6 +112,41 @@ namespace FdDraft.View
         private static Layer? EffectiveLayer(Entity e, Layer? parentLayer) =>
             parentLayer != null && (e.Layer == null || e.Layer.Name == "0") ? parentLayer : e.Layer;
 
+        // The enclosing block reference's resolved colour number, plot colour and lineweight, for
+        // entities inside it that are ByBlock.
+        private short _blockAci = 7;
+        private uint _blockPlotRgb;
+        private double _blockLw = -1;
+
+        /// <summary>An entity's colour number, true plot colour and lineweight (mm, -1 = default),
+        /// with ByLayer and ByBlock resolved the way AutoCAD plots them.</summary>
+        private (short Aci, uint PlotRgb, double LwMm) PlotStyle(Entity e, Layer? layer)
+        {
+            short aci; uint rgb;
+            var c = e.Color;
+            if (c.IsByBlock) { aci = _blockAci; rgb = _blockPlotRgb; }
+            else
+            {
+                if (c.IsByLayer) c = layer?.Color ?? new Color(7);
+                if (c.IsTrueColor) { aci = -1; rgb = (uint)(c.R << 16 | c.G << 8 | c.B); }
+                else
+                {
+                    aci = c.Index <= 0 || c.Index >= 256 ? (short)7 : c.Index;
+                    var v = Color.GetIndexRGB((byte)aci);
+                    rgb = aci == 7 ? 0x000000u : (uint)(v[0] << 16 | v[1] << 8 | v[2]);
+                }
+            }
+            double lw;
+            var w = e.LineWeight;
+            if (w == LineWeightType.ByBlock) lw = _blockLw;
+            else
+            {
+                if (w == LineWeightType.ByLayer) w = layer?.LineWeight ?? LineWeightType.Default;
+                lw = (short)w >= 0 ? (short)w / 100.0 : -1;
+            }
+            return (aci, rgb, lw);
+        }
+
         private uint Rgb(Entity e, Layer? layer, uint? parentRgb)
         {
             var c = e.Color;
@@ -143,6 +178,24 @@ namespace FdDraft.View
             if (e.IsInvisible) return;
             var layer = EffectiveLayer(e, parentLayer);
             if (IsHiddenLayer(layer)) return;
+            var style = PlotStyle(e, layer);
+            var group = _group;
+            int first = group.Prims.Count;
+            var (saveAci, saveRgb, saveLw) = (_blockAci, _blockPlotRgb, _blockLw);
+            (_blockAci, _blockPlotRgb, _blockLw) = style; // for anything inside this one that is ByBlock
+            try { EmitShape(e, t, layer, parentRgb, handle, depth); }
+            finally { (_blockAci, _blockPlotRgb, _blockLw) = (saveAci, saveRgb, saveLw); }
+            // Stamp what this entity drew; nested block contents already stamped themselves.
+            for (int i = first; i < group.Prims.Count; i++)
+            {
+                var p = group.Prims[i];
+                if (p.Aci != -2) continue;
+                p.Aci = style.Aci; p.PlotRgb = style.PlotRgb; p.LineWeightMm = style.LwMm;
+            }
+        }
+
+        private void EmitShape(Entity e, Affine t, Layer? layer, uint? parentRgb, ulong handle, int depth)
+        {
             uint rgb = Rgb(e, layer, parentRgb);
             string lname = layer?.Name ?? "0";
 

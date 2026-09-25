@@ -1582,5 +1582,147 @@ namespace FdDraft.Tests
             var far = new ACadSharp.Entities.TextEntity { Value = "NOTE", InsertPoint = new CSMath.XYZ(306400, 4894600, 0), Height = 0.3 };
             Assert.True(PointLinks.Find(far, points) == null, "unrelated text belongs to no point");
         }
+            // ---- plotting: .ctb plot styles and page layout (v0.4.28) -------------------------------
+
+        private static string CtbText()
+        {
+            // The shape of a real .ctb: header values, plot_style entries (entry n = colour n+1),
+            // and the lineweight table the entries index into.
+            var sb = new System.Text.StringBuilder();
+            sb.Append("description=\"FD test pens\n");
+            sb.Append("aci_table_available=TRUE\nscale_factor=1.0\napply_factor=FALSE\ncustom_lineweight_display_units=0\n");
+            sb.Append("aci_table{\n 0=\"Color_1\n}\n");
+            sb.Append("plot_style{\n");
+            for (int n = 0; n < 255; n++)
+            {
+                // Colour 1 (red): black, 0.50 mm. Colour 2: object colour, 50 % screen, object lineweight.
+                // Colour 8: grayscale. Everything else: black, object lineweight.
+                string color = n == 1 || n == 7 ? "-1" : "-16777216";
+                int lw = n == 0 ? 13 : 0;
+                int policy = n == 7 ? 2 : 5;
+                int screen = n == 1 ? 50 : 100;
+                sb.Append(" " + n + "{\n  name=\"Color_" + (n + 1) + "\n  localized_name=\"Color_" + (n + 1) + "\n  description=\"\n");
+                sb.Append("  color=" + color + "\n  mode_color=" + color + "\n  color_policy=" + policy + "\n  physical_pen_number=0\n  virtual_pen_number=0\n");
+                sb.Append("  screen=" + screen + "\n  linepattern_size=0.5\n  linetype=31\n  adaptive_linetype=TRUE\n  lineweight=" + lw + "\n");
+                sb.Append("  fill_style=73\n  end_style=4\n  join_style=5\n }\n");
+            }
+            sb.Append("}\ncustom_lineweight_table{\n");
+            for (int i = 0; i < PlotStyleTable.StandardLineweights.Length; i++)
+                sb.Append(" " + i + "=" + PlotStyleTable.StandardLineweights[i].ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "\n");
+            sb.Append("}\n");
+            return sb.ToString();
+        }
+
+        public static void TestCtbFileIsReadIntoPens()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "fdd-test.ctb");
+            File.WriteAllBytes(path, PlotStyleTable.Compress(CtbText()));
+            Assert.True(PlotStyleTable.Decompress(File.ReadAllBytes(path)).StartsWith("description="), "compressed format round-trips");
+            var t = PlotStyleTable.Load(path);
+            Assert.Equal("FD test pens", t.Description, "description");
+            Assert.Equal(0x000000u, t.Pen(1).Color, "colour 1 plots black");
+            Assert.Near(0.50, t.Pen(1).LineWeightMm ?? -1, 1e-9, "colour 1 plots 0.50 mm (lineweight index 13)");
+            Assert.True(t.Pen(2).Color == null, "colour 2 keeps the object's colour");
+            Assert.Equal(50, t.Pen(2).Screen, "colour 2 screened to 50 %");
+            Assert.True(t.Pen(2).LineWeightMm == null, "colour 2 keeps the object's lineweight");
+            Assert.True(t.Pen(8).Grayscale, "colour 8 plots grey");
+            Assert.Equal(0x000000u, t.Pen(200).Color, "colour 200 black");
+            Assert.True(t.Pen(-1).Color == null, "a true colour plots as itself");
+
+            // Screening yellow (255,255,0) to 50 % -> (255,255,128); grey of pure red.
+            Assert.Equal(0xFFFF80u, PlotStyleTable.PlotColor(t.Pen(2), 0xFFFF00), "screening fades toward white");
+            Assert.Equal(0x4C4C4Cu, PlotStyleTable.PlotColor(new PlotPen { Grayscale = true }, 0xFF0000), "grayscale of red");
+            Assert.Equal(0x000000u, PlotStyleTable.PlotColor(PlotStyleTable.Monochrome().Pen(4), 0x00FFFF), "built-in monochrome plots cyan black");
+            bool threw = false;
+            try { PlotStyleTable.Decompress(new byte[100]); } catch (InvalidDataException) { threw = true; }
+            Assert.True(threw, "a non-ctb file is refused cleanly");
+        }
+
+        public static void TestPlotComposerPlacesScalesAndPens()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var red = new ACadSharp.Tables.Layer("PLAN-SubjectBoundary") { Color = new ACadSharp.Color(1), LineWeight = ACadSharp.LineWeightType.W35 };
+            doc.Layers.Add(red);
+            // A 100 m x 50 m boundary in model space on a red, 0.35 mm layer.
+            var pl = new ACadSharp.Entities.LwPolyline { IsClosed = true, Layer = red };
+            foreach (var (x, y) in new[] { (0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0) })
+                pl.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            doc.ModelSpace.Entities.Add(pl);
+            var scene = new SceneBuilder(doc).Model();
+            var prim = scene.AllPrims().Single();
+            Assert.Equal((short)1, prim.Aci, "colour number resolved through ByLayer");
+            Assert.Near(0.35, prim.LineWeightMm, 1e-9, "lineweight resolved through ByLayer");
+            Assert.Equal(0xFF0000u, prim.PlotRgb, "true red for plotting");
+
+            // 1:500 (2 mm per metre) on 11x17 landscape, centred, no plot styles.
+            var setup = new PlotSetup { PaperWidthMm = 279.4, PaperHeightMm = 431.8, Landscape = true, Area = PlotArea.Extents, MmPerUnit = 2, Center = true };
+            var page = PlotComposer.Compose(scene, setup);
+            Assert.Near(431.8, page.WidthMm, 1e-9, "landscape: the long side across");
+            Assert.Near(200, page.Placed.Width, 1e-9, "100 m at 1:500 is 200 mm");
+            Assert.Near((431.8 - 200) / 2, page.Placed.X1, 1e-9, "centred across");
+            var line = page.Page.AllPrims().Single();
+            Assert.Near(0.35, line.PenMm, 1e-9, "object lineweight plots");
+            Assert.Equal(0xFF0000u, line.Rgb, "object colour plots with no table");
+
+            // With the monochrome table and lineweights off: black hairline.
+            setup.Styles = PlotStyleTable.Monochrome(); setup.PlotLineweights = false;
+            line = PlotComposer.Compose(scene, setup).Page.AllPrims().Single();
+            Assert.Equal(0x000000u, line.Rgb, "monochrome plots it black");
+            Assert.Near(0, line.PenMm, 1e-9, "lineweights off = thinnest pen");
+
+            // Fit to Letter portrait: 100 x 50 m into 215.9 mm wide.
+            var fit = PlotComposer.Compose(scene, new PlotSetup { PaperWidthMm = 215.9, PaperHeightMm = 279.4, Landscape = false, Area = PlotArea.Extents, FitToPaper = true, Center = true });
+            Assert.Near(2.159, fit.MmPerUnit, 1e-9, "fit scale is set by the width");
+            Assert.True(fit.Notes.Count == 0, "fits, no warning");
+            // Too big: 1:100 won't fit on Letter - warned.
+            Assert.True(PlotComposer.Compose(scene, new PlotSetup { Area = PlotArea.Extents, MmPerUnit = 10 }).Notes.Any(n => n.Contains("cut off")), "an oversize plot is flagged");
+
+            // Upside down: the boundary's first corner lands at the opposite corner of the page.
+            var up = PlotComposer.Compose(scene, new PlotSetup { PaperWidthMm = 279.4, PaperHeightMm = 431.8, Landscape = true, Area = PlotArea.Extents, MmPerUnit = 2, UpsideDown = true });
+            var first = up.Page.AllPrims().Single().Points[0];
+            Assert.Near(431.8, first.X, 1e-9, "upside down: E flipped"); Assert.Near(279.4, first.Y, 1e-9, "N flipped");
+
+            // The PDF carries the pen width (0.35 mm = 0.992 pt).
+            setup.Styles = null; setup.PlotLineweights = true;
+            string pdf = Path.Combine(Path.GetTempPath(), "fdd-plot-test.pdf");
+            PdfSceneWriter.WritePage(PlotComposer.Compose(scene, setup), pdf, "test");
+            Assert.True(File.Exists(pdf) && new FileInfo(pdf).Length > 200, "PDF written");
+        }
+            public static void TestLayoutPageSetupRoundTripsThroughTheDwg()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var layout = new ACadSharp.Objects.Layout("RPLAN-22X34");
+            doc.Layouts.Add(layout);
+            var setup = new PlotSetup
+            {
+                PaperWidthMm = 863.6, PaperHeightMm = 558.8, PaperName = PaperSize.Match(558.8, 863.6)!.Name, Landscape = true,
+                Area = PlotArea.Layout, MmPerUnit = 1, Center = true, PlotLineweights = true, PlotWithStyles = true,
+            };
+            LayoutPlotSetup.Write(layout, setup, @"C:\\Plot Styles\\FD-Mono.ctb", "HP DesignJet T650");
+            string path = Path.Combine(Path.GetTempPath(), "fdd-pagesetup-test.dwg");
+            ACadSharp.IO.DwgWriter.Write(path, doc);
+            var back = ACadSharp.IO.DwgReader.Read(path).Layouts.First(l => l.Name == "RPLAN-22X34");
+            var read = LayoutPlotSetup.Read(back, out var ctb, out var printer);
+            Assert.Equal("FD-Mono.ctb", ctb, "plot style table saved by file name, as AutoCAD does");
+            Assert.Equal("HP DesignJet T650", printer, "printer saved");
+            Assert.True(read.Landscape && !read.UpsideDown, "landscape saved as a 90 degree turn");
+            Assert.Near(558.8, Math.Min(read.PaperWidthMm, read.PaperHeightMm), 0.01, "paper size");
+            Assert.Equal("ANSI D / 22x34 (22 x 34 in)", read.PaperName, "recognised as 22x34");
+            Assert.True(read.Center && read.PlotLineweights && read.PlotWithStyles && !read.FitToPaper, "flags");
+            Assert.Near(1, read.MmPerUnit, 1e-9, "1:1");
+            Assert.True(read.Area == PlotArea.Layout, "plots the layout");
+
+            // A model-space window at 1:500 (metres), fit off; then fit on.
+            var model = new PlotSetup { Area = PlotArea.Window, Region = new Rect(10, 20, 110, 70), MmPerUnit = 2, Landscape = false };
+            LayoutPlotSetup.Write(layout, model, null, LayoutPlotSetup.PdfPrinter);
+            var m = LayoutPlotSetup.Read(layout, out var noCtb, out _);
+            Assert.True(noCtb == null, "no table");
+            Assert.Near(2, m.MmPerUnit, 1e-9, "1 mm = 0.5 m kept as a ratio");
+            Assert.True(m.Area == PlotArea.Window && m.Region.HasValue && Math.Abs(m.Region.Value.X2 - 110) < 1e-9, "window kept");
+            Assert.True(!m.Landscape, "portrait");
+            model.FitToPaper = true;
+            LayoutPlotSetup.Write(layout, model, null, LayoutPlotSetup.PdfPrinter);
+            Assert.True(LayoutPlotSetup.Read(layout, out _, out _).FitToPaper, "fit kept");
+        }
     }
 }

@@ -83,6 +83,30 @@ bottom edge above the taskbar (a fixed 1440x900 ran off a laptop screen at
   the PDF plot, so the screen, the preview and the PDF always agree.
 - **DrawingCanvas** paints that list with culling, cached text and frozen pens.
   It handles zoom at the cursor, pan and snap markers.
+- **Printing** (v0.4.28): `SceneBuilder` now stamps each prim with its
+  entity's colour number (`Aci`, ByLayer/ByBlock resolved, -1 for true
+  colour), true plot colour (`PlotRgb`, no on-screen darkening) and
+  lineweight (`LineWeightMm`, -1 = default 0.25). `PlotStyleTable` reads a
+  .ctb - a 60-byte header ("PIAFILEVERSION_2.0,CTBVER1,compress" CR LF
+  "pmzlibcodec" + checksum/length/length) and zlib-compressed `key=value` /
+  `name{…}` text; plot_style entry n is colour n+1, `color` -1 (or
+  0xC3FFFFFF) = object colour else the low 24 bits, `color_policy` bit 2 =
+  grayscale, `screen` 0-100, `lineweight` an index into
+  custom_lineweight_table (0 = object). `PlotComposer` lays a scene out on
+  paper per a `PlotSetup` (area, scale or fit into the printable area,
+  centre/offset, landscape = long side across, upside-down = 180°) and
+  resolves every prim's pen (`PenMm`, 0 = thinnest). The composed page is a
+  paper-mm scene, so `PdfSceneWriter.WritePage` (now with per-line widths)
+  writes it and the app's `PlotPageElement` draws it for Preview and for
+  Windows printers (a FixedDocument page through `XpsDocumentWriter`, with
+  a PrintTicket for paper, orientation and copies; the printable margin is
+  the driver's largest edge margin, applied all round).
+  `FdDraft.Cad.LayoutPlotSetup` maps a layout's stored page setup
+  (StyleSheet, SystemPrinterName, paper, rotation, PlotType, window, scale
+  ratio, flags) to and from a `PlotSetup`; the dialog opens with the
+  sheet's saved setup, and Apply to Layout / "Save changes to layout"
+  writes it back. The composition logic is tested on the Linux box; the
+  dialog and printer calls are compile-checked only.
 - **PDF plotting** is FD-Draft's own writer: one page the size of the sheet at
   1:1, vector linework, and the PDF base font Helvetica with real metrics for
   alignment. No PDF library, and no printer driver involved.

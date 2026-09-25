@@ -207,7 +207,7 @@ namespace FdDraft.App
             file.Items.Add(Item("_Save", "Ctrl+S", () => Save(false)));
             file.Items.Add(Item("Save _As…", "", () => Save(true)));
             file.Items.Add(new Separator());
-            file.Items.Add(Item("_Plot sheet to PDF…", "Ctrl+P", PlotPdf));
+            file.Items.Add(Item("_Print / plot…", "Ctrl+P", PlotPdf));
             file.Items.Add(new Separator());
             file.Items.Add(Item("E_xit", "Alt+F4", Close));
             var survey = new MenuItem { Header = "_Survey" };
@@ -270,7 +270,7 @@ namespace FdDraft.App
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Open", "Open a DWG or DWT (Ctrl+O)", () => OpenDrawing(null)));
             bar.Items.Add(B("Save", "Save DWG (Ctrl+S)", () => Save(false)));
-            bar.Items.Add(B("PDF", "Plot the current sheet to a true-scale PDF (Ctrl+P)", PlotPdf));
+            bar.Items.Add(B("Print", "Print or plot: printer or PDF, paper, plot style table (.ctb), scale, area (Ctrl+P)", PlotPdf));
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Extents", "Zoom extents (ZE, or double-click the wheel)", () => _canvas.ZoomExtents()));
             bar.Items.Add(B("Inverse", "Bearing and distance between two points (INV)", StartInverse));
@@ -362,7 +362,7 @@ namespace FdDraft.App
                 case "SAVE": Save(false); break;
                 case "SAVEAS": Save(true); break;
                 case "DRAFT": DraftJob(); break;
-                case "PDF": case "PLOT": PlotPdf(); break;
+                case "PDF": case "PLOT": case "PRINT": PlotPdf(); break;
                 case "ZE": case "Z": case "EXTENTS": _canvas.ZoomExtents(); break;
                 case "INV": case "INVERSE": case "I": StartInverse(); break;
                 case "SNAP": ToggleSnap(); break;
@@ -417,7 +417,7 @@ namespace FdDraft.App
         {
             Log("  DRAFT   draft an FD-Pro job onto the firm template   (Ctrl+D)");
             Log("  OPEN / NEW / SAVE / SAVEAS   drawings (DWG, DWT)");
-            Log("  PDF     plot the current sheet to a true-scale PDF   (Ctrl+P)");
+            Log("  PRINT   print / plot (Ctrl+P): printer or PDF, paper, plot style table (.ctb), area, scale, orientation");
             Log("  INV     inverse: pick two points for bearing and distance");
             Log("  Click an entity to select it (Ctrl+click adds); Del erases; Ctrl+Z/Ctrl+Y undo/redo");
             Log("  Drag an entity (a label, a line...) to move it - drag one of a selection to move them all; Ctrl+Z undoes");
@@ -544,30 +544,75 @@ namespace FdDraft.App
             }
         }
 
+        /// <summary>The Print dialog's settings for this session (per drawing).</summary>
+        private PlotDialogState _plotState = new PlotDialogState();
+
+        /// <summary>Print (Ctrl+P): the plot dialog - printer or PDF, paper, .ctb, area, scale,
+        /// offset, orientation - then the plot. "Select Print Area" closes it to pick a window on
+        /// the canvas and reopens it as it was.</summary>
         private void PlotPdf()
         {
             if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
-            var d = new SaveFileDialog
+            var visible = _canvas.View.Visible;
+            var dlg = new PlotDialog(_doc, _sheet, _canvas.Scene, visible, _settings, _plotState) { Owner = this };
+            bool ok = dlg.ShowDialog() == true;
+            if (dlg.LayoutChanged) { _dirty = true; UpdateTitle(); }
+            if (!ok) return;
+            if (dlg.Action == PlotDialogAction.PickWindow) { PickPlotWindow(); return; }
+            var setup = _plotState.Setup;
+            var page = PlotComposer.Compose(_canvas.Scene, setup);
+            foreach (var n in page.Notes) Log("  ! " + n);
+            string title = (_job?.Settings.Name ?? System.IO.Path.GetFileNameWithoutExtension(_path ?? "Drawing")) + " - " + _sheet;
+            string how = string.Format(CultureInfo.InvariantCulture, "{0} {1}, {2}, {3}", setup.PaperName, setup.Landscape ? "landscape" : "portrait",
+                setup.FitToPaper ? "fit to paper" : "1 mm = " + (1 / page.MmPerUnit).ToString("0.####", CultureInfo.InvariantCulture) + " units",
+                setup.Styles?.Name ?? "no plot style table");
+            if (_plotState.Printer == LayoutPlotSetup.PdfPrinter)
             {
-                Title = "Plot to PDF", Filter = "PDF (*.pdf)|*.pdf",
-                FileName = (_job != null ? SafeName(_job.Settings.Name) : System.IO.Path.GetFileNameWithoutExtension(_path ?? "Drawing")) + (_sheet == "Model" ? "" : " " + _sheet) + ".pdf",
-                InitialDirectory = EnsureDir(_job != null ? System.IO.Path.Combine(_job.Folder, "export", "fd-draft") : _settings.LastDrawingFolder),
+                var d = new SaveFileDialog
+                {
+                    Title = "Print to PDF", Filter = "PDF (*.pdf)|*.pdf",
+                    FileName = (_job != null ? SafeName(_job.Settings.Name) : System.IO.Path.GetFileNameWithoutExtension(_path ?? "Drawing")) + (_sheet == "Model" ? "" : " " + _sheet) + ".pdf",
+                    InitialDirectory = EnsureDir(_job != null ? System.IO.Path.Combine(_job.Folder, "export", "fd-draft") : _settings.LastDrawingFolder),
+                };
+                if (d.ShowDialog(this) != true) return;
+                try
+                {
+                    PdfSceneWriter.WritePage(page, d.FileName, title);
+                    Log("  printed " + d.FileName + "  (" + how + ")");
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    Log("  could not write the PDF: " + ex.Message);
+                }
+                return;
+            }
+            var err = PlotPrinters.Print(_plotState.Printer, page, setup, title);
+            Log(err == null ? "  sent to " + _plotState.Printer + "  (" + how + (setup.Copies > 1 ? ", " + setup.Copies + " copies" : "") + ")" : "  could not print: " + err);
+        }
+
+        /// <summary>The Print dialog's "Select Print Area": two corners on the canvas, then back to the dialog.</summary>
+        private void PickPlotWindow()
+        {
+            BeginTool("PRINT AREA");
+            _prompt.Text = "Print area - first corner:";
+            Log("PRINT AREA  pick two opposite corners of the area to print (Esc cancels)");
+            Vec2? first = null;
+            _awaitingPoint = p =>
+            {
+                if (first == null) { first = p; _canvas.RubberFrom = p; _prompt.Text = "Print area - opposite corner:"; return; }
+                var r = new FdDraft.Core.Standards.Rect(first.Value.X, first.Value.Y, p.X, p.Y);
+                EndTool();
+                if (r.Width <= 0 || r.Height <= 0) { Log("  that area has no size - print cancelled"); return; }
+                _plotState.Setup.Area = PlotArea.Window;
+                _plotState.Setup.Region = r;
+                PlotPdf();
             };
-            if (d.ShowDialog(this) != true) return;
-            try
-            {
-                PdfSceneWriter.Write(_canvas.Scene, d.FileName, (_job?.Settings.Name ?? "FD-Draft") + " - " + _sheet);
-                Log("  plotted " + d.FileName + (_canvas.Scene.IsPaper ? " (sheet at true scale)" : " (model space fitted to 11x17)"));
-            }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-            {
-                Log("  could not plot: " + ex.Message);
-            }
         }
 
         private void SetDocument(CadDocument doc, string? path, bool dirty, string? showSheet = null)
         {
             _doc = doc; _path = path; _dirty = dirty;
+            _plotState = new PlotDialogState();
             _hidden.Clear();
             _undo.Clear();
             _canvas.Selected.Clear();

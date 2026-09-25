@@ -75,6 +75,7 @@ namespace FdDraft.View
                     c.Append(F(X(r.X1))).Append(' ').Append(F(Y(r.Y1))).Append(' ').Append(F(r.Width * k)).Append(' ').Append(F(r.Height * k)).Append(" re W n\n");
                 }
                 uint lastStroke = uint.MaxValue, lastFill = uint.MaxValue;
+                double lastWidth = 0.3;
                 foreach (var p in g.Prims)
                 {
                     switch (p.Kind)
@@ -82,6 +83,7 @@ namespace FdDraft.View
                         case PrimKind.Polyline:
                             if (p.Points.Count < 2) break;
                             Stroke(c, p.Rgb, ref lastStroke);
+                            Width(c, p, ref lastWidth);
                             c.Append(F(X(p.Points[0].X))).Append(' ').Append(F(Y(p.Points[0].Y))).Append(" m\n");
                             for (int i = 1; i < p.Points.Count; i++) c.Append(F(X(p.Points[i].X))).Append(' ').Append(F(Y(p.Points[i].Y))).Append(" l\n");
                             c.Append(p.Closed ? "s\n" : "S\n");
@@ -96,6 +98,7 @@ namespace FdDraft.View
                         case PrimKind.Circle:
                         {
                             Stroke(c, p.Rgb, ref lastStroke);
+                            Width(c, p, ref lastWidth);
                             double cx = X(p.Center.X), cy = Y(p.Center.Y), r = p.Radius * k, m = r * 0.5523;
                             c.Append(F(cx + r)).Append(' ').Append(F(cy)).Append(" m\n");
                             c.Append(F(cx + r)).Append(' ').Append(F(cy + m)).Append(' ').Append(F(cx + m)).Append(' ').Append(F(cy + r)).Append(' ').Append(F(cx)).Append(' ').Append(F(cy + r)).Append(" c\n");
@@ -159,6 +162,20 @@ namespace FdDraft.View
             foreach (var o in offsets) Raw(o.ToString("0000000000", CultureInfo.InvariantCulture) + " 00000 n \n");
             Raw("trailer\n<< /Size " + (offsets.Count + 1) + " /Root 1 0 R /Info " + offsets.Count + " 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
         }
+
+        /// <summary>A composed plot page's pen width (paper mm -> points; 0 = the device's
+        /// thinnest line); an ordinary scene keeps the ~0.1 mm hairline.</summary>
+        private static void Width(StringBuilder c, Prim p, ref double last)
+        {
+            double w = p.PenMm >= 0 ? p.PenMm * PtPerMm : 0.3;
+            if (Math.Abs(w - last) < 1e-6) return;
+            last = w;
+            c.Append(w.ToString("0.###", CultureInfo.InvariantCulture)).Append(" w\n");
+        }
+
+        /// <summary>Writes a composed plot page (<see cref="PlotComposer"/>): the page at its paper
+        /// size, 1 mm = 1 mm, with each line in its plot pen's colour and width.</summary>
+        public static void WritePage(PlotPage page, string path, string title) => Write(page.Page, path, title);
 
         private static void Stroke(StringBuilder c, uint rgb, ref uint last)
         {

@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.27 (`Directory.Build.props`).
+- **Current version:** 0.4.28 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  69 tests as of v0.4.27, all passing.
+  72 tests as of v0.4.28, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -217,13 +217,28 @@ on Windows; that's still Marc's job when he runs a build.
   (Marc's laptop: the command line and status bar were below the taskbar).
   Opens maximized the first time, remembers size/position/maximized, and
   `WindowFit` pulls a saved window back on screen above the taskbar.
-- **v0.4.27** (current): Marc asked that clicking anything tied to a point
+- **v0.4.27**: Marc asked that clicking anything tied to a point
   (node, elevation, code, icon) highlight and centre it in the Points list.
   Draft now tags point entities with their point number (XData "FDDRAFT"),
   with a by-position fallback for untagged drawings; the Points list and
   the plan select each other. Jobs drafted before this need a re-draft
   (Ctrl+D) to get tags - until then a label dragged far from its point
   won't be recognised.
+- **v0.4.28** (current): Marc asked for AutoCAD's Print dialog "to select
+  the right .ctb and other settings". Built: PlotDialog (printer or PDF,
+  paper, copies, .ctb, area incl. picked window, scale/fit, offset/centre,
+  lineweight + style options, orientation, Preview, Apply to Layout), with
+  .ctb reading (`PlotStyleTable`), page composition (`PlotComposer`),
+  per-line pen widths in the PDF, Windows printing (`PlotPrinters`), and
+  page setups read from / saved to the DWG (`LayoutPlotSetup`). Verified on
+  17 Empire Blvd (monochrome and fit-to-Letter plots look right). Not yet
+  run against a real .ctb from Marc's PC or a real printer - ask him to try
+  his firm's .ctb and plotter. Left out on purpose: shaded viewports, print
+  stamp, background printing, .stb named plot styles.
+- **Next up (Marc asked)**: a right-docked, hover-to-slide-out tool palette
+  (tabs Text Styles / Useful Tools / Line Styles, like MSCAD's) - driven by
+  an editable palette file, each entry setting layer/style/height then
+  starting TEXT or LINE.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

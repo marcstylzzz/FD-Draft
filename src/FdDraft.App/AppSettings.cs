@@ -14,6 +14,8 @@ namespace FdDraft.App
         public string LastJobFolder = "";
         public string LastDrawingFolder = "";
         public bool Snap = true;
+        /// <summary>The folder a .ctb was last browsed from - searched for plot style tables.</summary>
+        public string PlotStyleFolder = "";
         /// <summary>The main window's last normal (not maximized) bounds; NaN = never saved.</summary>
         public double WindowLeft = double.NaN, WindowTop = double.NaN, WindowWidth = double.NaN, WindowHeight = double.NaN;
         /// <summary>Opens maximized the first time, then however it was left.</summary>
@@ -35,6 +37,7 @@ namespace FdDraft.App
                 s.LastJobFolder = ini.GetString("", "last_job_folder", "");
                 s.LastDrawingFolder = ini.GetString("", "last_drawing_folder", "");
                 s.Snap = ini.GetBool("", "snap", true);
+                s.PlotStyleFolder = ini.GetString("", "plot_style_folder", "");
                 s.WindowLeft = ini.GetDouble("", "window_left", double.NaN);
                 s.WindowTop = ini.GetDouble("", "window_top", double.NaN);
                 s.WindowWidth = ini.GetDouble("", "window_width", double.NaN);
@@ -66,6 +69,7 @@ namespace FdDraft.App
                     "last_job_folder=" + LastJobFolder,
                     "last_drawing_folder=" + LastDrawingFolder,
                     "snap=" + (Snap ? "true" : "false"),
+                    "plot_style_folder=" + PlotStyleFolder,
                     "window_left=" + Num(WindowLeft),
                     "window_top=" + Num(WindowTop),
                     "window_width=" + Num(WindowWidth),

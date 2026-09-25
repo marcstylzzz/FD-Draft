@@ -65,6 +65,17 @@ namespace FdDraft.View
         public string Layer = "0";
         /// <summary>DWG handle of the top-level entity this came from (for selection).</summary>
         public ulong Handle;
+        /// <summary>The entity's colour number (1-255, ByLayer/ByBlock resolved) - what a .ctb
+        /// plot style table maps by. -1 for a true (RGB) colour; -2 until set.</summary>
+        public short Aci = -2;
+        /// <summary>The entity's own colour for plotting: <see cref="Rgb"/> without the
+        /// on-screen darkening of pale colours (colour 7 still plots black on white paper).</summary>
+        public uint PlotRgb;
+        /// <summary>Lineweight in mm (ByLayer/ByBlock resolved); -1 = the default lineweight.</summary>
+        public double LineWeightMm = -1;
+        /// <summary>On a composed plot page: the pen width in paper mm (0 = the device's
+        /// thinnest line). -1 on an ordinary scene.</summary>
+        public double PenMm = -1;
         public Rect Bounds;
 
         public void ComputeBounds()

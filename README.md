@@ -68,8 +68,19 @@ FdDraft.App project in Visual Studio).
   sheet's viewport. Esc ends it.
 - **Layers** panel: display on/off for each layer. Layers frozen in the drawing
   are shown greyed.
-- **Save** (Ctrl+S) writes the DWG. **PDF** (Ctrl+P) plots the current sheet as
-  a true-scale vector PDF.
+- **Save** (Ctrl+S) writes the DWG. **Print** (Ctrl+P) opens the plot dialog,
+  laid out like AutoCAD's: printer (FD-Draft's own vector PDF, or any
+  installed Windows printer/plotter), paper size, copies, **plot style
+  table (.ctb)**, what to print (layout, extents, display, or a picked
+  window), scale or fit to paper, offset or centre, lineweights on/off,
+  portrait/landscape/upside-down, a **Preview**, and **Apply to Layout**,
+  which saves the setup into the DWG's layout the way AutoCAD does (so
+  the sheet opens with it next time, in FD-Draft, AutoCAD or MSCAD).
+  .ctb files are found in FD-Draft's own `%APPDATA%\FD-Draft\Plot Styles`
+  folder, the template's folder, AutoCAD/MicroSurvey "Plot Styles" folders,
+  or wherever you browse to with the … button; monochrome and grayscale
+  are built in. A .ctb maps each colour number to a pen colour,
+  lineweight and screening, just as it does in AutoCAD.
 - **Points list follows the plan**: click anything belonging to a survey
   point - its node, symbol, point number, elevation or code/monument label -
   and its row in the Points list is selected and scrolled to the middle
