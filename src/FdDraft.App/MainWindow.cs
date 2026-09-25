@@ -104,6 +104,7 @@ namespace FdDraft.App
             FontFamily = new FontFamily("Segoe UI");
             Background = new SolidColorBrush(Color.FromRgb(0xF3, 0xF3, 0xF3));
             _canvas.SnapEnabled = _settings.Snap;
+            if (_settings.SnapModes >= 0) _canvas.SnapModes = (SnapModes)_settings.SnapModes;
 
             var root = new DockPanel();
             var menu = BuildMenu();
@@ -141,6 +142,10 @@ namespace FdDraft.App
                 list.Resources[SystemColors.InactiveSelectionHighlightBrushKey] = SystemColors.HighlightBrush;
                 list.Resources[SystemColors.InactiveSelectionHighlightTextBrushKey] = SystemColors.HighlightTextBrush;
             }
+            // The Layers and Codes lists use Windows' own item look, which paints an unfocused
+            // selection pale grey whatever the colours above say - give them a plain one.
+            _layers.ItemContainerStyle = ListItemStyle(typeof(ListBoxItem), gridRow: false);
+            _codes.ItemContainerStyle = ListItemStyle(typeof(ListViewItem), gridRow: true);
             var propsPanel = new DockPanel();
             var editRow = new StackPanel();
             editRow.Children.Add(new TextBlock { Text = "Text of the selected label:", Margin = new Thickness(4, 4, 4, 0), Foreground = Brushes.Gray, FontSize = 11 });
@@ -194,6 +199,7 @@ namespace FdDraft.App
             _canvas.EntityClicked += OnEntityClicked;
             _canvas.BoxSelected += OnBoxSelected;
             _canvas.Dragged += OnDragged;
+            _canvas.RightClicked += OnRightClick;
             Closing += OnClosing;
             Activated += (s, e) => { if (_reloadPaletteOnActivate) { _reloadPaletteOnActivate = false; LoadPalette(); } };
             PreviewKeyDown += OnKey;
@@ -328,7 +334,161 @@ namespace FdDraft.App
             bar.Items.Add(B("Set Layer", "Reassign the selected entities to the current layer", SetSelectionLayer));
             var tray = new ToolBarTray();
             tray.ToolBars.Add(bar);
+            tray.ToolBars.Add(BuildViewBar());
+            tray.ToolBars.Add(BuildSnapBar());
             return tray;
+        }
+
+        private readonly ToggleButton _panButton = new ToggleButton { Content = "Pan", ToolTip = "Pan mode: drag with the left button to pan (PAN; Esc or click again to stop). Middle-drag always pans.", Padding = new Thickness(8, 2, 8, 2) };
+        private readonly Dictionary<SnapModes, ToggleButton> _snapButtons = new Dictionary<SnapModes, ToggleButton>();
+
+        /// <summary>The View toolbar: regen, pan and the zooms.</summary>
+        private ToolBar BuildViewBar()
+        {
+            var bar = new ToolBar { Band = 1 };
+            Button B(string text, string tip, Action a) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(8, 2, 8, 2) }; b.Click += (s, e) => a(); return b; }
+            bar.Items.Add(B("Regen", "Redraw the drawing from the file (REGEN)", Regen));
+            _panButton.Checked += (s, e) => { _canvas.PanMode = true; _canvas.Cursor = Cursors.Hand; };
+            _panButton.Unchecked += (s, e) => { _canvas.PanMode = false; _canvas.Cursor = Cursors.Cross; };
+            bar.Items.Add(_panButton);
+            bar.Items.Add(B("Zoom Window", "Zoom to a box: pick two corners (ZW)", StartZoomWindow));
+            bar.Items.Add(B("Zoom Prev", "Back to the previous view (ZP)", ZoomPrevious));
+            bar.Items.Add(B("Zoom In", "Zoom in (ZI) - the wheel zooms at the cursor", () => _canvas.ZoomBy(1.6)));
+            bar.Items.Add(B("Zoom Out", "Zoom out (ZO)", () => _canvas.ZoomBy(1 / 1.6)));
+            bar.Items.Add(B("Extents", "Zoom to everything (ZE, or double-click the wheel)", () => _canvas.ZoomExtents()));
+            return bar;
+        }
+
+        /// <summary>The Object Snap toolbar: each snap mode on/off, like AutoCAD's (orange = on).</summary>
+        private ToolBar BuildSnapBar()
+        {
+            var bar = new ToolBar { Band = 1 };
+            var on = new SolidColorBrush(Color.FromRgb(0xFF, 0xD2, 0x7F));
+            foreach (var (mode, label, tip) in new[]
+            {
+                (SnapModes.Endpoint, "End", "Endpoint: line and polyline ends, arc ends"),
+                (SnapModes.Midpoint, "Mid", "Midpoint of a line or polyline span"),
+                (SnapModes.Intersection, "Int", "Intersection: where two lines (or a line and a circle) cross"),
+                (SnapModes.Center, "Cen", "Center of a circle or arc"),
+                (SnapModes.Quadrant, "Quad", "Quadrant: a circle's north, south, east or west point"),
+                (SnapModes.Perpendicular, "Perp", "Perpendicular: the foot of the perpendicular from the last point"),
+                (SnapModes.Nearest, "Near", "Nearest point on a line or circle"),
+                (SnapModes.Node, "Node", "Node: survey points and point objects"),
+            })
+            {
+                var t = new ToggleButton { Content = label, ToolTip = tip, Padding = new Thickness(6, 2, 6, 2), IsChecked = (_canvas.SnapModes & mode) != 0 };
+                t.Checked += (s, e) => { t.Background = on; SetSnapMode(mode, true); };
+                t.Unchecked += (s, e) => { t.ClearValue(Control.BackgroundProperty); SetSnapMode(mode, false); };
+                if (t.IsChecked == true) t.Background = on;
+                _snapButtons[mode] = t;
+                bar.Items.Add(t);
+            }
+            var none = new Button { Content = "✕ None", ToolTip = "Turn every object snap off (running snaps stay switchable with F3)", Padding = new Thickness(6, 2, 6, 2) };
+            none.Click += (s, e) => { foreach (var b in _snapButtons.Values) b.IsChecked = false; };
+            bar.Items.Add(none);
+            return bar;
+        }
+
+        private void SetSnapMode(SnapModes mode, bool on)
+        {
+            _canvas.SnapModes = on ? _canvas.SnapModes | mode : _canvas.SnapModes & ~mode;
+            _settings.SnapModes = (int)_canvas.SnapModes;
+            _settings.Save();
+        }
+
+        private void Regen()
+        {
+            if (_doc == null) return;
+            var c = _canvas.View.Center; var z = _canvas.View.Zoom;
+            Rebuild(fit: false);
+            _canvas.ZoomTo(c, z);
+            Log("  regenerated");
+        }
+
+        private void ZoomPrevious()
+        {
+            if (!_canvas.ZoomPrevious()) Log("  no previous view");
+        }
+
+        private void StartZoomWindow()
+        {
+            if (_canvas.Scene == null) return;
+            var resume = (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text);
+            bool wasTool = _activeTool.Length > 0;
+            if (wasTool) { Log("  (zoom window - the " + _activeTool + " command carries on afterwards)"); }
+            BeginTool("ZOOM W");
+            _prompt.Text = "Zoom window - first corner:";
+            Vec2? first = null;
+            _awaitingLine = null;
+            _awaitingPoint = p =>
+            {
+                if (first == null) { first = p; _canvas.RubberFrom = p; _prompt.Text = "Zoom window - opposite corner:"; return; }
+                var r = new FdDraft.Core.Standards.Rect(first.Value.X, first.Value.Y, p.X, p.Y);
+                EndTool();
+                _canvas.ZoomWindow(r);
+                if (wasTool)
+                {
+                    // A transparent zoom: hand the running command back as it was.
+                    (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text) = resume;
+                    _canvas.ToolActive = _awaitingPoint != null;
+                }
+            };
+        }
+
+        /// <summary>
+        /// Right-click on the canvas. While a command is waiting for input it's Enter (finishing a
+        /// LINE, COPY, TRIM...) - or cancels a command that only takes picks - as in AutoCAD.
+        /// Otherwise it's the edit menu, for the item under the cursor (selected first if it
+        /// wasn't) or for the current selection.
+        /// </summary>
+        private void OnRightClick(ulong? handle, System.Windows.Point at)
+        {
+            if (_activeTool.Length > 0)
+            {
+                if (_awaitingLine != null) RunCommand("");
+                else { EndTool(); Log("  *cancelled*"); }
+                return;
+            }
+            if (handle.HasValue && !_canvas.Selected.Contains(handle.Value))
+            {
+                _canvas.Selected.Clear();
+                _canvas.Selected.Add(handle.Value);
+                ShowPointOf(handle.Value);
+                UpdateProperties();
+                _canvas.InvalidateVisual();
+            }
+            bool any = _canvas.Selected.Count > 0;
+            var menu = new ContextMenu();
+            MenuItem Item(string header, string gesture, Action a, bool enabled = true)
+            {
+                var m = new MenuItem { Header = header, InputGestureText = gesture, IsEnabled = enabled };
+                m.Click += (s, e) => a();
+                return m;
+            }
+            menu.Items.Add(Item("Undo", "Ctrl+Z", DoUndo, _undo.CanUndo));
+            menu.Items.Add(Item("Redo", "Ctrl+Y", DoRedo, _undo.CanRedo));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Erase selection", "Del", EraseSelected, any));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Select all in view", "Ctrl+A", SelectAll));
+            menu.Items.Add(Item("Select same layer", "SELLAYER", () => SelectByLayer(""), any));
+            if (any)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Move", "MOVE", StartMove));
+                menu.Items.Add(Item("Copy", "COPY", StartCopy));
+                menu.Items.Add(Item("Rotate", "ROTATE", StartRotate));
+                menu.Items.Add(Item("Mirror", "MIRROR", StartMirror));
+                menu.Items.Add(Item("Change to current layer", "LAYER", SetSelectionLayer));
+                menu.Items.Add(Item("Properties", "", () => { if (_propertiesTab != null) _leftTabs.SelectedItem = _propertiesTab; }));
+            }
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Zoom extents", "ZE", () => _canvas.ZoomExtents()));
+            menu.Items.Add(Item("Zoom previous", "ZP", ZoomPrevious));
+            menu.PlacementTarget = _canvas;
+            menu.Placement = PlacementMode.RelativePoint;
+            menu.HorizontalOffset = at.X; menu.VerticalOffset = at.Y;
+            menu.IsOpen = true;
         }
 
         private FrameworkElement BuildCommandArea()
@@ -386,7 +546,26 @@ namespace FdDraft.App
                 case "SAVEAS": Save(true); break;
                 case "DRAFT": DraftJob(); break;
                 case "PDF": case "PLOT": case "PRINT": PlotPdf(); break;
-                case "ZE": case "Z": case "EXTENTS": _canvas.ZoomExtents(); break;
+                case "ZE": case "EXTENTS": _canvas.ZoomExtents(); break;
+                case "Z": case "ZOOM":
+                    switch (arg.ToUpperInvariant())
+                    {
+                        case "W": case "WINDOW": StartZoomWindow(); break;
+                        case "P": case "PREVIOUS": ZoomPrevious(); break;
+                        case "I": case "IN": _canvas.ZoomBy(1.6); break;
+                        case "O": case "OUT": _canvas.ZoomBy(1 / 1.6); break;
+                        default: _canvas.ZoomExtents(); break;
+                    }
+                    break;
+                case "ZW": StartZoomWindow(); break;
+                case "ZP": ZoomPrevious(); break;
+                case "ZI": _canvas.ZoomBy(1.6); break;
+                case "ZO": _canvas.ZoomBy(1 / 1.6); break;
+                case "REGEN": case "RE": Regen(); break;
+                case "PAN": case "P": _panButton.IsChecked = _panButton.IsChecked != true; Log(_panButton.IsChecked == true ? "  pan mode on - drag to pan (PAN again, or Esc, to stop)" : "  pan mode off"); break;
+                case "OSNAP":
+                    Log("  object snaps on: " + (_canvas.SnapModes == SnapModes.None ? "none" : _canvas.SnapModes.ToString()) + (_canvas.SnapEnabled ? "" : "  (all snapping is off - F3)"));
+                    break;
                 case "INV": case "INVERSE": case "I": StartInverse(); break;
                 case "SNAP": ToggleSnap(); break;
                 case "MODEL": ShowSheet("Model"); break;
@@ -472,6 +651,9 @@ namespace FdDraft.App
             Log("  DIMRAD / DIMDIA   radius / diameter dimension: pick on an arc or circle, then the text height");
             Log("  DIMANG  angle dimension: pick the vertex, a point on each leg, then the arc location (it picks which angle)");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
+            Log("  REGEN · PAN · ZW zoom window · ZP zoom previous · ZI / ZO zoom in/out (also ZOOM W/P/I/O)");
+            Log("  Object snap toolbar: End Mid Int Cen Quad Perp Near Node - each on/off; F3 turns snapping off/on; OSNAP lists them");
+            Log("  Right-click: the edit menu for what's under the cursor; while a command is waiting it's Enter");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
             Log("  VPINFO [sheet|ALL]   list each viewport on the sheet (all sheets from Model) and whether it shows model space");
             Log("  MVIEW   on a sheet tab: pick two corners, then a scale - shows model space on that sheet");
@@ -485,6 +667,7 @@ namespace FdDraft.App
             if (e.Key == Key.Escape)
             {
                 if (_activeTool.Length > 0) { EndTool(); Log("  *cancelled*"); }
+                else if (_panButton.IsChecked == true) _panButton.IsChecked = false;
                 e.Handled = true;
                 return;
             }
@@ -724,13 +907,14 @@ namespace FdDraft.App
             if (match == null) { Log("  no sheet named " + name); return; }
             _sheet = match;
             _sheets.SelectedItem = match;
+            _canvas.ClearViewHistory();
             Rebuild(fit: true);
         }
 
         private void Rebuild(bool fit)
         {
             if (_doc == null) return;
-            var builder = new SceneBuilder(_doc, _hidden);
+            var builder = new SceneBuilder(_doc, _hidden) { DarkModel = true };
             var scene = _sheet == "Model" ? builder.Model() : builder.Layout(_sheet);
             _canvas.Scene = scene;
             if (fit) _canvas.ZoomExtents();
@@ -1019,6 +1203,42 @@ namespace FdDraft.App
             finally { _syncingPoints = false; }
             if (_job != null && PointLinks.Find(e, _job.Points) is SurveyPoint p)
                 _coords.Text = "point " + p.Id + "  " + NE(new Vec2(p.Easting, p.Northing)) + "  " + p.Code;
+        }
+
+        /// <summary>
+        /// A list row that shows its selection in the normal blue whether or not the list has the
+        /// focus, with a light blue hover. <paramref name="gridRow"/>: a ListView with columns.
+        /// </summary>
+        private static Style ListItemStyle(Type itemType, bool gridRow)
+        {
+            var border = new FrameworkElementFactory(typeof(Border), "Bd");
+            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+            border.SetValue(Border.PaddingProperty, new Thickness(2, 1, 2, 1));
+            border.SetValue(Border.SnapsToDevicePixelsProperty, true);
+            FrameworkElementFactory content;
+            if (gridRow)
+            {
+                content = new FrameworkElementFactory(typeof(GridViewRowPresenter));
+                content.SetValue(GridViewRowPresenter.ColumnsProperty, new TemplateBindingExtension(GridView.ColumnCollectionProperty));
+                content.SetValue(GridViewRowPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
+            }
+            else content = new FrameworkElementFactory(typeof(ContentPresenter));
+            border.AppendChild(content);
+            var template = new ControlTemplate(itemType) { VisualTree = border };
+            var hover = new MultiTrigger();
+            hover.Conditions.Add(new Condition(UIElement.IsMouseOverProperty, true));
+            hover.Conditions.Add(new Condition(Selector.IsSelectedProperty, false));
+            hover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xE5, 0xF3, 0xFB)), "Bd"));
+            template.Triggers.Add(hover);
+            var selected = new Trigger { Property = Selector.IsSelectedProperty, Value = true };
+            selected.Setters.Add(new Setter(Border.BackgroundProperty, SystemColors.HighlightBrush, "Bd"));
+            selected.Setters.Add(new Setter(Control.ForegroundProperty, SystemColors.HighlightTextBrush));
+            template.Triggers.Add(selected);
+            var style = new Style(itemType);
+            style.Setters.Add(new Setter(Control.TemplateProperty, template));
+            style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+            style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
+            return style;
         }
 
         /// <summary>Scrolls a list so item <paramref name="index"/> of <paramref name="count"/> sits in its middle.</summary>

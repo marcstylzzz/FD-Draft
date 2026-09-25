@@ -1784,5 +1784,53 @@ namespace FdDraft.Tests
             var loose = new ACadSharp.Entities.Line { Layer = fence };
             Assert.True(PointLinks.CodeOf(loose, points, codes) == null, "FENCE is shared by FC and FW - no guess");
         }
+            // ---- object snap modes (v0.4.31) -------------------------------------------------------
+
+        public static void TestObjectSnapModes()
+        {
+            var doc = new ACadSharp.CadDocument();
+            // Two lines crossing at (5,5), and a circle radius 2 at (20,0).
+            doc.ModelSpace.Entities.Add(Ln(0, 0, 10, 10));
+            doc.ModelSpace.Entities.Add(Ln(0, 10, 10, 0));
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(20, 0, 0), Radius = 2 });
+            var scene = new SceneBuilder(doc).Model();
+
+            var x = scene.Snap(new Vec2(5.2, 4.9), 0.5, SnapModes.Intersection, null);
+            Assert.True(x.HasValue && x.Value.Kind == SnapKind.Intersection, "intersection found");
+            Assert.Near(5, x!.Value.Point.X, 1e-9, "at the crossing E"); Assert.Near(5, x.Value.Point.Y, 1e-9, "N");
+            Assert.True(scene.Snap(new Vec2(5.2, 4.9), 0.5, SnapModes.Endpoint, null) == null, "with only Endpoint on, the crossing isn't offered");
+
+            var q = scene.Snap(new Vec2(21.9, 0.2), 0.5, SnapModes.Quadrant, null);
+            Assert.True(q.HasValue && q.Value.Kind == SnapKind.Quadrant && Math.Abs(q.Value.Point.X - 22) < 1e-9, "circle quadrant");
+
+            // Perpendicular from (0,5) onto the first line (y = x): foot at (2.5,2.5).
+            var perp = scene.Snap(new Vec2(2.6, 2.3), 0.5, SnapModes.Perpendicular, new Vec2(0, 5));
+            Assert.True(perp.HasValue && perp.Value.Kind == SnapKind.Perpendicular, "perpendicular found");
+            Assert.Near(2.5, perp!.Value.Point.X, 1e-9, "foot E"); Assert.Near(2.5, perp.Value.Point.Y, 1e-9, "foot N");
+
+            var near = scene.Snap(new Vec2(7.1, 7.3), 0.5, SnapModes.Nearest, null);
+            Assert.True(near.HasValue && Math.Abs(near!.Value.Point.X - near.Value.Point.Y) < 1e-9, "nearest lands on the line");
+
+            // Nearest never beats something exact in reach.
+            var mixed = scene.Snap(new Vec2(9.8, 9.9), 0.5, SnapModes.Nearest | SnapModes.Endpoint, null);
+            Assert.True(mixed.HasValue && mixed.Value.Kind == SnapKind.Endpoint, "endpoint wins over nearest");
+            Assert.True(scene.Snap(new Vec2(9.8, 9.9), 0.5, SnapModes.None, null) == null, "all snaps off");
+        }
+            public static void TestModelSpaceDrawsForABlackBackground()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var yellow = new ACadSharp.Tables.Layer("YELLOW") { Color = new ACadSharp.Color(2) };
+            doc.Layers.Add(yellow);
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(1, 0, 0)) { Color = new ACadSharp.Color(7) });
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Line(new CSMath.XYZ(0, 1, 0), new CSMath.XYZ(1, 1, 0)) { Layer = yellow });
+            var dark = new SceneBuilder(doc) { DarkModel = true }.Model();
+            Assert.True(dark.DarkBackground, "flagged for a black background");
+            var prims = dark.AllPrims().ToList();
+            Assert.Equal(0xFFFFFFu, prims[0].Rgb, "colour 7 draws white on black");
+            Assert.Equal(0xFFFF00u, prims[1].Rgb, "yellow keeps its full brightness on black");
+            Assert.Equal(0x000000u, prims[0].PlotRgb, "but still plots black on paper");
+            var light = new SceneBuilder(doc).Model();
+            Assert.True(!light.DarkBackground && light.AllPrims().First().Rgb == 0x000000u, "default (CLI, SVG, tests) is unchanged: black on white");
+        }
     }
 }

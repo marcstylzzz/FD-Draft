@@ -14,6 +14,8 @@ namespace FdDraft.App
         public string LastJobFolder = "";
         public string LastDrawingFolder = "";
         public bool Snap = true;
+        /// <summary>Object snap modes on (FdDraft.View.SnapModes flags); -1 = the default set.</summary>
+        public int SnapModes = -1;
         /// <summary>The folder a .ctb was last browsed from - searched for plot style tables.</summary>
         public string PlotStyleFolder = "";
         /// <summary>The main window's last normal (not maximized) bounds; NaN = never saved.</summary>
@@ -37,6 +39,7 @@ namespace FdDraft.App
                 s.LastJobFolder = ini.GetString("", "last_job_folder", "");
                 s.LastDrawingFolder = ini.GetString("", "last_drawing_folder", "");
                 s.Snap = ini.GetBool("", "snap", true);
+                s.SnapModes = ini.GetInt("", "snap_modes", -1);
                 s.PlotStyleFolder = ini.GetString("", "plot_style_folder", "");
                 s.WindowLeft = ini.GetDouble("", "window_left", double.NaN);
                 s.WindowTop = ini.GetDouble("", "window_top", double.NaN);
@@ -69,6 +72,7 @@ namespace FdDraft.App
                     "last_job_folder=" + LastJobFolder,
                     "last_drawing_folder=" + LastDrawingFolder,
                     "snap=" + (Snap ? "true" : "false"),
+                    "snap_modes=" + SnapModes.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "plot_style_folder=" + PlotStyleFolder,
                     "window_left=" + Num(WindowLeft),
                     "window_top=" + Num(WindowTop),

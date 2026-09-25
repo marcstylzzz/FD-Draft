@@ -38,9 +38,18 @@ namespace FdDraft.View
             _hidden = hiddenLayers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
+        /// <summary>
+        /// Draw model space for a black background, the way CAD programs show it: colour 7
+        /// ("black on white, white on black") draws white and pale colours keep their full
+        /// brightness. Sheets are always drawn for white paper. Plot colours are unaffected.
+        /// </summary>
+        public bool DarkModel { get; set; }
+        private bool _dark;
+
         public Scene Model()
         {
-            _scene = new Scene { Name = "Model" };
+            _dark = DarkModel;
+            _scene = new Scene { Name = "Model", DarkBackground = _dark };
             _group = new SceneGroup();
             _scene.Groups.Add(_group);
             foreach (var e in _doc.ModelSpace.Entities) Emit(e, Affine.Identity, null, null, e.Handle, 0);
@@ -50,6 +59,7 @@ namespace FdDraft.View
 
         public Scene Layout(string name)
         {
+            _dark = false;
             var layout = _doc.Layouts.First(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             bool rotated = layout.PaperRotation == ACadSharp.Objects.PlotRotation.Degrees90 || layout.PaperRotation == ACadSharp.Objects.PlotRotation.Degrees270;
             double pw = rotated ? layout.PaperHeight : layout.PaperWidth, ph = rotated ? layout.PaperWidth : layout.PaperHeight;
@@ -150,10 +160,16 @@ namespace FdDraft.View
         private uint Rgb(Entity e, Layer? layer, uint? parentRgb)
         {
             var c = e.Color;
-            if (c.IsByBlock) return parentRgb ?? 0x000000;
+            if (c.IsByBlock) return parentRgb ?? (_dark ? 0xFFFFFFu : 0x000000u);
             if (c.IsByLayer) c = layer?.Color ?? new Color(7);
             if (c.IsTrueColor) return (uint)(c.R << 16 | c.G << 8 | c.B);
             short i = c.Index;
+            if (_dark)
+            {
+                if (i <= 0 || i == 7 || i >= 256) return 0xFFFFFF;
+                var d = Color.GetIndexRGB((byte)i);
+                return (uint)(d[0] << 16 | d[1] << 8 | d[2]);
+            }
             // 7 is "white on black, black on white"; plans are viewed on white paper.
             if (i <= 0 || i == 7 || i >= 256) return 0x000000;
             var rgb = Color.GetIndexRGB((byte)i);

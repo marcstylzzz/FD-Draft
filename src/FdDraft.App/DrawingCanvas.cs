@@ -43,6 +43,13 @@ namespace FdDraft.App
 
         public ViewTransform View { get; } = new ViewTransform();
         public bool SnapEnabled { get; set; } = true;
+        /// <summary>Which object snaps are on (the Object Snap toolbar); used while <see cref="SnapEnabled"/>.</summary>
+        public SnapModes SnapModes { get; set; } = SnapModes.Default;
+        /// <summary>Pan mode (the Pan button): a left-drag pans the view instead of selecting.</summary>
+        public bool PanMode { get; set; }
+        /// <summary>Right-click: the entity under the cursor (if any) and the screen point - for the
+        /// context menu, or to finish the running command.</summary>
+        public event Action<ulong?, Point>? RightClicked;
         /// <summary>First point of a two-point tool (inverse): a rubber band is drawn from it.</summary>
         public Vec2? RubberFrom { get; set; }
         /// <summary>True while a command is waiting for a point (Inverse, Line, Move's pick steps,
@@ -83,8 +90,58 @@ namespace FdDraft.App
             }
         }
 
+        // ---- zoom history (Zoom Previous) ----
+        private readonly List<(Vec2 Center, double Zoom)> _views = new List<(Vec2, double)>();
+        private DateTime _lastViewPush = DateTime.MinValue;
+
+        /// <summary>Remembers the current view before a change, for Zoom Previous. Wheel steps within
+        /// a second of each other count as one change.</summary>
+        private void PushView(bool coalesce = false)
+        {
+            if (_scene == null || View.Zoom <= 0) return;
+            if (coalesce && (DateTime.Now - _lastViewPush).TotalSeconds < 1) { _lastViewPush = DateTime.Now; return; }
+            _lastViewPush = coalesce ? DateTime.Now : DateTime.MinValue;
+            _views.Add((View.Center, View.Zoom));
+            if (_views.Count > 50) _views.RemoveAt(0);
+        }
+
+        /// <summary>Zoom Previous: back to the view before the last zoom or pan. False when there's none.</summary>
+        public bool ZoomPrevious()
+        {
+            if (_views.Count == 0) return false;
+            var (c, z) = _views[_views.Count - 1];
+            _views.RemoveAt(_views.Count - 1);
+            View.Center = c; View.Zoom = z;
+            _lastViewPush = DateTime.MinValue;
+            InvalidateVisual();
+            return true;
+        }
+
+        /// <summary>Zooms so a scene rectangle fills the view.</summary>
+        public void ZoomWindow(FdDraft.Core.Standards.Rect r)
+        {
+            if (r.Width <= 0 || r.Height <= 0) return;
+            PushView();
+            UpdateSize();
+            View.Fit(r, 0.02);
+            InvalidateVisual();
+        }
+
+        /// <summary>Zooms in or out about the middle of the view.</summary>
+        public void ZoomBy(double factor)
+        {
+            PushView();
+            UpdateSize();
+            View.ZoomAt(ActualWidth / 2, ActualHeight / 2, factor);
+            InvalidateVisual();
+        }
+
+        /// <summary>Forgets the zoom history (a new drawing or sheet).</summary>
+        public void ClearViewHistory() => _views.Clear();
+
         public void ZoomExtents()
         {
+            if (_fitted) PushView();
             if (_scene == null) return;
             UpdateSize();
             if (ActualWidth > 1) _fitted = true;
@@ -135,7 +192,7 @@ namespace FdDraft.App
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(60, 0, 0, 0)), null, new WRect(a.X + 4, a.Y + 4, b.X - a.X, b.Y - a.Y));
                 dc.DrawRectangle(Brushes.White, null, new WRect(a, b));
             }
-            else dc.DrawRectangle(Brushes.White, null, screen);
+            else dc.DrawRectangle(_scene.DarkBackground ? Brushes.Black : Brushes.White, null, screen);
 
             var visible = View.Visible;
             double dip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
@@ -305,6 +362,34 @@ namespace FdDraft.App
                     break;
                 }
                 case SnapKind.Center: dc.DrawEllipse(null, pen, c, r, r); break;
+                case SnapKind.Quadrant:
+                {
+                    var g = new StreamGeometry();
+                    using (var ctx = g.Open())
+                    {
+                        ctx.BeginFigure(new WPoint(c.X, c.Y - r), false, true);
+                        ctx.PolyLineTo(new[] { new WPoint(c.X + r, c.Y), new WPoint(c.X, c.Y + r), new WPoint(c.X - r, c.Y) }, true, false);
+                    }
+                    dc.DrawGeometry(null, pen, g);
+                    break;
+                }
+                case SnapKind.Perpendicular:
+                    dc.DrawLine(pen, new WPoint(c.X - r, c.Y + r), new WPoint(c.X + r, c.Y + r));
+                    dc.DrawLine(pen, new WPoint(c.X - r, c.Y + r), new WPoint(c.X - r, c.Y - r));
+                    dc.DrawLine(pen, new WPoint(c.X - r, c.Y), new WPoint(c.X, c.Y));
+                    dc.DrawLine(pen, new WPoint(c.X, c.Y), new WPoint(c.X, c.Y + r));
+                    break;
+                case SnapKind.Nearest:
+                {
+                    var g = new StreamGeometry();
+                    using (var ctx = g.Open())
+                    {
+                        ctx.BeginFigure(new WPoint(c.X - r, c.Y - r), false, true);
+                        ctx.PolyLineTo(new[] { new WPoint(c.X + r, c.Y - r), new WPoint(c.X - r, c.Y + r), new WPoint(c.X + r, c.Y + r) }, true, false);
+                    }
+                    dc.DrawGeometry(null, pen, g);
+                    break;
+                }
                 default:
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y - r), new WPoint(c.X + r, c.Y + r));
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y + r), new WPoint(c.X + r, c.Y - r));
@@ -355,6 +440,7 @@ namespace FdDraft.App
         protected override void OnMouseWheel(MouseWheelEventArgs e)
         {
             var p = e.GetPosition(this);
+            PushView(coalesce: true);
             View.ZoomAt(p.X, p.Y, e.Delta > 0 ? 1.25 : 1 / 1.25);
             InvalidateVisual();
             e.Handled = true;
@@ -363,9 +449,18 @@ namespace FdDraft.App
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
             Focus();
-            if (e.ChangedButton == MouseButton.Middle || (e.ChangedButton == MouseButton.Left && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)))
+            if (e.ChangedButton == MouseButton.Right && _scene != null)
+            {
+                var rp = e.GetPosition(this);
+                var hit = HitTest(rp);
+                RightClicked?.Invoke(hit != null && hit.Handle != 0 ? hit.Handle : (ulong?)null, rp);
+                e.Handled = true;
+                return;
+            }
+            if (e.ChangedButton == MouseButton.Middle || (e.ChangedButton == MouseButton.Left && (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || (PanMode && !ToolActive))))
             {
                 if (e.ClickCount == 2 && e.ChangedButton == MouseButton.Middle) { ZoomExtents(); return; }
+                PushView();
                 _panning = true;
                 _panFrom = e.GetPosition(this);
                 CaptureMouse();
@@ -535,7 +630,9 @@ namespace FdDraft.App
             if (_boxing || _dragging) { InvalidateVisual(); return; }
             if (_scene == null) return;
             var world = View.ToScene(_mouse.X, _mouse.Y);
-            _snap = SnapEnabled ? _scene.Snap(world, 10 / View.Zoom) : null;
+            _snap = SnapEnabled && ToolActive || SnapEnabled && RubberFrom.HasValue
+                ? _scene.Snap(world, 10 / View.Zoom, SnapModes, RubberFrom)
+                : SnapEnabled ? _scene.Snap(world, 10 / View.Zoom, SnapModes & ~(SnapModes.Nearest | SnapModes.Perpendicular), null) : null;
             CursorMoved?.Invoke(_snap.HasValue ? _snap.Value.Point : world, _snap);
             InvalidateVisual();
         }

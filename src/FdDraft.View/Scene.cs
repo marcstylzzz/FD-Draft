@@ -118,7 +118,18 @@ namespace FdDraft.View
         public List<Prim> Prims { get; } = new List<Prim>();
     }
 
-    public enum SnapKind { Endpoint, Midpoint, Center, Node }
+    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant }
+
+    /// <summary>Which object snaps are on - the Object Snap toolbar's toggles.</summary>
+    [Flags]
+    public enum SnapModes
+    {
+        None = 0,
+        Endpoint = 1, Midpoint = 2, Center = 4, Node = 8,
+        Intersection = 16, Perpendicular = 32, Nearest = 64, Quadrant = 128,
+        /// <summary>What FD-Draft snapped to before the modes could be chosen.</summary>
+        Default = Endpoint | Midpoint | Center | Node | Intersection,
+    }
 
     public readonly struct SnapPoint
     {
@@ -132,6 +143,8 @@ namespace FdDraft.View
     {
         public string Name = "Model";
         public bool IsPaper;
+        /// <summary>Drawn for a black background (model space on screen).</summary>
+        public bool DarkBackground;
         /// <summary>For a layout: the paper sheet, in paper units.</summary>
         public Rect? Paper;
         public List<SceneGroup> Groups { get; } = new List<SceneGroup>();
@@ -200,17 +213,104 @@ namespace FdDraft.View
         public List<SnapPoint> Snaps { get; } = new List<SnapPoint>();
 
         /// <summary>The snap nearest to <paramref name="at"/> within <paramref name="tolerance"/>, nodes first.</summary>
-        public SnapPoint? Snap(Vec2 at, double tolerance)
+        public SnapPoint? Snap(Vec2 at, double tolerance) => Snap(at, tolerance, SnapModes.Default, null);
+
+        /// <summary>
+        /// The snap point nearest <paramref name="at"/> (within <paramref name="tolerance"/>) among
+        /// the modes that are on. Endpoints, midpoints, centres and nodes are collected while the
+        /// scene is built; intersections, quadrants, perpendiculars (from <paramref name="from"/>,
+        /// the tool's last point) and nearest-on-object are worked out here from the linework
+        /// under the cursor. A surveyed point beats a line end at the same spot, and "nearest"
+        /// only wins when nothing more exact is in reach.
+        /// </summary>
+        public SnapPoint? Snap(Vec2 at, double tolerance, SnapModes modes, Vec2? from)
         {
             SnapPoint? best = null;
             double bestD = double.MaxValue;
+            void Consider(Vec2 p, SnapKind kind)
+            {
+                double d = Vec2.Distance(at, p);
+                if (d > tolerance) return;
+                double score = d - (kind == SnapKind.Node ? tolerance * 0.25 : 0) + (kind == SnapKind.Nearest ? tolerance * 2 : 0);
+                if (score < bestD) { bestD = score; best = new SnapPoint(p, kind); }
+            }
             foreach (var s in Snaps)
             {
-                double d = Vec2.Distance(at, s.Point);
-                if (d > tolerance) continue;
-                // A surveyed point beats a line end at the same spot.
-                double score = d - (s.Kind == SnapKind.Node ? tolerance * 0.25 : 0);
-                if (score < bestD) { bestD = score; best = s; }
+                var need = s.Kind switch
+                {
+                    SnapKind.Endpoint => SnapModes.Endpoint,
+                    SnapKind.Midpoint => SnapModes.Midpoint,
+                    SnapKind.Center => SnapModes.Center,
+                    _ => SnapModes.Node,
+                };
+                if ((modes & need) != 0) Consider(s.Point, s.Kind);
+            }
+            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant)) == 0) return best;
+
+            // Linework within reach of the cursor: straight segments and circles.
+            var segs = new List<(Vec2 A, Vec2 B)>();
+            var circles = new List<(Vec2 C, double R)>();
+            var reach = new Rect(at.X - tolerance, at.Y - tolerance, at.X + tolerance, at.Y + tolerance);
+            foreach (var g in Groups)
+            {
+                if (g.Clip.HasValue)
+                {
+                    var c = g.Clip.Value;
+                    if (at.X < c.X1 || at.X > c.X2 || at.Y < c.Y1 || at.Y > c.Y2) continue;
+                }
+                foreach (var p in g.Prims)
+                {
+                    if (!(p.Bounds.X1 <= reach.X2 && reach.X1 <= p.Bounds.X2 && p.Bounds.Y1 <= reach.Y2 && reach.Y1 <= p.Bounds.Y2)) continue;
+                    if (p.Kind == PrimKind.Circle) { circles.Add((p.Center, p.Radius)); continue; }
+                    if (p.Kind != PrimKind.Polyline && p.Kind != PrimKind.Fill) continue;
+                    int n = p.Points.Count, count = p.Closed || p.Kind == PrimKind.Fill ? n : n - 1;
+                    for (int i = 0; i < count; i++)
+                    {
+                        var a = p.Points[i]; var b = p.Points[(i + 1) % n];
+                        if (Construct.DistanceToSegment(at, a, b, out _) <= tolerance) segs.Add((a, b));
+                    }
+                }
+            }
+            if ((modes & SnapModes.Quadrant) != 0)
+                foreach (var (c, r) in circles)
+                    foreach (var q in new[] { new Vec2(c.X + r, c.Y), new Vec2(c.X, c.Y + r), new Vec2(c.X - r, c.Y), new Vec2(c.X, c.Y - r) })
+                        Consider(q, SnapKind.Quadrant);
+            if ((modes & SnapModes.Intersection) != 0)
+            {
+                for (int i = 0; i < segs.Count; i++)
+                {
+                    for (int j = i + 1; j < segs.Count; j++)
+                    {
+                        var (a, b) = segs[i]; var (c, d) = segs[j];
+                        // Consecutive pieces of one line meet at their shared end - that's an endpoint, not a crossing.
+                        if (Vec2.Distance(b, c) < 1e-12 || Vec2.Distance(a, d) < 1e-12 || Vec2.Distance(a, c) < 1e-12 || Vec2.Distance(b, d) < 1e-12) continue;
+                        var x = Construct.LineLine(a, b - a, c, d - c);
+                        if (x.HasValue && Construct.DistanceToSegment(x.Value, a, b, out _) < 1e-9 * Math.Max(1, (b - a).Length) + 1e-12
+                            && Construct.DistanceToSegment(x.Value, c, d, out _) < 1e-9 * Math.Max(1, (d - c).Length) + 1e-12)
+                            Consider(x.Value, SnapKind.Intersection);
+                    }
+                    foreach (var (cc, r) in circles)
+                        foreach (var x in Construct.LineCircle(segs[i].A, segs[i].B - segs[i].A, cc, r))
+                            if (Construct.DistanceToSegment(x, segs[i].A, segs[i].B, out _) < 1e-9 * Math.Max(1, r)) Consider(x, SnapKind.Intersection);
+                }
+            }
+            if ((modes & SnapModes.Perpendicular) != 0 && from.HasValue)
+                foreach (var (a, b) in segs)
+                {
+                    var d = b - a;
+                    double len2 = Vec2.Dot(d, d);
+                    if (len2 < 1e-24) continue;
+                    double t = Vec2.Dot(from.Value - a, d) / len2;
+                    if (t >= -1e-9 && t <= 1 + 1e-9) Consider(a + d * t, SnapKind.Perpendicular);
+                }
+            if ((modes & SnapModes.Nearest) != 0)
+            {
+                foreach (var (a, b) in segs) { Construct.DistanceToSegment(at, a, b, out var q); Consider(q, SnapKind.Nearest); }
+                foreach (var (c, r) in circles)
+                {
+                    var dir = (at - c).Normalized();
+                    if (dir.Length > 0) Consider(c + dir * r, SnapKind.Nearest);
+                }
             }
             return best;
         }

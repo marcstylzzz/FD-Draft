@@ -121,6 +121,25 @@ it on Windows is the real test.
 - **Select**: click an entity to select it (its DWG handle drives it, from
   `Prim.Handle`); Ctrl+click adds or removes. Highlighted in the canvas and
   summarised in the **Properties** panel.
+- **Object snaps** (v0.4.31): `Scene.Snap(at, tol, SnapModes, from)` -
+  endpoints/midpoints/centres/nodes come from the snap list built with the
+  scene; intersections (segment-segment, segment-circle, skipping pieces
+  of one line meeting end to end), quadrants, perpendicular (foot from the
+  tool's last point, `RubberFrom`) and nearest are computed from the prims
+  whose bounds reach the cursor. Nearest carries a 2×tolerance penalty so
+  it never beats an exact snap; a node beats an end at the same spot. The
+  canvas only offers Perpendicular/Nearest while a tool is running.
+- **Display colours**: `SceneBuilder.DarkModel` (the app sets it) draws
+  model space for a black background - colour 7 white, pale colours
+  undimmed - while sheets stay drawn for white paper; `PlotRgb` is
+  independent of both, so plots don't change. The CLI/SVG/tests keep the
+  default (black on white).
+- **Right-click** on the canvas raises `RightClicked`: with a command
+  waiting for a typed line it's Enter (`RunCommand("")`), with one waiting
+  only for picks it cancels, otherwise a context menu (the item under the
+  cursor is selected first). Zoom Previous keeps a 50-view history (wheel
+  steps within a second count as one); Zoom Window during another command
+  is transparent - the command resumes afterwards.
 - **Box selection**: a left-button drag with no tool active becomes a
   selection box once it passes 5 px (a shorter one is still a click).
   `FdDraft.View.BoxSelect.Handles` decides from the scene's own prims -

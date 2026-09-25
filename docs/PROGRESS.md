@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.30 (`Directory.Build.props`).
+- **Current version:** 0.4.31 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  74 tests as of v0.4.30, all passing.
+  76 tests as of v0.4.31, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -244,11 +244,23 @@ on Windows; that's still Marc's job when he runs a build.
   View, Xref Manager, Text to Multiline Text, Add Sheet and Title Block,
   Layers Off, Symbol Librarian) were left off; FD-Draft's own tools fill
   that tab instead.
-- **v0.4.30** (current): Marc's follow-ups on the point sync - selection
+- **v0.4.30**: Marc's follow-ups on the point sync - selection
   shows in blue (not WPF's pale unfocused grey); it no longer switches to
   the Points tab, it updates whichever list is open; and it now also
   follows on the Layers tab (the item's layer) and the Codes tab (the
   item's code - Draft tags figure linework with its code).
+- **v0.4.31** (current): Layers/Codes list selection now blue too (their
+  Aero2 item templates hard-code a grey unfocused selection, so they got
+  their own `ListItemStyle`); model space black / sheets white; right-click
+  edit menu (and right-click = Enter during a command); View toolbar
+  (Regen, Pan, Zoom Window/Previous/In/Out, Extents) and Object Snap
+  toolbar (End/Mid/Int/Cen/Quad/Perp/Near/Node toggles, None).
+- **Open request**: Marc wants "all the features" of his MSCAD toolbars
+  (screenshots 2026-09-25). The AutoCAD-standard zoom and object-snap groups
+  are done; the MicroSurvey-specific icons (COGO/inverse bar, the long
+  MSCAD bar with point/figure/database tools, and the right-hand
+  dimension/text/table/layer groups) couldn't be identified from icons -
+  asked Marc for their tooltip names. Build those once he sends the list.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

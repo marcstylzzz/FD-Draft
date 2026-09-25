@@ -58,6 +58,18 @@ FdDraft.App project in Visual Studio).
   fits at and why. Accept the top one, or pick another sheet or scale. The plan
   opens on its sheet, and the job's points fill the **Points** panel
   (double-click a point to zoom to it).
+- **Model space is black, sheets are white**, as in AutoCAD/MSCAD (colour 7
+  draws white on black; plots are unaffected).
+- **View toolbar**: Regen, Pan (left-drag pans until you click it again or
+  press Esc), Zoom Window, Zoom Previous, Zoom In/Out, Extents - also typed:
+  REGEN, PAN, ZW, ZP, ZI, ZO, ZOOM W/P/I/O.
+- **Object Snap toolbar**: End, Mid, Int (intersection), Cen, Quad, Perp,
+  Near, Node - each on/off (orange = on), ✕ None; remembered between
+  sessions. F3 still switches all snapping off/on.
+- **Right-click** an item for the edit menu (Undo, Redo, Erase, Select all,
+  Select same layer, plus Move, Copy, Rotate, Mirror, Change to current
+  layer, Properties, zooms); while a command is waiting, right-click is
+  Enter, as in AutoCAD.
 - **Canvas**: the wheel zooms at the cursor. Middle-drag or Shift-drag pans, and
   a middle double-click zooms to extents. Tabs along the bottom switch between
   Model and the sheets. On a sheet, the status bar shows the model N/E under the
