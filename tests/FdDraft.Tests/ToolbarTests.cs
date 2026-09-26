@@ -250,3 +250,46 @@ namespace FdDraft.Tests
         }
     }
 }
+
+namespace FdDraft.Tests
+{
+    public static partial class Tests
+    {
+        public static void TestExplodePolylineBlockAndUndo()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var layer = new ACadSharp.Tables.Layer("LOT"); doc.Layers.Add(layer);
+            var lot = new LwPolyline { IsClosed = true, Layer = layer };
+            lot.Vertices.Add(new LwPolyline.Vertex(new CSMath.XY(0, 0)));
+            lot.Vertices.Add(new LwPolyline.Vertex(new CSMath.XY(20, 0)) { Bulge = Math.Tan(Math.PI / 8) }); // a half-round... quarter bulge
+            lot.Vertices.Add(new LwPolyline.Vertex(new CSMath.XY(20, 20)));
+            doc.ModelSpace.Entities.Add(lot);
+            PointLinks.TagCode(lot, "BDY");
+
+            var block = new ACadSharp.Tables.BlockRecord("POST");
+            block.Entities.Add(new Line(new CSMath.XYZ(-1, 0, 0), new CSMath.XYZ(1, 0, 0)));
+            block.Entities.Add(new Circle { Center = CSMath.XYZ.Zero, Radius = 0.5 });
+            doc.BlockRecords.Add(block);
+            var ins = new Insert(block) { InsertPoint = new CSMath.XYZ(100, 50, 0), XScale = 2, YScale = 2, ZScale = 2, Layer = layer };
+            doc.ModelSpace.Entities.Add(ins);
+
+            var undo = new UndoStack();
+            undo.Push(Exploder.Explode(new Entity[] { lot, ins }, out int n, out var made)!);
+            Assert.Equal(2, n, "both exploded");
+            var lines = doc.ModelSpace.Entities.OfType<Line>().ToList();
+            var arcs = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Arc>().ToList();
+            Assert.Equal(2 + 1, lines.Count, "the lot's two straight spans plus the post's line");
+            Assert.Equal(1, arcs.Count, "the lot's curved span is an arc");
+            Assert.True(!doc.ModelSpace.Entities.Contains(lot) && !doc.ModelSpace.Entities.Contains(ins), "the originals are gone");
+            Assert.True(made.All(m => m.Layer == layer), "parts on the original's layer (block parts on 0 take the insert's)");
+            Assert.True(made.Where(m => m is Line || m is ACadSharp.Entities.Arc).Take(3).All(m => PointLinks.TaggedCode(m) == "BDY"), "the lot's pieces keep its code");
+            var post = lines.Single(l => l.StartPoint.X > 90);
+            Assert.Near(98, post.StartPoint.X, 1e-9, "block part placed and scaled where the block showed it");
+            var circle = doc.ModelSpace.Entities.OfType<Circle>().Single(c => !(c is ACadSharp.Entities.Arc));
+            Assert.Near(1, circle.Radius, 1e-9, "circle scaled with the block");
+            undo.Undo();
+            Assert.True(doc.ModelSpace.Entities.Contains(lot) && doc.ModelSpace.Entities.Contains(ins) && !doc.ModelSpace.Entities.OfType<Line>().Any(), "one undo puts both back");
+            Assert.True(Exploder.Explode(new Entity[] { new Line() }, out _, out _) == null, "a line doesn't explode");
+        }
+    }
+}

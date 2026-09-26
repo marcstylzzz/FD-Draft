@@ -78,7 +78,7 @@ FdDraft.App project in Visual Studio).
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
   every command by toolbar.
 - **Right-click** an item for the edit menu (Undo, Redo, Erase, Select all,
-  Select same layer, plus Move, Copy, Rotate, Mirror, Change to current
+  Select same layer, plus Move, Copy, Rotate, Mirror, Join (J), Explode (X), Change to current
   layer, Properties, zooms); while a command is waiting, right-click is
   Enter, as in AutoCAD.
 - **Canvas**: the wheel zooms at the cursor. Middle-drag or Shift-drag pans, and

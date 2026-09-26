@@ -269,7 +269,8 @@ namespace FdDraft.App
             modify.Items.Add(Item("_Copy", "COPY", StartCopy));
             modify.Items.Add(Item("M_irror", "MIRROR", StartMirror));
             modify.Items.Add(Item("_Offset", "OFFSET", StartOffset));
-            modify.Items.Add(Item("_Join into polyline", "JOIN", JoinSelection));
+            modify.Items.Add(Item("_Join into polyline", "J", JoinSelection));
+            modify.Items.Add(Item("E_xplode", "X", ExplodeSelection));
             modify.Items.Add(Item("_Trim", "TRIM", () => StartTrimExtend(true)));
             modify.Items.Add(Item("_Extend", "EXTEND", () => StartTrimExtend(false)));
             modify.Items.Add(Item("Fi_llet", "FILLET", StartFillet));
@@ -384,6 +385,8 @@ namespace FdDraft.App
                 menu.Items.Add(Item("Copy", "COPY", StartCopy));
                 menu.Items.Add(Item("Rotate", "ROTATE", StartRotate));
                 menu.Items.Add(Item("Mirror", "MIRROR", StartMirror));
+                menu.Items.Add(Item("Join", "J", JoinSelection));
+                menu.Items.Add(Item("Explode", "X", ExplodeSelection, SelectedEntities().Any(Exploder.CanExplode)));
                 menu.Items.Add(Item("Change to current layer", "LAYER", SetSelectionLayer));
                 menu.Items.Add(Item("Properties", "", () => { if (_propertiesTab != null) _leftTabs.SelectedItem = _propertiesTab; }));
             }
@@ -504,6 +507,7 @@ namespace FdDraft.App
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
                 case "JOIN": case "J": JoinSelection(); break;
+                case "EXPLODE": case "X": ExplodeSelection(); break;
                 case "ID": StartId(); break;
                 case "VPSCALE": case "SCALE": StartSheetScale(arg); break;
                 case "MVIEW": case "MV": case "VIEWPORT": StartMview(); break;
@@ -555,7 +559,8 @@ namespace FdDraft.App
             Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
             Log("          C closes back to the start and reports misclosure, precision and area; U undoes the last leg");
             Log("  ID      pick points to read their N/E (and survey point number, elevation)");
-            Log("  JOIN    select lines/arcs/polylines that meet end to end, JOIN makes one polyline (closed if it closes)");
+            Log("  JOIN (J)    select lines/arcs/polylines that meet end to end, J makes one polyline (closed if it closes)");
+            Log("  EXPLODE (X) select polylines, blocks or dimensions, X breaks them into lines, arcs and text (also on the right-click menu)");
             Log("  AREA    area and perimeter of the selected closed polylines/circles, or pick corners (blank ends)");
             Log("  ARC     pick three points on the arc: start, a point on it, end");
             Log("  TEXT    pick a point, then type the text (or \"height text\", e.g. \"0.25 LOT 5\")");
@@ -2577,6 +2582,24 @@ namespace FdDraft.App
                     + (pl.IsClosed ? ", area " + AreaText(FigureMeasure.Area(pts, bl)) : "") + ", length " + FigureMeasure.Perimeter(pts, bl, pl.IsClosed).ToString("F3", CultureInfo.InvariantCulture));
             }
             Log("  (the new polylines are selected; Ctrl+Z to undo)");
+        }
+
+        /// <summary>EXPLODE (X): the selected polylines become lines and arcs, blocks and
+        /// dimensions become their parts - the parts are left selected.</summary>
+        private void ExplodeSelection()
+        {
+            if (_doc == null) return;
+            var sel = SelectedEntities();
+            if (sel.Count == 0) { Log("  select the polylines, blocks or dimensions to explode first, then X"); return; }
+            var cmd = Exploder.Explode(sel, out int n, out var made);
+            if (cmd == null) { Log("  nothing to explode - EXPLODE breaks up polylines, blocks and dimensions"); return; }
+            _undo.Push(cmd);
+            _canvas.Selected.Clear();
+            foreach (var m in made) _canvas.Selected.Add(m.Handle);
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: false);
+            UpdateProperties();
+            Log("  exploded " + Plural(n, "entity", "entities") + " into " + made.Count + " parts" + (n < sel.Count ? " (" + (sel.Count - n) + " didn't explode)" : "") + "  (Ctrl+Z undoes it)");
         }
 
         /// <summary>ID: report the coordinates of each picked point (snap for exact ones).</summary>

@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.1 (`Directory.Build.props`).
+- **Current version:** 0.5.2 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  89 tests as of v0.5.1, all passing.
+  90 tests as of v0.5.2, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -284,7 +284,7 @@ on Windows; that's still Marc's job when he runs a build.
     FD-Pro owns the point database and raw data).
   - Not run on Windows yet: Marc should try the bars, especially ties,
     tables, text on arc, dimension text moves, layer lock/freeze/states.
-- **v0.5.1** (current): Marc ran v0.5.0 (it works) - the 24 px toolbars in
+- **v0.5.1**: Marc ran v0.5.0 (it works) - the 24 px toolbars in
   six rows took too much of the drawing area; he asked for half-size icons that
   stay legible. At 12 px (on his 150%-scaled 1920 screen) the numbers inside
   the label icons turn to dots, so the default is now 16 px with tight button
@@ -292,6 +292,12 @@ on Windows; that's still Marc's job when he runs a build.
   (`ToolbarLayout.Pack`): 5 thin rows, about half the old toolbar height.
   View > Toolbars > Icon size switches Small 12 / Medium 16 / Large 24.
   A layout saved at another size (or by 0.5.0) is re-packed on start.
+- **v0.5.2** (current): EXPLODE, typed X (Marc: "X for explode, J for join, on
+  the right click menu"). Polylines -> lines and arcs (keeping their FD-Pro code
+  tag), blocks -> their parts placed as shown (layer 0 / ByBlock take the
+  insert's; attributes become text), dimensions -> their picture. `Exploder` in
+  FdDraft.Cad. J already ran JOIN; both are now on the right-click menu, the
+  Modify menu, and Explode is on the Modify toolbar.
 - **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 
