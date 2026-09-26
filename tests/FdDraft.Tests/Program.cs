@@ -45,7 +45,7 @@ namespace FdDraft.Tests
         }
     }
 
-    public static class Tests
+    public static partial class Tests
     {
         private static string Root()
         {

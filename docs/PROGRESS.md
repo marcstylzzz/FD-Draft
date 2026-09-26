@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.4.32 (`Directory.Build.props`).
+- **Current version:** 0.5.0 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -48,7 +48,7 @@ on Windows; that's still Marc's job when he runs a build.
   feature list and the "Next in the app" section), then commit and push.
 - Commit trailer:
   ```
-  Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+  Co-Authored-By: <the model named in that session's attribution note> <noreply@anthropic.com>
   Claude-Session: <this session's claude.ai/code/session_... URL>
   ```
   (a new session uses its own URL here - that's expected and fine).
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  78 tests as of v0.4.32, all passing.
+  88 tests as of v0.5.0, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -255,21 +255,37 @@ on Windows; that's still Marc's job when he runs a build.
   edit menu (and right-click = Enter during a command); View toolbar
   (Regen, Pan, Zoom Window/Previous/In/Out, Extents) and Object Snap
   toolbar (End/Mid/Int/Cen/Quad/Perp/Near/Node toggles, None).
-- **v0.4.32** (current): the Annotate toolbar - Marc named screenshot 3's
+- **v0.4.32**: the Annotate toolbar - Marc named screenshot 3's
   tools: auto split bearing (on centre of line), auto bearing off line,
   auto distance, auto distance off line, auto bearing/distance, auto
   bearing-distance, auto bearing/distance // line, auto distance/bearing //
   line. Built as BRGON/BRGOFF/DISTON/DISTOFF/BRGDIST/BRGDASH/BRGDISTL/
   DISTBRGL with a pick loop. His screenshot 3 had 15 icons; the last 7
   (after the eight he named) are unidentified.
-- **Open request**: the rest of Marc's MSCAD toolbars - screenshot 4 is
-  three toolbars, plus the right-hand groups of screenshot 5
-  (dimension/text/table/layer icons). The public MicroSurvey manuals don't
-  list toolbar buttons, and surveyinstrumentsales.com / s3.microsurvey.com
-  are blocked from the sandbox. Asked Marc for his `icad.cui` (MSCAD's
-  toolbar definitions, in `C:\Program Files\MicroSurvey\MSCAD20xx\` or
-  the `Program Files (x86)` equivalent): it names every button and its
-  command - build from that.
+- **v0.5.0** (current): the full toolbar set from Marc's MSCAD `icad.cui`
+  (he uploaded it; it lives only in that chat - `ToolbarCatalog.cs` now holds
+  everything needed from it). Marc approved the dark icon style from a sample
+  sheet, then asked for all of it and for FD-Draft names ("FD Labels", not
+  "MS Labels"). Built:
+  - 186 original vector icons (tools/icons/icons.py -> ToolIconData.g.cs),
+    replacing every text button. Not MicroSurvey's artwork - drawn fresh.
+  - Catalog-driven dark toolbars in 6 rows, View > Toolbars show/hide/reset,
+    layout remembered. Bars: Standard, Draw, Modify, Layer, View, Object Snap,
+    Survey + FD Labels (15), FD Ties (13), FD Text Edit (17), FD Layer (11),
+    Layer Tools (18), Dimensioning (30), Text (5), FD Main Control (18),
+    FD Calcs (15), FD Coordinate (18) - button for button with icad.cui.
+  - ~60 new commands (HELP lists them by bar). FD Labels corrected against
+    the CUI: "Auto Split Bearing" (split across the line) and "Place Bearing
+    on centre of line" are separate buttons; Distance - Bearing was missing.
+  - 25 of 205 buttons have no FD-Draft equivalent and show dimmed with the reason
+    (arc-length/ordinate dims, jog/break/spacing, tolerance/inspection,
+    oblique, reassociate, grips, assistant, hot toggles, traverse editor,
+    scale Z, ROW design, reverse curve, renumber/transfer/stakeout/Helmert -
+    FD-Pro owns the point database and raw data).
+  - Not run on Windows yet: Marc should try the bars, especially ties,
+    tables, text on arc, dimension text moves, layer lock/freeze/states.
+- **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
+  doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

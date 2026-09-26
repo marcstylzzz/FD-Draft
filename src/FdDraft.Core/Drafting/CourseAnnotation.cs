@@ -13,6 +13,11 @@ namespace FdDraft.Core.Drafting
         BearingOnLine,
         /// <summary>Auto bearing off line: the bearing beside the line, on the picked side.</summary>
         BearingOffLine,
+        /// <summary>Auto split bearing: the bearing split across the line - direction and degrees
+        /// on one side, minutes, seconds and quadrant letter on the other (the picked side gets the degrees).</summary>
+        SplitBearing,
+        /// <summary>Auto distance - bearing: "distance  bearing" as one line of text, on the picked side.</summary>
+        DistanceDashBearing,
         /// <summary>Auto distance: the distance centred on the line, the line broken around it.</summary>
         DistanceOnLine,
         /// <summary>Auto distance off line: the distance beside the line, on the picked side.</summary>
@@ -113,6 +118,30 @@ namespace FdDraft.Core.Drafting
                     var t = Bearing(Beside(gapB), away);
                     t.Text = bearing + "  " + distance;
                     result.Texts.Add(t);
+                    break;
+                }
+                case CourseLabelStyle.DistanceDashBearing:
+                {
+                    var t = Distance(Beside(gapD), away);
+                    t.Text = distance + "  " + bearing;
+                    result.Texts.Add(t);
+                    break;
+                }
+                case CourseLabelStyle.SplitBearing:
+                {
+                    // "N45°12'30\"E" -> "N45°" and "12'30\"E", either side of the line at its middle.
+                    int deg = bearing.IndexOf('°');
+                    string head = deg >= 0 ? bearing.Substring(0, deg + 1) : bearing;
+                    string tail = deg >= 0 ? bearing.Substring(deg + 1) : "";
+                    var first = Bearing(mid + up * (above ? gapB : -gapB), away);
+                    first.Text = head;
+                    result.Texts.Add(first);
+                    if (tail.Length > 0)
+                    {
+                        var second = Bearing(mid - up * (above ? gapB : -gapB), above ? VAlign.Top : VAlign.Bottom);
+                        second.Text = tail;
+                        result.Texts.Add(second);
+                    }
                     break;
                 }
                 case CourseLabelStyle.BearingOverDistance:

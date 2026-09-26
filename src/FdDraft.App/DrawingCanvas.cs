@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
@@ -523,6 +524,39 @@ namespace FdDraft.App
                 }
             }
             return best;
+        }
+
+        /// <summary>
+        /// Every entity drawn within <paramref name="tolerancePx"/> screen pixels of a scene point,
+        /// nearest first - how a running tool finds what was picked (a label, a line, a building).
+        /// </summary>
+        public List<ulong> HandlesAt(Vec2 scenePt, double tolerancePx = 8)
+        {
+            var found = new Dictionary<ulong, double>();
+            if (_scene == null) return new List<ulong>();
+            var s = View.ToScreen(scenePt);
+            var screenPt = new WPoint(s.X, s.Y);
+            foreach (var g in _scene.Groups)
+            {
+                if (g.Clip.HasValue)
+                {
+                    var c = g.Clip.Value;
+                    if (scenePt.X < c.X1 || scenePt.X > c.X2 || scenePt.Y < c.Y1 || scenePt.Y > c.Y2) continue;
+                }
+                foreach (var prim in g.Prims)
+                {
+                    if (prim.Handle == 0) continue;
+                    double d;
+                    if (prim.Kind == PrimKind.Text)
+                    {
+                        double inScene = TextHit.Distance(prim, scenePt);
+                        d = inScene <= 0 ? -1 : inScene * View.Zoom;
+                    }
+                    else d = DistanceToPrim(prim, screenPt);
+                    if (d <= tolerancePx && (!found.TryGetValue(prim.Handle, out double old) || d < old)) found[prim.Handle] = d;
+                }
+            }
+            return found.OrderBy(kv => kv.Value).Select(kv => kv.Key).ToList();
         }
 
         private double DistanceToPrim(Prim p, WPoint pt)

@@ -460,7 +460,55 @@ it on Windows is the real test.
   point on that content at all. A sheet that does have a real viewport is
   unaffected: a pick outside it is still ambiguous and stays null.
 
+### Toolbars and the survey toolset (v0.5)
+
+- **One catalog, data not code.** `FdDraft.View.Toolbars.ToolbarCatalog` lists
+  every bar and button in order: icon key, name, help, the FD-Draft command it
+  runs, and (for the survey bars) the MSCAD command it stands in for. The
+  survey bars follow Marc's MSCAD `icad.cui` button for button (MS Labels 1 →
+  **FD Labels**, MS Ties → **FD Ties**, and so on - FD-Draft's names, not
+  MicroSurvey's). A button with no FD-Draft equivalent keeps its place,
+  dimmed, with a `Note` saying why, so the bars keep MSCAD's layout.
+- **Buttons are typed commands.** `MainWindow.RunToolbarCommand` ends any
+  running tool (view commands - zooms, snaps, panels - run inside it
+  instead) and calls `Execute(verb, arg)`, the same dispatch the command line
+  uses; the survey commands live in `ExecuteMsTool` (MainWindow.Tools*.cs).
+  `TestEveryToolbarCommandIsHandled` scans the app source so a button can't
+  point at a command nothing handles.
+- **Icons are vector drawings from one source.** `tools/icons/icons.py` draws
+  each icon on a 24x24 grid in a small primitive language (line, path,
+  circle, rect, text) with a fixed colour key (existing linework, result /
+  distance, annotation / bearing, snap, before / guide, create);
+  `gen_cs.py` writes `ToolIconData.g.cs`, `ToolIcons` parses it (WPF-free,
+  tested), and `ToolIconImage` turns it into a frozen `DrawingImage` - crisp
+  at any display scale, no image files. `preview.py` renders a gallery and
+  `tray_mock.py` the whole toolbar area, for review without Windows.
+- **Dark toolbars** are plain WPF: a `ToolBarTray` with the ToolBar button
+  styles replaced (`ToolBar.ButtonStyleKey` / `ToggleButtonStyleKey`) by a
+  flat template with hover, pressed, on and dimmed states; the overflow
+  drop-down is darkened too. Rows (`Band`) are sized to fit a 1366-pixel
+  screen; the layout and visibility are saved in app.ini (`toolbar_layout`).
+- **The tools' geometry is in Core/Cad**, unit-tested: `SurveyCalcs` (curve
+  solver from any two elements, best-fit line and arc, turned angle,
+  station/offset, tangents, curve off a tangent, the angle between two picked
+  lines, text along an arc) and `SurveyDrafting` (SOLID arrowheads, house ties,
+  tables, curve data, text height/rotation edits). New label styles
+  (split bearing, distance - bearing) are in `CourseAnnotation`.
+- **Dimension text can be moved and turned** (DIMTEDIT, DIMROTATE, DIMHOME):
+  the offset is kept in FD-Draft's extended data on the dimension, along and
+  across the text's normal direction, so it survives saving and travels with
+  MOVE/ROTATE; `DrawPicture` applies it every time it redraws. DIMTEXT's
+  "<>" stands for the measurement.
+- **Layer states are real DWG flags** (on/off, frozen, locked), so they save
+  with the drawing; the Layers panel's check boxes remain a view-only hide.
+  Layer Previous keeps its own stack of snapshots; locked layers are filtered
+  out of every selection path (click, box, select all, select by layer, drag).
+
 ### Next in the app
+
+- The dimmed buttons: arc-length and ordinate dimensions, jogged dimension
+  lines, dimension breaks and spacing, reverse/compound curves, and MSCAD's
+  named layer groups.
 
 - Relabel courses after a STRETCH (the vertex moves and connected lines stay
   joined, but their bearing/distance/area labels are not yet re-derived -

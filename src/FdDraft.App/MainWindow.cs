@@ -38,7 +38,7 @@ namespace FdDraft.App
     /// point panels, a command line, and the survey commands (Draft FD-Pro job,
     /// Inverse), plus open/save DWG and plot to PDF.
     /// </summary>
-    public sealed class MainWindow : Window
+    public sealed partial class MainWindow : Window
     {
         private readonly AppSettings _settings = AppSettings.Load();
         private readonly DrawingCanvas _canvas = new DrawingCanvas();
@@ -286,182 +286,12 @@ namespace FdDraft.App
             view.Items.Add(new Separator());
             view.Items.Add(Item("Edit tool _palette…", "", EditPalette));
             view.Items.Add(Item("_Reload tool palette", "PALETTE", () => { LoadPalette(); Log("  tool palette reloaded"); }));
+            view.Items.Add(new Separator());
+            view.Items.Add(_toolbarsMenu);
             var help = new MenuItem { Header = "_Help" };
             help.Items.Add(Item("_Commands", "HELP", ShowHelp));
             menu.Items.Add(file); menu.Items.Add(edit); menu.Items.Add(survey); menu.Items.Add(draw); menu.Items.Add(modify); menu.Items.Add(view); menu.Items.Add(help);
             return menu;
-        }
-
-        private ToolBarTray BuildToolbar()
-        {
-            var bar = new ToolBar();
-            Button B(string text, string tip, Action a) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(8, 2, 8, 2) }; b.Click += (s, e) => a(); return b; }
-            bar.Items.Add(B("Draft job", "Draft an FD-Pro job onto the firm template (Ctrl+D)", DraftJob));
-            bar.Items.Add(new Separator());
-            bar.Items.Add(B("Open", "Open a DWG or DWT (Ctrl+O)", () => OpenDrawing(null)));
-            bar.Items.Add(B("Save", "Save DWG (Ctrl+S)", () => Save(false)));
-            bar.Items.Add(B("Print", "Print or plot: printer or PDF, paper, plot style table (.ctb), scale, area (Ctrl+P)", PlotPdf));
-            bar.Items.Add(new Separator());
-            bar.Items.Add(B("Extents", "Zoom extents (ZE, or double-click the wheel)", () => _canvas.ZoomExtents()));
-            bar.Items.Add(B("Inverse", "Bearing and distance between two points (INV)", StartInverse));
-            bar.Items.Add(B("Area", "Area and perimeter of the selected closed figure, or of picked corners (AREA)", StartArea));
-            bar.Items.Add(B("Snap", "Snap to points and line ends on/off (F3)", ToggleSnap));
-            bar.Items.Add(new Separator());
-            bar.Items.Add(B("Undo", "Undo the last change (Ctrl+Z)", DoUndo));
-            bar.Items.Add(B("Redo", "Redo (Ctrl+Y)", DoRedo));
-            bar.Items.Add(B("Erase", "Erase the selected entities (Del)", EraseSelected));
-            bar.Items.Add(new Separator());
-            bar.Items.Add(B("Line", "Draw lines by bearing and distance (LINE)", StartLine));
-            bar.Items.Add(B("Arc", "Draw an arc through three points (ARC)", StartArc));
-            bar.Items.Add(B("Text", "Place text (TEXT)", () => StartText()));
-            bar.Items.Add(B("Leader", "Draw a leader with text (LEADER)", StartLeader));
-            bar.Items.Add(B("Dim", "Aligned dimension between two points (DIM; DIMLIN for horizontal/vertical, DIMRAD for a radius)", () => StartDimension()));
-            bar.Items.Add(new Separator());
-            bar.Items.Add(B("Move", "Move the selected entities (MOVE)", StartMove));
-            bar.Items.Add(B("Rotate", "Rotate the selected entities (ROTATE)", StartRotate));
-            bar.Items.Add(B("Stretch", "Move one shared vertex, keeping connected lines joined (STRETCH)", StartStretch));
-            bar.Items.Add(B("Copy", "Copy the selected entities (COPY)", StartCopy));
-            bar.Items.Add(B("Mirror", "Mirror the selected entities across a line (MIRROR)", StartMirror));
-            bar.Items.Add(B("Label", "Bearing/distance (or curve data) labels for the selected lines, arcs and polylines (LABEL)", LabelSelection));
-            bar.Items.Add(B("Join", "Join selected lines/arcs that meet end to end into one polyline (JOIN)", JoinSelection));
-            bar.Items.Add(B("Trim", "Cut lines back at the selected edges, or at everything if nothing is selected (TRIM)", () => StartTrimExtend(true)));
-            bar.Items.Add(B("Extend", "Run line ends out to the selected boundaries, or to anything if nothing is selected (EXTEND)", () => StartTrimExtend(false)));
-            bar.Items.Add(B("Fillet", "Round (or close) the corner between two lines (FILLET)", StartFillet));
-            bar.Items.Add(B("Flip", "Move the selected bearing/distance labels to the other side of their course (FLIP)", FlipSelectedLabels));
-            bar.Items.Add(B("Offset", "Parallel copy of lines, arcs, circles and polylines at a distance (OFFSET)", StartOffset));
-            bar.Items.Add(new Separator());
-            bar.Items.Add(new TextBlock { Text = "Layer:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
-            bar.Items.Add(_layerCombo);
-            bar.Items.Add(B("Set Layer", "Reassign the selected entities to the current layer", SetSelectionLayer));
-            var tray = new ToolBarTray();
-            tray.ToolBars.Add(bar);
-            tray.ToolBars.Add(BuildViewBar());
-            tray.ToolBars.Add(BuildSnapBar());
-            tray.ToolBars.Add(BuildAnnotateBar());
-            return tray;
-        }
-
-        private readonly ToggleButton _panButton = new ToggleButton { Content = "Pan", ToolTip = "Pan mode: drag with the left button to pan (PAN; Esc or click again to stop). Middle-drag always pans.", Padding = new Thickness(8, 2, 8, 2) };
-        private readonly Dictionary<SnapModes, ToggleButton> _snapButtons = new Dictionary<SnapModes, ToggleButton>();
-
-        /// <summary>The View toolbar: regen, pan and the zooms.</summary>
-        private ToolBar BuildViewBar()
-        {
-            var bar = new ToolBar { Band = 1 };
-            Button B(string text, string tip, Action a) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(8, 2, 8, 2) }; b.Click += (s, e) => a(); return b; }
-            bar.Items.Add(B("Regen", "Redraw the drawing from the file (REGEN)", Regen));
-            _panButton.Checked += (s, e) => { _canvas.PanMode = true; _canvas.Cursor = Cursors.Hand; };
-            _panButton.Unchecked += (s, e) => { _canvas.PanMode = false; _canvas.Cursor = Cursors.Cross; };
-            bar.Items.Add(_panButton);
-            bar.Items.Add(B("Zoom Window", "Zoom to a box: pick two corners (ZW)", StartZoomWindow));
-            bar.Items.Add(B("Zoom Prev", "Back to the previous view (ZP)", ZoomPrevious));
-            bar.Items.Add(B("Zoom In", "Zoom in (ZI) - the wheel zooms at the cursor", () => _canvas.ZoomBy(1.6)));
-            bar.Items.Add(B("Zoom Out", "Zoom out (ZO)", () => _canvas.ZoomBy(1 / 1.6)));
-            bar.Items.Add(B("Extents", "Zoom to everything (ZE, or double-click the wheel)", () => _canvas.ZoomExtents()));
-            return bar;
-        }
-
-        /// <summary>The Object Snap toolbar: each snap mode on/off, like AutoCAD's (orange = on).</summary>
-        private ToolBar BuildSnapBar()
-        {
-            var bar = new ToolBar { Band = 1 };
-            var on = new SolidColorBrush(Color.FromRgb(0xFF, 0xD2, 0x7F));
-            foreach (var (mode, label, tip) in new[]
-            {
-                (SnapModes.Endpoint, "End", "Endpoint: line and polyline ends, arc ends"),
-                (SnapModes.Midpoint, "Mid", "Midpoint of a line or polyline span"),
-                (SnapModes.Intersection, "Int", "Intersection: where two lines (or a line and a circle) cross"),
-                (SnapModes.Center, "Cen", "Center of a circle or arc"),
-                (SnapModes.Quadrant, "Quad", "Quadrant: a circle's north, south, east or west point"),
-                (SnapModes.Perpendicular, "Perp", "Perpendicular: the foot of the perpendicular from the last point"),
-                (SnapModes.Nearest, "Near", "Nearest point on a line or circle"),
-                (SnapModes.Node, "Node", "Node: survey points and point objects"),
-            })
-            {
-                var t = new ToggleButton { Content = label, ToolTip = tip, Padding = new Thickness(6, 2, 6, 2), IsChecked = (_canvas.SnapModes & mode) != 0 };
-                t.Checked += (s, e) => { t.Background = on; SetSnapMode(mode, true); };
-                t.Unchecked += (s, e) => { t.ClearValue(Control.BackgroundProperty); SetSnapMode(mode, false); };
-                if (t.IsChecked == true) t.Background = on;
-                _snapButtons[mode] = t;
-                bar.Items.Add(t);
-            }
-            var none = new Button { Content = "✕ None", ToolTip = "Turn every object snap off (running snaps stay switchable with F3)", Padding = new Thickness(6, 2, 6, 2) };
-            none.Click += (s, e) => { foreach (var b in _snapButtons.Values) b.IsChecked = false; };
-            bar.Items.Add(none);
-            return bar;
-        }
-
-        /// <summary>MSCAD's course annotate tools, by their MSCAD names, with FD-Draft command names.</summary>
-        private static readonly (CourseLabelStyle Style, string Command, string Short, string Name)[] AnnotateTools =
-        {
-            (CourseLabelStyle.BearingOnLine, "BRGON", "Brg ⊢⊣", "Auto split bearing / place bearing on centre of line"),
-            (CourseLabelStyle.BearingOffLine, "BRGOFF", "Brg ↑", "Auto bearing off line"),
-            (CourseLabelStyle.DistanceOnLine, "DISTON", "Dist ⊢⊣", "Auto distance (on centre of line)"),
-            (CourseLabelStyle.DistanceOffLine, "DISTOFF", "Dist ↑", "Auto distance off line"),
-            (CourseLabelStyle.BearingDistance, "BRGDIST", "Brg/Dist", "Auto bearing/distance (bearing one side, distance the other)"),
-            (CourseLabelStyle.BearingDashDistance, "BRGDASH", "Brg-Dist", "Auto bearing-distance (one line of text)"),
-            (CourseLabelStyle.BearingOverDistance, "BRGDISTL", "Brg/Dist ∥", "Auto bearing/distance // line (bearing over distance, picked side)"),
-            (CourseLabelStyle.DistanceOverBearing, "DISTBRGL", "Dist/Brg ∥", "Auto distance/bearing // line (distance over bearing, picked side)"),
-        };
-
-        private ToolBar BuildAnnotateBar()
-        {
-            var bar = new ToolBar { Band = 2 };
-            foreach (var t in AnnotateTools)
-            {
-                var b = new Button { Content = t.Short, ToolTip = t.Name + " (" + t.Command + ") - pick lines one after another; for the off-line styles, pick on the side the label goes", Padding = new Thickness(6, 2, 6, 2) };
-                var style = t.Style;
-                b.Click += (s, e) => StartAnnotate(style);
-                bar.Items.Add(b);
-            }
-            return bar;
-        }
-
-        /// <summary>
-        /// One of MSCAD's annotate tools: pick a line or polyline span, it's labelled in the chosen
-        /// style (on the picked side where that matters, the line broken around the text for the
-        /// "on line" styles); stays active for the next pick until Esc or right-click.
-        /// </summary>
-        private void StartAnnotate(CourseLabelStyle style)
-        {
-            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
-            if (_activeTool.Length > 0) EndTool();
-            var info = AnnotateTools.First(t => t.Style == style);
-            var std = LabelStandards();
-            double mpm = LabelModelPerMm(std, out string basis);
-            double g2g = std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
-            BeginTool(info.Command);
-            bool side = style != CourseLabelStyle.BearingOnLine && style != CourseLabelStyle.DistanceOnLine && style != CourseLabelStyle.BearingDistance;
-            _prompt.Text = info.Name + " - pick a line" + (side ? " on the side the label goes" : "") + ":";
-            Log(info.Name.ToUpperInvariant() + "  pick lines to label (scale from " + basis + "); Esc or right-click ends");
-            int count = 0;
-            _awaitingPoint = p =>
-            {
-                var model = _canvas.Scene!.ModelAt(p);
-                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
-                double tol = Math.Max(10 / _canvas.View.Zoom, 1e-6);
-                Entity? best = null; double bestD = tol;
-                foreach (var e in CurrentEntityOwner().Entities)
-                {
-                    if (!(e is Line || e is Arc || e is LwPolyline || e is Polyline2D)) continue;
-                    foreach (var sp in EntityOps.SpansOf(e))
-                    {
-                        double d = sp.DistanceAndSide(model.Value, out _);
-                        if (d < bestD) { bestD = d; best = e; }
-                    }
-                }
-                if (best == null) { Log("  no line there - pick on a line or polyline"); return; }
-                var cmd = CourseLabelling.Annotate(best, model.Value, style, _doc!, std, mpm, GetOrCreateLayer, out string note, g2g);
-                if (cmd == null) { Log("  can't label that"); return; }
-                _undo.Push(cmd);
-                count++;
-                _dirty = true; UpdateTitle();
-                var c = _canvas.View.Center; var z = _canvas.View.Zoom;
-                Rebuild(fit: false);
-                _canvas.ZoomTo(c, z);
-                Log("  labelled" + (note.Length > 0 ? " (" + note + ")" : "") + "  (Ctrl+Z undoes it)");
-            };
-            _awaitingLine = s => { EndTool(); Log("  *" + count + " labelled*"); };
         }
 
         private void SetSnapMode(SnapModes mode, bool on)
@@ -613,6 +443,12 @@ namespace FdDraft.App
             var parts = t.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
             string verb = parts[0].ToUpperInvariant();
             string arg = parts.Length > 1 ? parts[1].Trim() : "";
+            Execute(verb, arg);
+        }
+
+        /// <summary>Runs one command by name - typed, from a menu or from a toolbar button.</summary>
+        private void Execute(string verb, string arg)
+        {
             switch (verb)
             {
                 case "OPEN": OpenDrawing(arg.Length > 0 ? arg : null); break;
@@ -664,14 +500,6 @@ namespace FdDraft.App
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
                 case "LABEL": case "LB": LabelSelection(); break;
-                case "BRGON": StartAnnotate(CourseLabelStyle.BearingOnLine); break;
-                case "BRGOFF": StartAnnotate(CourseLabelStyle.BearingOffLine); break;
-                case "DISTON": StartAnnotate(CourseLabelStyle.DistanceOnLine); break;
-                case "DISTOFF": StartAnnotate(CourseLabelStyle.DistanceOffLine); break;
-                case "BRGDIST": StartAnnotate(CourseLabelStyle.BearingDistance); break;
-                case "BRGDASH": StartAnnotate(CourseLabelStyle.BearingDashDistance); break;
-                case "BRGDISTL": StartAnnotate(CourseLabelStyle.BearingOverDistance); break;
-                case "DISTBRGL": StartAnnotate(CourseLabelStyle.DistanceOverBearing); break;
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
@@ -695,7 +523,9 @@ namespace FdDraft.App
                     else Log("  current layer: " + CurrentLayer());
                     break;
                 case "HELP": case "?": ShowHelp(); break;
-                default: Log("  unknown command - type HELP"); break;
+                default:
+                    if (!ExecuteMsTool(verb, arg)) Log("  unknown command - type HELP");
+                    break;
             }
         }
 
@@ -713,8 +543,7 @@ namespace FdDraft.App
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
             Log("  VXDEL / VXADD   select a polyline, then pick a vertex to remove / a spot on it to add one (also buttons in Properties)");
-            Log("  Annotate toolbar (MSCAD's auto labels): BRGON split bearing · BRGOFF bearing off line · DISTON split distance · DISTOFF distance off line");
-            Log("          BRGDIST bearing/distance · BRGDASH bearing-distance · BRGDISTL bearing/distance // line · DISTBRGL distance/bearing // line");
+            ShowToolsHelp();
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
@@ -1206,6 +1035,7 @@ namespace FdDraft.App
 
         private void OnEntityClicked(ulong? handle, bool ctrl)
         {
+            if (handle.HasValue && IsLockedHandle(handle.Value)) { Log("  that's on a locked layer (LAYULK unlocks it)"); handle = null; }
             if (!ctrl) _canvas.Selected.Clear();
             if (handle.HasValue)
             {
@@ -1224,7 +1054,7 @@ namespace FdDraft.App
         private void OnDragged(HashSet<ulong> handles, Vec2 from, Vec2 to)
         {
             if (_doc == null || _canvas.Scene == null || _activeTool.Length > 0) return;
-            var entities = handles.Select(h => _doc.GetCadObject(h) as Entity).Where(e => e != null).Cast<Entity>().ToList();
+            var entities = handles.Select(h => _doc.GetCadObject(h) as Entity).Where(e => e != null && !IsLocked(e)).Cast<Entity>().ToList();
             if (entities.Count == 0) return;
             var scene = _canvas.Scene;
             var vp = scene.IsPaper
@@ -1372,7 +1202,7 @@ namespace FdDraft.App
         private void OnBoxSelected(HashSet<ulong> handles, bool ctrl)
         {
             if (!ctrl) _canvas.Selected.Clear();
-            foreach (var h in handles) _canvas.Selected.Add(h);
+            foreach (var h in handles) if (!IsLockedHandle(h)) _canvas.Selected.Add(h);
             UpdateProperties();
             _canvas.InvalidateVisual();
             if (handles.Count > 0) Log("  selected " + Plural(_canvas.Selected.Count, "entity", "entities"));
@@ -1387,7 +1217,7 @@ namespace FdDraft.App
         private void SelectAll()
         {
             _canvas.Selected.Clear();
-            foreach (var h in VisibleHandles()) _canvas.Selected.Add(h);
+            foreach (var h in VisibleHandles()) if (!IsLockedHandle(h)) _canvas.Selected.Add(h);
             UpdateProperties();
             _canvas.InvalidateVisual();
             Log("  selected " + Plural(_canvas.Selected.Count, "entity", "entities"));
@@ -1404,7 +1234,7 @@ namespace FdDraft.App
             if (layers.Count == 0) { Log("  type SELLAYER <layer>, or select something on the layer first"); return; }
             _canvas.Selected.Clear();
             foreach (var h in VisibleHandles())
-                if (_doc.GetCadObject(h) is Entity e && layers.Contains(e.Layer?.Name ?? "0")) _canvas.Selected.Add(h);
+                if (_doc.GetCadObject(h) is Entity e && layers.Contains(e.Layer?.Name ?? "0") && !IsLocked(e)) _canvas.Selected.Add(h);
             UpdateProperties();
             _canvas.InvalidateVisual();
             Log("  selected " + Plural(_canvas.Selected.Count, "entity", "entities") + " on " + string.Join(", ", layers));
@@ -1911,6 +1741,7 @@ namespace FdDraft.App
             if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
             string layer = CurrentLayer();
             ACadSharp.Tables.TextStyle? textStyle = null;
+            if (style.Length == 0 && _textStyleName != null) style = _textStyleName;
             if (style.Length > 0 && !_doc.TextStyles.TryGetValue(style, out textStyle))
                 Log("  text style " + style + " isn't in this drawing - using the drawing's standard style");
             BeginTool("TEXT");
@@ -1932,7 +1763,7 @@ namespace FdDraft.App
                 if (s.Length == 0) { EndTool(); Log("  *cancelled - no text*"); return; }
                 double h; string content;
                 if (presetHeight.HasValue) { h = presetHeight.Value; content = s; }
-                else ParseHeightAndText(s, out h, out content);
+                else { ParseHeightAndText(s, out h, out content); h = DefaultTextHeight(h, s); }
                 var entity = new TextEntity { Value = content, InsertPoint = new XYZ(at!.Value.X, at.Value.Y, 0), Height = h, Layer = GetOrCreateLayer(layer) };
                 if (textStyle != null) entity.Style = textStyle;
                 _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { entity }, "Text"));
@@ -1983,6 +1814,7 @@ namespace FdDraft.App
                 _leaderPending = null;
                 if (s.Length == 0) { EndTool(); Log("  *cancelled - no text*"); return; }
                 ParseHeightAndText(s, out double h, out string content);
+                h = DefaultTextHeight(h, s);
                 added.Add(new TextEntity { Value = content, InsertPoint = new XYZ(end.X, end.Y, 0), Height = h, Layer = GetOrCreateLayer(lyr) });
                 _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), added, "Leader"));
                 _dirty = true; UpdateTitle();
@@ -2009,6 +1841,8 @@ namespace FdDraft.App
                 _lastDimHeight = h;
                 var dim = build();
                 dim.Layer = GetOrCreateLayer(layer);
+                if (_dimStyle != null) dim.Style = _dimStyle;
+                _lastDim = dim;
                 _undo.Push(new AddDimensionCommand(CurrentEntityOwner(), dim, h, "Dimension"));
                 _dirty = true; UpdateTitle();
                 EndTool();
@@ -2816,7 +2650,7 @@ namespace FdDraft.App
                 _settings.WindowLeft = b.Left; _settings.WindowTop = b.Top; _settings.WindowWidth = b.Width; _settings.WindowHeight = b.Height;
             }
             _settings.WindowMaximized = WindowState == WindowState.Maximized;
-            _settings.Save();
+            SaveToolbarLayout();
         }
 
         private static string Existing(string dir) => !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? dir : "";

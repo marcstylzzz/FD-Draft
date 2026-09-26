@@ -6,10 +6,12 @@ already have their templates set up, so FD-Draft uses those as they are. It open
 the .dwt itself, drafts into it and saves a real DWG. No AutoCAD, MSCAD or other
 CAD program is involved.
 
-Status: **v0.4**. The desktop application (**FD-Draft.exe**) opens, drafts,
-views, inverses, saves DWG and plots PDF - and now edits: select, erase,
-move, rotate, retype text, reassign layers, undo/redo, and draw lines by
-bearing and distance, arcs, text and leaders. The command-line tool runs the
+Status: **v0.5**. The desktop application (**FD-Draft.exe**) opens, drafts,
+views, inverses, saves DWG and plots PDF, and edits: select, erase, move,
+rotate, retype text, reassign layers, undo/redo, and draw lines by bearing and
+distance, arcs, text and leaders. v0.5 adds the full survey toolset on dark
+toolbars laid out after MSCAD's (FD Labels, FD Ties, FD Text Edit, layers,
+dimensioning, COGO calcs, coordinates). The command-line tool runs the
 same engine. The document assistant (plans, PINs, deeds) comes next. See
 `docs/ARCHITECTURE.md` for how it's built, and **`docs/PROGRESS.md`** for
 current status and what's next - read that one first in a new chat/session.
@@ -22,6 +24,7 @@ FD-Draft/
   src/FdDraft.App/         FD-Draft.exe - the Windows app (WPF)
   tools/FdDraft.Cli/       fddraft.exe - the engine from the command line
   tools/wpf-compile-check/ compiles the app against WPF's public API on a non-Windows box
+  tools/icons/             the toolbar icons' source (icons.py) and generator -> ToolIconData.g.cs
   tests/FdDraft.Tests/     plain console test runner
   external/ACadSharp/      DWG/DXF library (MIT), git submodule at a pinned commit
   standards/               provision-2024.standards.ini - rules for the example template
@@ -60,12 +63,18 @@ FdDraft.App project in Visual Studio).
   (double-click a point to zoom to it).
 - **Model space is black, sheets are white**, as in AutoCAD/MSCAD (colour 7
   draws white on black; plots are unaffected).
-- **View toolbar**: Regen, Pan (left-drag pans until you click it again or
-  press Esc), Zoom Window, Zoom Previous, Zoom In/Out, Extents - also typed:
-  REGEN, PAN, ZW, ZP, ZI, ZO, ZOOM W/P/I/O.
-- **Object Snap toolbar**: End, Mid, Int (intersection), Cen, Quad, Perp,
-  Near, Node - each on/off (orange = on), ✕ None; remembered between
-  sessions. F3 still switches all snapping off/on.
+- **Toolbars** - dark, with FD-Draft's own vector icons, in six rows: FD-Draft's
+  Standard / Draw / Modify / Layer / View / Object Snap / Survey bars, plus the
+  survey bars laid out button for button after MSCAD's (from its `icad.cui`):
+  **FD Labels, FD Ties, FD Text Edit, FD Layer, Layer Tools, Dimensioning,
+  Text, FD Main Control, FD Calcs, FD Coordinate**. Every button runs a typed
+  command (hover for its name, what it does and the command); buttons with no
+  FD-Draft equivalent yet are shown dimmed with the reason. **View > Toolbars**
+  (or right-click the toolbar area) shows/hides each bar, "Hide the FD survey
+  bars" and "Reset toolbar layout"; drag bars by their grip - the layout is
+  remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
+  (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
+  every command by toolbar.
 - **Right-click** an item for the edit menu (Undo, Redo, Erase, Select all,
   Select same layer, plus Move, Copy, Rotate, Mirror, Change to current
   layer, Properties, zooms); while a command is waiting, right-click is
@@ -133,13 +142,37 @@ FdDraft.App project in Visual Studio).
   and perimeter of each selected closed polyline or circle, arcs included;
   with nothing closed selected, pick the corners and it keeps a running
   total.
-- **Annotate toolbar** - MSCAD's eight auto labels: split bearing (on the
-  centre of the line, the line broken around it), bearing off line, split
-  distance, distance off line, bearing/distance, bearing-distance (one
-  line), bearing/distance // line and distance/bearing // line (stacked on
-  the picked side). Pick lines one after another; for the off-line styles,
-  pick on the side the label should go. Esc or right-click ends. Commands:
-  BRGON, BRGOFF, DISTON, DISTOFF, BRGDIST, BRGDASH, BRGDISTL, DISTBRGL.
+- **FD Labels** (MSCAD's Labels 1, all 15): split bearing (degrees one
+  side, minutes/seconds the other), bearing on centre of line and distance on
+  centre (the line broken around the text), bearing / distance off line,
+  bearing/distance either side, bearing - distance and distance - bearing on
+  one line, bearing/distance and distance/bearing stacked, add angle between
+  two lines, arrows along a line, curve data on the curve or as a block placed
+  anywhere, and text along an arc. Pick lines one after another (on the side
+  the label goes); Esc or right-click ends.
+- **FD Ties**: automatic and manual house ties (square to the lot line, with
+  or without arrows, length labelled), arrow size (Leader Scale), curvy and
+  straight leaders, quick posts (insert the drawing's monument blocks at
+  picked points), a line of blocks, and line / curve / tie tables (tags the
+  selected courses L1, C1, T1... and draws the table where you pick).
+- **FD Text Edit / Text**: Leroy 50-240 sizes (resize the selection or set the
+  size for new text), text style, arrows between points, match one text's
+  size, scale by a factor, turn 180°, rotate to a line, slide along the
+  baseline, edit text, multiline text, and combine texts into one.
+- **FD Layer / Layer Tools**: isolate / unisolate, off / all on, freeze /
+  thaw all, lock / unlock (locked layers can't be selected), match, set
+  current by pick, change to current, copy to a layer, delete a layer and
+  everything on it, what layer, named layer states, Layer Previous, ByLayer.
+- **Dimensioning** adds quick dimension, baseline, continue, centre mark,
+  centre line, edit / rotate / reposition / restore dimension text, and
+  dimension style choice, status and update.
+- **FD Calcs / FD Coordinate / FD Main Control**: points on an object,
+  turned angle, station/offset, line tangent to a curve, connect points by
+  code, best-fit line and curve, a curve calculator (any two of R, L, Δ, C,
+  T, E, M), curve off one tangent; point import/export (P,N,E,Z,D), list
+  points, zoom to a point number, scale about a point, delete points, add
+  points at vertices; INFO on any line, curve, text or dimension; the
+  standards file, command log and calculator.
 - **Label** adds bearing and distance (or radius/arc/chord for a curve) to
   the selected lines, arcs and polyline spans, by exactly the rules Draft
   uses - the firm's text heights, layers, styles and bearing format - at

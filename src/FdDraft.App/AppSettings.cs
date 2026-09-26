@@ -22,6 +22,14 @@ namespace FdDraft.App
         public double WindowLeft = double.NaN, WindowTop = double.NaN, WindowWidth = double.NaN, WindowHeight = double.NaN;
         /// <summary>Opens maximized the first time, then however it was left.</summary>
         public bool WindowMaximized = true;
+        /// <summary>Toolbar rows, places and visibility: "key:band:index:visible;..." (empty = defaults).</summary>
+        public string ToolbarLayout = "";
+        /// <summary>Arrowhead size on paper (mm) for leaders, ties and arrows (MSCAD's Leader Scale).</summary>
+        public double ArrowMm = 2.5;
+        /// <summary>Paper height (mm) for new TEXT set by a Leroy button; 0 = none chosen yet.</summary>
+        public double TextMm = 0;
+        /// <summary>Saved layer states: name -> "layer=flags|layer=flags" (flags: o on, f frozen, l locked).</summary>
+        public Dictionary<string, string> LayerStates = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         public static string FilePath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FD-Draft", "app.ini");
@@ -46,6 +54,16 @@ namespace FdDraft.App
                 s.WindowWidth = ini.GetDouble("", "window_width", double.NaN);
                 s.WindowHeight = ini.GetDouble("", "window_height", double.NaN);
                 s.WindowMaximized = ini.GetBool("", "window_maximized", true);
+                s.ToolbarLayout = ini.GetString("", "toolbar_layout", "");
+                s.ArrowMm = ini.GetDouble("", "arrow_mm", 2.5);
+                s.TextMm = ini.GetDouble("", "text_mm", 0);
+                foreach (var line in File.ReadAllLines(FilePath))
+                {
+                    const string prefix = "layer_state.";
+                    if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    int eq = line.IndexOf('=');
+                    if (eq > prefix.Length) s.LayerStates[line.Substring(prefix.Length, eq - prefix.Length)] = line.Substring(eq + 1);
+                }
             }
             catch (IOException) { /* defaults */ }
             return s;
@@ -63,7 +81,7 @@ namespace FdDraft.App
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-                File.WriteAllLines(FilePath, new List<string>
+                var lines = new List<string>
                 {
                     "; FD-Draft user settings",
                     "template=" + TemplatePath,
@@ -79,7 +97,12 @@ namespace FdDraft.App
                     "window_width=" + Num(WindowWidth),
                     "window_height=" + Num(WindowHeight),
                     "window_maximized=" + (WindowMaximized ? "true" : "false"),
-                });
+                    "toolbar_layout=" + ToolbarLayout,
+                    "arrow_mm=" + ArrowMm.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    "text_mm=" + TextMm.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                };
+                foreach (var kv in LayerStates) lines.Add("layer_state." + kv.Key + "=" + kv.Value);
+                File.WriteAllLines(FilePath, lines);
             }
             catch (IOException) { /* settings are a convenience */ }
             catch (UnauthorizedAccessException) { }

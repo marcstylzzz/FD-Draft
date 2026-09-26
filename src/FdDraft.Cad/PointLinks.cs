@@ -37,7 +37,7 @@ namespace FdDraft.Cad
         public static string? TaggedCode(Entity e) => Get(e, CodeKey) is ExtendedDataString s ? s.Value : null;
 
         /// <summary>Sets one "KEY, value" pair in FD-Draft's extended data, leaving any others.</summary>
-        private static void Set(Entity e, string key, ExtendedDataRecord value)
+        internal static void Set(Entity e, string key, ExtendedDataRecord value)
         {
             if (!e.ExtendedData.TryGet(AppName, out var xd))
             {
@@ -51,7 +51,7 @@ namespace FdDraft.Cad
             r.Add(value);
         }
 
-        private static ExtendedDataRecord? Get(Entity e, string key)
+        internal static ExtendedDataRecord? Get(Entity e, string key)
         {
             if (!e.ExtendedData.TryGet(AppName, out var xd)) return null;
             var r = xd.Records;

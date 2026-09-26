@@ -257,6 +257,7 @@ namespace FdDraft.Cad.Editing
             double rot = Angles.ReadableRotation(a, b);
             var up = new Vec2(-Math.Sin(rot), Math.Cos(rot));
             var textAt = (a + b) * 0.5 + up * (h * 0.5 + h * 0.6);
+            Placed(dim, ref textAt, ref rot);
             dim.TextMiddlePoint = W(textAt);
             dim.TextRotation = 0;
             var block = FreshBlock(dim);
@@ -294,6 +295,7 @@ namespace FdDraft.Cad.Editing
             var outward = new Vec2(Math.Cos(mid), Math.Sin(mid));
             double rot = Angles.ReadableRotation(On(mid), On(mid) + outward.Left());
             var textAt = On(mid) + outward * (h * 0.5 + h * 0.6);
+            Placed(dim, ref textAt, ref rot);
             dim.TextMiddlePoint = W(textAt);
             dim.TextRotation = 0;
             block.Entities.Add(Label(dim, textAt, rot, h, Dms(sweep)));
@@ -309,6 +311,7 @@ namespace FdDraft.Cad.Editing
             double rot = Angles.ReadableRotation(d1, d2);
             var up = new Vec2(-Math.Sin(rot), Math.Cos(rot));
             var textAt = (d1 + d2) * 0.5 + up * (h * 0.5 + h * 0.6);
+            Placed(dim, ref textAt, ref rot);
             dim.TextMiddlePoint = W(textAt);
             dim.TextRotation = 0;
 
@@ -339,6 +342,7 @@ namespace FdDraft.Cad.Editing
             double rot = Angles.ReadableRotation(c, q);
             var up = new Vec2(-Math.Sin(rot), Math.Cos(rot));
             var textAt = (c + q) * 0.5 + up * (h * 0.5 + h * 0.6);
+            Placed(dim, ref textAt, ref rot);
             dim.TextMiddlePoint = W(textAt);
             dim.TextRotation = 0;
 
@@ -347,6 +351,70 @@ namespace FdDraft.Cad.Editing
             block.Entities.Add(Arrow(q, (c - q).Normalized(), h));
             block.Entities.Add(Label(dim, textAt, rot, h, "R" + Fmt(Vec2.Distance(c, q), 3)));
             AddDefpoints(dim, block, c, q);
+        }
+
+        private sealed class DefaultText { public Vec2 At; public double Rot; }
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Dimension, DefaultText> _defaultText =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<Dimension, DefaultText>();
+
+        /// <summary>Moves the text from where the picture would put it by the dimension's own text
+        /// offset (DIMTEDIT / DIMROTATE), kept in FD-Draft's extended data along/across the text's
+        /// normal direction so it travels with the dimension through MOVE and ROTATE.</summary>
+        private static void Placed(Dimension dim, ref Vec2 at, ref double rot)
+        {
+            _defaultText.AddOrUpdate(dim, new DefaultText { At = at, Rot = rot });
+            var (dx, dy, dr) = TextOffset(dim);
+            var u = new Vec2(Math.Cos(rot), Math.Sin(rot));
+            at = at + u * dx + u.Left() * dy;
+            rot += dr;
+        }
+
+        private const string TextDx = "DIMTEXTDX", TextDy = "DIMTEXTDY", TextDr = "DIMTEXTROT";
+
+        /// <summary>The dimension's text offset from its normal place: along and across the text's
+        /// normal direction, and extra rotation (radians). All zero for untouched text.</summary>
+        public static (double Dx, double Dy, double DRot) TextOffset(Dimension dim)
+        {
+            double R(string k) => PointLinks.Get(dim, k) is ACadSharp.XData.ExtendedDataReal r ? r.Value : 0;
+            return (R(TextDx), R(TextDy), R(TextDr));
+        }
+
+        private static void WriteOffset(Dimension dim, (double Dx, double Dy, double DRot) o)
+        {
+            PointLinks.Set(dim, TextDx, new ACadSharp.XData.ExtendedDataReal(o.Dx));
+            PointLinks.Set(dim, TextDy, new ACadSharp.XData.ExtendedDataReal(o.Dy));
+            PointLinks.Set(dim, TextDr, new ACadSharp.XData.ExtendedDataReal(o.DRot));
+        }
+
+        /// <summary>
+        /// Moves a dimension's text to <paramref name="at"/> and/or turns it to
+        /// <paramref name="rotation"/> (radians, absolute); both null puts it back home. Undoable;
+        /// the picture is redrawn. Only FD-Draft's own dimension kinds (<see cref="IsOurs"/>).
+        /// </summary>
+        public static IEditCommand? PlaceText(Dimension dim, Vec2? at, double? rotation, bool home, string description)
+        {
+            if (!IsOurs(dim) || dim.Document == null) return null;
+            var old = TextOffset(dim);
+            if (!_defaultText.TryGetValue(dim, out var def)) { DrawPicture(dim); if (!_defaultText.TryGetValue(dim, out def)) return null; }
+            var u = new Vec2(Math.Cos(def.Rot), Math.Sin(def.Rot));
+            var nw = home ? (0.0, 0.0, 0.0) : old;
+            if (at.HasValue) { var d = at.Value - def.At; nw.Item1 = Vec2.Dot(d, u); nw.Item2 = Vec2.Dot(d, u.Left()); }
+            if (rotation.HasValue) nw.Item3 = rotation.Value - def.Rot;
+            return new SetPropertyCommand<(double, double, double)>(old, nw, v => { WriteOffset(dim, v); DrawPicture(dim); }, description);
+        }
+
+        /// <summary>
+        /// Replaces a dimension's text (DIMEDIT New): "&lt;&gt;" stands for the measurement, empty
+        /// goes back to the measurement alone. Undoable; the picture is redrawn.
+        /// </summary>
+        public static IEditCommand? SetText(Dimension dim, string text, int decimals, string description)
+        {
+            if (!IsOurs(dim) || dim.Document == null) return null;
+            string measured = dim is DimensionAngular3Pt ? Dms(dim.Measurement)
+                : (dim is DimensionRadius ? "R" : dim is DimensionDiameter ? "%%c" : "") + Fmt(dim.Measurement, decimals);
+            string value = text.Length == 0 ? measured : text.Replace("<>", measured);
+            string old = dim.Text ?? "";
+            return new SetPropertyCommand<string>(old, value, v => { dim.Text = v; DrawPicture(dim); }, description);
         }
 
         /// <summary>Registers (or clears) the dimension's own *D block in the document.
