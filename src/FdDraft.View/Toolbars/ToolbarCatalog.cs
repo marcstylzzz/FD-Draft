@@ -333,3 +333,50 @@ namespace FdDraft.View.Toolbars
                 .Select(b => b.Command!.Split(' ')[0]).Distinct();
     }
 }
+
+namespace FdDraft.View.Toolbars
+{
+    /// <summary>Fits the toolbars into as few rows as the window's width allows.</summary>
+    public static class ToolbarLayout
+    {
+        /// <summary>
+        /// A bar's width in device-independent pixels at an icon size: each button is the icon
+        /// plus its padding and border, separators a few pixels, the layer list its fixed width,
+        /// plus the bar's grip and overflow chevron.
+        /// </summary>
+        public static double EstimateWidth(ToolbarDef bar, int iconSize)
+        {
+            double w = 24; // grip + overflow button + margins
+            foreach (var b in bar.Buttons)
+                w += b.Kind == ToolButtonKind.Separator ? 7 : b.Kind == ToolButtonKind.Custom ? 215 : iconSize + ButtonChrome(iconSize);
+            return w;
+        }
+
+        /// <summary>Padding + border + margin around an icon, both sides together.</summary>
+        public static double ButtonChrome(int iconSize) => 2 * Padding(iconSize) + 2 + 2;
+
+        /// <summary>The padding inside a button round its icon.</summary>
+        public static double Padding(int iconSize) => iconSize >= 24 ? 2 : 1;
+
+        /// <summary>
+        /// Rows for the bars: in catalog order, each bar goes on the first row that still has room
+        /// for it in <paramref name="available"/> (a new row when none has), so short bars fill gaps
+        /// instead of leaving a row nearly empty. Returns key -> (row, place in row).
+        /// </summary>
+        public static Dictionary<string, (int Band, int Index)> Pack(IEnumerable<ToolbarDef> bars, int iconSize, double available)
+        {
+            var result = new Dictionary<string, (int, int)>();
+            var used = new List<double>();
+            var count = new List<int>();
+            foreach (var bar in bars)
+            {
+                double w = EstimateWidth(bar, iconSize);
+                int band = used.FindIndex(u => u + w <= available);
+                if (band < 0) { band = used.Count; used.Add(0); count.Add(0); }
+                result[bar.Key] = (band, count[band]++);
+                used[band] += w;
+            }
+            return result;
+        }
+    }
+}

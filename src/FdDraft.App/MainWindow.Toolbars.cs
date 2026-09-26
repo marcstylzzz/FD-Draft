@@ -26,6 +26,11 @@ namespace FdDraft.App
         private readonly Dictionary<string, ToolBar> _toolbars = new Dictionary<string, ToolBar>();
         private readonly MenuItem _toolbarsMenu = new MenuItem { Header = "_Toolbars" };
         private ToolBarTray? _tray;
+        private readonly List<Image> _toolIcons = new List<Image>();
+        private int IconSize => _settings.ToolbarIconSize;
+
+        /// <summary>Room for the toolbar rows: the window's width (or the screen's, before it's shown).</summary>
+        private double ToolbarRoom() => Math.Max(600, (ActualWidth > 0 ? ActualWidth : SystemParameters.WorkArea.Width) - 24);
 
         private static SolidColorBrush Frozen(byte r, byte g, byte b, byte a = 255)
         {
@@ -61,15 +66,16 @@ namespace FdDraft.App
         {
             var tray = new ToolBarTray { Background = TrayBrush, IsLocked = false };
             _tray = tray;
-            var buttonStyle = ToolButtonStyle(typeof(Button));
-            var toggleStyle = ToolButtonStyle(typeof(ToggleButton));
-            var saved = ParseToolbarLayout(_settings.ToolbarLayout);
-            var nextIndex = new Dictionary<int, int>();
+            var buttonStyle = ToolButtonStyle(typeof(Button), IconSize);
+            var toggleStyle = ToolButtonStyle(typeof(ToggleButton), IconSize);
+            // A layout saved at another icon size (or by v0.5.0, before sizes) no longer fits - re-pack it.
+            var saved = _settings.ToolbarLayoutSize == IconSize ? ParseToolbarLayout(_settings.ToolbarLayout) : new Dictionary<string, (int Band, int Index, bool Visible)>();
+            var previous = ParseToolbarLayout(_settings.ToolbarLayout);
+            var packed = ToolbarLayout.Pack(ToolbarCatalog.All, IconSize, ToolbarRoom());
             foreach (var def in ToolbarCatalog.All)
             {
-                nextIndex.TryGetValue(def.Band, out int index);
-                nextIndex[def.Band] = index + 1;
-                var bar = new ToolBar { Band = def.Band, BandIndex = index, Background = BarBrush, Foreground = BarText, Tag = def.Key, ToolTip = null, Margin = new Thickness(1, 1, 1, 0) };
+                var (band, index) = packed[def.Key];
+                var bar = new ToolBar { Band = band, BandIndex = index, Background = BarBrush, Foreground = BarText, Tag = def.Key, ToolTip = null, Margin = new Thickness(1, 1, 1, 0) };
                 // When a row is too wide for the window, the buttons that don't fit go into the
                 // bar's overflow drop-down - keep that dark too, so the icons stay readable.
                 bar.Loaded += (s, e) =>
@@ -89,6 +95,8 @@ namespace FdDraft.App
                     bar.Band = pos.Band; bar.BandIndex = pos.Index;
                     if (!pos.Visible) bar.Visibility = Visibility.Collapsed;
                 }
+                else if (previous.TryGetValue(def.Key, out var old) && !old.Visible)
+                    bar.Visibility = Visibility.Collapsed; // keep a bar hidden even when its place is re-packed
                 _toolbars[def.Key] = bar;
                 tray.ToolBars.Add(bar);
             }
@@ -111,7 +119,7 @@ namespace FdDraft.App
             switch (b.Kind)
             {
                 case ToolButtonKind.Separator:
-                    return new Separator { Background = HoverBrush, Margin = new Thickness(3, 4, 3, 4) };
+                    return new Separator { Background = HoverBrush, Margin = new Thickness(2, 3, 2, 3) };
                 case ToolButtonKind.Custom:
                 {
                     var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -120,7 +128,8 @@ namespace FdDraft.App
                     return panel;
                 }
             }
-            var content = new Image { Source = ToolIconImage.Get(b.Icon), Width = 24, Height = 24, SnapsToDevicePixels = true };
+            var content = new Image { Source = ToolIconImage.Get(b.Icon), Width = IconSize, Height = IconSize, SnapsToDevicePixels = true };
+            _toolIcons.Add(content);
             RenderOptions.SetEdgeMode(content, EdgeMode.Unspecified);
             ButtonBase button;
             if (b.Kind == ToolButtonKind.Toggle)
@@ -171,14 +180,14 @@ namespace FdDraft.App
         }
 
         /// <summary>The dark flat look for toolbar buttons: hover, pressed, on (toggles), dimmed when unavailable.</summary>
-        private static Style ToolButtonStyle(Type type)
+        private static Style ToolButtonStyle(Type type, int iconSize)
         {
             var border = new FrameworkElementFactory(typeof(Border), "Bd");
             border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
             border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
             border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
             border.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
-            border.SetValue(Border.PaddingProperty, new Thickness(2));
+            border.SetValue(Border.PaddingProperty, new Thickness(ToolbarLayout.Padding(iconSize)));
             border.SetValue(Border.SnapsToDevicePixelsProperty, true);
             var content = new FrameworkElementFactory(typeof(ContentPresenter));
             content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
@@ -206,6 +215,7 @@ namespace FdDraft.App
             style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
             style.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent));
             style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(1, 0, 1, 0)));
+            style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
             style.Setters.Add(new Setter(Control.FocusableProperty, false));
             return style;
         }
@@ -278,6 +288,15 @@ namespace FdDraft.App
             var none = new MenuItem { Header = "Hide the FD survey bars" };
             none.Click += (s, e) => { foreach (var d in ToolbarCatalog.All.Where(d => d.FromMscad)) _toolbars[d.Key].Visibility = Visibility.Collapsed; SaveToolbarLayout(); };
             yield return none;
+            var size = new MenuItem { Header = "Icon _size" };
+            foreach (var (px, label) in new[] { (12, "Small (12)"), (16, "Medium (16)"), (24, "Large (24)") })
+            {
+                var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = IconSize == px };
+                int n = px;
+                item.Click += (s, e) => SetToolbarIconSize(n);
+                size.Items.Add(item);
+            }
+            yield return size;
             var reset = new MenuItem { Header = "Reset toolbar layout" };
             reset.Click += (s, e) => ResetToolbarLayout();
             yield return reset;
@@ -287,22 +306,42 @@ namespace FdDraft.App
         {
             if (_tray == null) return;
             _tray.ToolBars.Clear();
-            var nextIndex = new Dictionary<int, int>();
+            var packed = ToolbarLayout.Pack(ToolbarCatalog.All, IconSize, ToolbarRoom());
             foreach (var def in ToolbarCatalog.All)
             {
                 var bar = _toolbars[def.Key];
-                nextIndex.TryGetValue(def.Band, out int index);
-                nextIndex[def.Band] = index + 1;
-                bar.Band = def.Band; bar.BandIndex = index; bar.Visibility = Visibility.Visible;
+                var (band, index) = packed[def.Key];
+                bar.Band = band; bar.BandIndex = index; bar.Visibility = Visibility.Visible;
                 _tray.ToolBars.Add(bar);
             }
             SaveToolbarLayout();
             Log("  toolbars back to their default layout");
         }
 
+        /// <summary>Icon size 12 / 16 / 24: every icon and button resized, the rows re-packed to fit.</summary>
+        private void SetToolbarIconSize(int px)
+        {
+            if (_tray == null) return;
+            _settings.ToolbarIconSize = px;
+            foreach (var img in _toolIcons) { img.Width = px; img.Height = px; }
+            var buttonStyle = ToolButtonStyle(typeof(Button), px);
+            var toggleStyle = ToolButtonStyle(typeof(ToggleButton), px);
+            var hidden = _toolbars.Where(kv => kv.Value.Visibility != Visibility.Visible).Select(kv => kv.Key).ToList();
+            foreach (var bar in _toolbars.Values)
+            {
+                bar.Resources[ToolBar.ButtonStyleKey] = buttonStyle;
+                bar.Resources[ToolBar.ToggleButtonStyleKey] = toggleStyle;
+            }
+            ResetToolbarLayout();
+            foreach (var k in hidden) _toolbars[k].Visibility = Visibility.Collapsed;
+            SaveToolbarLayout();
+            Log("  toolbar icons " + px + " px");
+        }
+
         /// <summary>Remembers each toolbar's row, place and visibility ("key:band:index:1;...").</summary>
         private void SaveToolbarLayout()
         {
+            _settings.ToolbarLayoutSize = IconSize;
             _settings.ToolbarLayout = string.Join(";", _toolbars.Select(kv =>
                 kv.Key + ":" + kv.Value.Band.ToString(CultureInfo.InvariantCulture) + ":" + kv.Value.BandIndex.ToString(CultureInfo.InvariantCulture) + ":" + (kv.Value.Visibility == Visibility.Visible ? "1" : "0")));
             _settings.Save();

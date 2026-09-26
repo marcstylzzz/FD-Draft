@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.0 (`Directory.Build.props`).
+- **Current version:** 0.5.1 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  88 tests as of v0.5.0, all passing.
+  89 tests as of v0.5.1, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -262,7 +262,7 @@ on Windows; that's still Marc's job when he runs a build.
   line. Built as BRGON/BRGOFF/DISTON/DISTOFF/BRGDIST/BRGDASH/BRGDISTL/
   DISTBRGL with a pick loop. His screenshot 3 had 15 icons; the last 7
   (after the eight he named) are unidentified.
-- **v0.5.0** (current): the full toolbar set from Marc's MSCAD `icad.cui`
+- **v0.5.0**: the full toolbar set from Marc's MSCAD `icad.cui`
   (he uploaded it; it lives only in that chat - `ToolbarCatalog.cs` now holds
   everything needed from it). Marc approved the dark icon style from a sample
   sheet, then asked for all of it and for FD-Draft names ("FD Labels", not
@@ -284,6 +284,14 @@ on Windows; that's still Marc's job when he runs a build.
     FD-Pro owns the point database and raw data).
   - Not run on Windows yet: Marc should try the bars, especially ties,
     tables, text on arc, dimension text moves, layer lock/freeze/states.
+- **v0.5.1** (current): Marc ran v0.5.0 (it works) - the 24 px toolbars in
+  six rows took too much of the drawing area; he asked for half-size icons that
+  stay legible. At 12 px (on his 150%-scaled 1920 screen) the numbers inside
+  the label icons turn to dots, so the default is now 16 px with tight button
+  padding, and the rows are packed first-fit to the window's width
+  (`ToolbarLayout.Pack`): 5 thin rows, about half the old toolbar height.
+  View > Toolbars > Icon size switches Small 12 / Medium 16 / Large 24.
+  A layout saved at another size (or by 0.5.0) is re-packed on start.
 - **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 

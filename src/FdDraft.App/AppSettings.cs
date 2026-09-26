@@ -26,6 +26,10 @@ namespace FdDraft.App
         public string ToolbarLayout = "";
         /// <summary>Arrowhead size on paper (mm) for leaders, ties and arrows (MSCAD's Leader Scale).</summary>
         public double ArrowMm = 2.5;
+        /// <summary>Toolbar icon size in device-independent pixels (12 small, 16 medium, 24 large).</summary>
+        public int ToolbarIconSize = 16;
+        /// <summary>The icon size <see cref="ToolbarLayout"/> was saved at; a layout saved at another size is re-packed.</summary>
+        public int ToolbarLayoutSize = 0;
         /// <summary>Paper height (mm) for new TEXT set by a Leroy button; 0 = none chosen yet.</summary>
         public double TextMm = 0;
         /// <summary>Saved layer states: name -> "layer=flags|layer=flags" (flags: o on, f frozen, l locked).</summary>
@@ -56,6 +60,9 @@ namespace FdDraft.App
                 s.WindowMaximized = ini.GetBool("", "window_maximized", true);
                 s.ToolbarLayout = ini.GetString("", "toolbar_layout", "");
                 s.ArrowMm = ini.GetDouble("", "arrow_mm", 2.5);
+                s.ToolbarIconSize = ini.GetInt("", "toolbar_icon_size", 16);
+                if (s.ToolbarIconSize != 12 && s.ToolbarIconSize != 16 && s.ToolbarIconSize != 24) s.ToolbarIconSize = 16;
+                s.ToolbarLayoutSize = ini.GetInt("", "toolbar_layout_size", 0);
                 s.TextMm = ini.GetDouble("", "text_mm", 0);
                 foreach (var line in File.ReadAllLines(FilePath))
                 {
@@ -98,6 +105,8 @@ namespace FdDraft.App
                     "window_height=" + Num(WindowHeight),
                     "window_maximized=" + (WindowMaximized ? "true" : "false"),
                     "toolbar_layout=" + ToolbarLayout,
+                    "toolbar_icon_size=" + ToolbarIconSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    "toolbar_layout_size=" + ToolbarLayoutSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "arrow_mm=" + ArrowMm.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
                     "text_mm=" + TextMm.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
                 };

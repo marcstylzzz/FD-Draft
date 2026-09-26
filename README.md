@@ -63,7 +63,9 @@ FdDraft.App project in Visual Studio).
   (double-click a point to zoom to it).
 - **Model space is black, sheets are white**, as in AutoCAD/MSCAD (colour 7
   draws white on black; plots are unaffected).
-- **Toolbars** - dark, with FD-Draft's own vector icons, in six rows: FD-Draft's
+- **Toolbars** - dark, with FD-Draft's own vector icons (16 px; View >
+  Toolbars > Icon size for 12 or 24), packed into as few rows as the window
+  allows: FD-Draft's
   Standard / Draw / Modify / Layer / View / Object Snap / Survey bars, plus the
   survey bars laid out button for button after MSCAD's (from its `icad.cui`):
   **FD Labels, FD Ties, FD Text Edit, FD Layer, Layer Tools, Dimensioning,
@@ -71,7 +73,7 @@ FdDraft.App project in Visual Studio).
   command (hover for its name, what it does and the command); buttons with no
   FD-Draft equivalent yet are shown dimmed with the reason. **View > Toolbars**
   (or right-click the toolbar area) shows/hides each bar, "Hide the FD survey
-  bars" and "Reset toolbar layout"; drag bars by their grip - the layout is
+  bars", icon size and "Reset toolbar layout"; drag bars by their grip - the layout is
   remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
   every command by toolbar.

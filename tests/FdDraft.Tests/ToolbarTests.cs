@@ -224,3 +224,29 @@ namespace FdDraft.Tests
         }
     }
 }
+
+namespace FdDraft.Tests
+{
+    public static partial class Tests
+    {
+        public static void TestToolbarRowsPackToTheWindow()
+        {
+            // Marc's screen: 1920 px at 150% = 1280 device-independent pixels.
+            var small = ToolbarLayout.Pack(ToolbarCatalog.All, 16, 1256);
+            int rows16 = small.Values.Max(v => v.Band) + 1;
+            var large = ToolbarLayout.Pack(ToolbarCatalog.All, 24, 1256);
+            int rows24 = large.Values.Max(v => v.Band) + 1;
+            Assert.True(rows16 <= 5, "16 px icons fit in five rows or fewer: " + rows16);
+            Assert.True(ToolbarLayout.Pack(ToolbarCatalog.All, 12, 1256).Values.Max(v => v.Band) + 1 <= 4, "12 px icons in four");
+            Assert.True(rows24 > rows16, "bigger icons need more rows");
+            foreach (var band in small.Values.GroupBy(v => v.Band))
+            {
+                double w = ToolbarCatalog.All.Where(b => small[b.Key].Band == band.Key).Sum(b => ToolbarLayout.EstimateWidth(b, 16));
+                Assert.True(w <= 1256 || band.Count() == 1, "row " + band.Key + " fits: " + w);
+            }
+            Assert.True(ToolbarCatalog.All.Select(b => small[b.Key]).Distinct().Count() == ToolbarCatalog.All.Count, "every bar has its own place");
+            // Height: buttons shrink to about half the old footprint (24 icon + 8 chrome = 32).
+            Assert.True((16 + ToolbarLayout.ButtonChrome(16)) / 32.0 <= 0.7, "a medium button is about two-thirds of the old one each way");
+        }
+    }
+}

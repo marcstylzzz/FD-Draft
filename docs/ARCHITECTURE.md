@@ -486,8 +486,11 @@ it on Windows is the real test.
 - **Dark toolbars** are plain WPF: a `ToolBarTray` with the ToolBar button
   styles replaced (`ToolBar.ButtonStyleKey` / `ToggleButtonStyleKey`) by a
   flat template with hover, pressed, on and dimmed states; the overflow
-  drop-down is darkened too. Rows (`Band`) are sized to fit a 1366-pixel
-  screen; the layout and visibility are saved in app.ini (`toolbar_layout`).
+  drop-down is darkened too. Icons are 16 px by default (12 / 24 from View >
+  Toolbars > Icon size); rows are packed first-fit to the window's width by
+  `ToolbarLayout.Pack` from each bar's estimated width. The layout, the size it
+  was saved at, and visibility are kept in app.ini (`toolbar_layout`,
+  `toolbar_layout_size`, `toolbar_icon_size`).
 - **The tools' geometry is in Core/Cad**, unit-tested: `SurveyCalcs` (curve
   solver from any two elements, best-fit line and arc, turned angle,
   station/offset, tangents, curve off a tangent, the angle between two picked
