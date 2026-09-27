@@ -53,25 +53,32 @@ namespace FdDraft.Core.Drafting
                 doc.Warnings.Add(skippedShort + " labelled course(s) are shorter than " + std.MinLabelledCourseMm.ToString(CultureInfo.InvariantCulture) +
                                  " mm at " + scale.Label + " and were left unlabelled - show them in a table or a detail.");
 
-            // Points: number above-right, elevation below-right, monument text left.
+            // Points: elevation at its angle on the plan (45° up-right by default), number at its
+            // own (down-right), monument text left - each reading level on the plan.
             var symbols = doc.Entities.FindAll(e => e is DraftSymbol);
             foreach (DraftSymbol s in symbols)
             {
                 double off = Math.Max(s.SizeMm, 1.0) * 0.7 * modelPerMm;
                 if (std.PointNumbers)
+                {
+                    var (at, h, v) = PointLabelPlace(s.Position, off, std.PointNumberAngleDeg, Angles.ViewTwist);
                     doc.Entities.Add(new DraftText
                     {
                         Layer = s.NumberLayer, Style = std.TextStyle("point_number"), Text = s.PointId.ToString(CultureInfo.InvariantCulture),
-                        Position = s.Position + new Vec2(off, off * 0.3), HeightMm = std.PointNumberTextMm,
-                        H = HAlign.Left, V = VAlign.Bottom, Kind = TextKind.PointNumber, PointId = s.PointId,
+                        Position = at, HeightMm = std.PointNumberTextMm, Rotation = -Angles.ViewTwist,
+                        H = h, V = v, Kind = TextKind.PointNumber, PointId = s.PointId,
                     });
+                }
                 if (std.PointElevations && s.ShowElevation)
+                {
+                    var (at, h, v) = PointLabelPlace(s.Position, off, std.ElevationAngleDeg, Angles.ViewTwist);
                     doc.Entities.Add(new DraftText
                     {
                         Layer = s.ElevationLayer, Style = std.TextStyle("elevation"), Text = s.Elevation.ToString(std.ElevationFormat, CultureInfo.InvariantCulture),
-                        Position = s.Position + new Vec2(off, -off * 0.3), HeightMm = std.ElevationTextMm,
-                        H = HAlign.Left, V = VAlign.Top, Kind = TextKind.PointElevation, PointId = s.PointId,
+                        Position = at, HeightMm = std.ElevationTextMm, Rotation = -Angles.ViewTwist,
+                        H = h, V = v, Kind = TextKind.PointElevation, PointId = s.PointId,
                     });
+                }
                 if (s.MonumentText.Length > 0)
                     doc.Entities.Add(new DraftText
                     {
@@ -198,6 +205,22 @@ namespace FdDraft.Core.Drafting
         }
 
         /// <summary>Model units per paper millimetre at a scale.</summary>
+        /// <summary>
+        /// Where a label goes round its point: <paramref name="distance"/> out at
+        /// <paramref name="angleDeg"/> on the plan (a plan turned by <paramref name="twist"/>), anchored
+        /// on the corner nearest the point so the text grows away from it.
+        /// </summary>
+        public static (Vec2 At, HAlign H, VAlign V) PointLabelPlace(Vec2 point, double distance, double angleDeg, double twist)
+        {
+            double a = angleDeg * Math.PI / 180;
+            double w = a - twist; // the plan direction, in the drawing
+            var at = point + new Vec2(Math.Cos(w), Math.Sin(w)) * distance;
+            double c = Math.Cos(a), s = Math.Sin(a);
+            var h = Math.Abs(c) < 0.2 ? HAlign.Center : c > 0 ? HAlign.Left : HAlign.Right;
+            var v = Math.Abs(s) < 0.2 ? VAlign.Middle : s > 0 ? VAlign.Bottom : VAlign.Top;
+            return (at, h, v);
+        }
+
         public static double ModelPerMm(ScaleOption scale, FirmStandards std) => scale.ModelPerPaper * std.PaperUnitsPerMm;
 
         /// <summary>Fills {m2} {ha} {ft2} {ac} from an area in the job's own square units.</summary>

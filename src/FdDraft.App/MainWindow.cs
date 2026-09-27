@@ -1781,7 +1781,8 @@ namespace FdDraft.App
                 double h; string content;
                 if (presetHeight.HasValue) { h = presetHeight.Value; content = s; }
                 else { ParseHeightAndText(s, out h, out content); h = DefaultTextHeight(h, s); }
-                var entity = new TextEntity { Value = content, InsertPoint = new XYZ(at!.Value.X, at.Value.Y, 0), Height = h, Layer = GetOrCreateLayer(layer) };
+                // Level on the plan as it's seen (Surveyor View), not necessarily due east.
+                var entity = new TextEntity { Value = content, InsertPoint = new XYZ(at!.Value.X, at.Value.Y, 0), Height = h, Rotation = -Angles.ViewTwist, Layer = GetOrCreateLayer(layer) };
                 if (textStyle != null) entity.Style = textStyle;
                 _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { entity }, "Text"));
                 _dirty = true; UpdateTitle();
@@ -1832,7 +1833,7 @@ namespace FdDraft.App
                 if (s.Length == 0) { EndTool(); Log("  *cancelled - no text*"); return; }
                 ParseHeightAndText(s, out double h, out string content);
                 h = DefaultTextHeight(h, s);
-                added.Add(new TextEntity { Value = content, InsertPoint = new XYZ(end.X, end.Y, 0), Height = h, Layer = GetOrCreateLayer(lyr) });
+                added.Add(new TextEntity { Value = content, InsertPoint = new XYZ(end.X, end.Y, 0), Height = h, Rotation = -Angles.ViewTwist, Layer = GetOrCreateLayer(lyr) });
                 _undo.Push(new AddEntitiesCommand(CurrentEntityOwner(), added, "Leader"));
                 _dirty = true; UpdateTitle();
                 EndTool();

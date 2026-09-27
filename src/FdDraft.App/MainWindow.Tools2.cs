@@ -233,6 +233,7 @@ namespace FdDraft.App
                     {
                         Value = content.Replace("|", "\\P"), InsertPoint = new XYZ(at.X, at.Y, 0), Height = h,
                         AttachmentPoint = AttachmentPointType.TopLeft, Layer = GetOrCreateLayer(layer),
+                        AlignmentPoint = new XYZ(Math.Cos(-Angles.ViewTwist), Math.Sin(-Angles.ViewTwist), 0),
                     };
                     if (_textStyleName != null && _doc!.TextStyles.TryGetValue(_textStyleName, out var st)) m.Style = st;
                     EndTool();

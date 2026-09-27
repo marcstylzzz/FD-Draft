@@ -406,3 +406,69 @@ namespace FdDraft.Tests
         }
     }
 }
+
+namespace FdDraft.Tests
+{
+    public static partial class Tests
+    {
+        public static void TestLabelsFollowSurveyorView()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var ms = doc.ModelSpace.Entities;
+            TextEntity T(string v, double x, double y, double rot, string layer = "0") =>
+                new TextEntity { Value = v, InsertPoint = new CSMath.XYZ(x, y, 0), AlignmentPoint = new CSMath.XYZ(x, y, 0), Height = 1, Rotation = rot,
+                    HorizontalAlignment = TextHorizontalAlignment.Left, VerticalAlignment = TextVerticalAlignmentType.Bottom,
+                    Layer = doc.Layers.TryGetValue(layer, out var l) ? l : AddLayer(doc, layer) };
+            // Point 101 at (100,100): node, symbol, number (down-right) and elevation (below-right, the old way).
+            var node = new Point(new CSMath.XYZ(100, 100, 0)); ms.Add(node); PointLinks.Tag(node, 101);
+            var sym = new Insert(new ACadSharp.Tables.BlockRecord("IB") ) { InsertPoint = new CSMath.XYZ(100, 100, 0) };
+            doc.BlockRecords.Add(sym.Block); ms.Add(sym); PointLinks.Tag(sym, 101);
+            var num = T("101", 101, 99, 0); ms.Add(num); PointLinks.Tag(num, 101);
+            var elev = T("123.45", 101.4, 99.6, 0, "ELEVATION-GRND"); ms.Add(elev); PointLinks.Tag(elev, 101);
+            // An east-west line with its bearing along it, a north-south line whose label reads upward, and a note.
+            ms.Add(new Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(50, 0, 0)));
+            var ew = T("N90°00'00\"E", 20, 0.5, 0); ms.Add(ew);
+            ms.Add(new Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(0, 50, 0)));
+            var ns = T("N00°00'00\"E", -0.5, 20, Math.PI / 2); ms.Add(ns);
+            var note = T("LOT 12", 200, 200, 0); ms.Add(note);
+
+            double twist = Math.PI / 2; // the plan turned a quarter turn counter-clockwise
+            var undo = new UndoStack();
+            undo.Push(SurveyorView.Relabel(doc, 0, twist, 45, out int changed)!);
+            Assert.True(changed >= 5, "labels moved: " + changed);
+            Assert.True(Angles.ReadsLeftToRight(note.Rotation, twist) && Math.Abs(Math.Sin(note.Rotation + twist)) < 1e-9, "the note reads level on the turned plan: " + note.Rotation);
+            Assert.Near(0, ew.Rotation, 1e-9, "a bearing along its line keeps the line's angle");
+            Assert.True(Angles.ReadsLeftToRight(ns.Rotation, twist), "the north-south label is turned to read left to right in the new view");
+            Assert.Near(-twist, sym.Rotation, 1e-9, "the symbol stands upright on the plan (turned back against the view)");
+            Assert.True(Math.Abs(Math.Sin(num.Rotation + twist)) < 1e-9 && Math.Cos(num.Rotation + twist) > 0, "the point number reads level on the plan");
+            // Elevation: up-right of the point as the plan is seen.
+            var v = new ViewTransform { Center = new Vec2(100, 100), Zoom = 10, ScreenWidth = 400, ScreenHeight = 400, Twist = twist };
+            var sp = v.ToScreen(new Vec2(100, 100)); var se = v.ToScreen(new Vec2(elev.AlignmentPoint.X, elev.AlignmentPoint.Y));
+            Assert.True(se.X > sp.X + 1 && se.Y < sp.Y - 1, "the elevation sits up and to the right of its point on the plan");
+            Assert.Near(Math.Atan2(sp.Y - se.Y, se.X - sp.X), Math.PI / 4, 1e-6, "at 45°");
+            Assert.True(elev.VerticalAlignment == TextVerticalAlignmentType.Bottom && elev.HorizontalAlignment == TextHorizontalAlignment.Left, "growing away from the point");
+            undo.Undo();
+            Assert.Near(0, note.Rotation, 1e-9, "undo: note back"); Assert.Near(0, sym.Rotation, 1e-9, "symbol back");
+            Assert.Near(101.4, elev.AlignmentPoint.X, 1e-9, "elevation back");
+        }
+
+        private static ACadSharp.Tables.Layer AddLayer(ACadSharp.CadDocument doc, string name) { var l = new ACadSharp.Tables.Layer(name); doc.Layers.Add(l); return l; }
+
+        public static void TestNewLabelsReadInTheTurnedView()
+        {
+            try
+            {
+                Angles.ViewTwist = Math.PI / 2;
+                // A north-south course: north-up it reads upward (90°); turned a quarter turn it would
+                // then read upside down, so it runs the other way.
+                double r = Angles.ReadableRotation(new Vec2(0, 0), new Vec2(0, 10));
+                Assert.True(Angles.ReadsLeftToRight(r, Math.PI / 2), "reads left to right in the turned view");
+                Assert.Near(-Math.PI / 2, r, 1e-9, "i.e. runs downward in the drawing");
+                var (at, h, v) = Annotator.PointLabelPlace(new Vec2(0, 0), 2, 45, Math.PI / 2);
+                Assert.True(at.X > 0 && at.Y < 0 && h == HAlign.Left && v == VAlign.Bottom, "an elevation drafted on a turned plan goes up-right as seen (down-right in the drawing, turned a quarter turn)");
+            }
+            finally { Angles.ViewTwist = 0; }
+            Assert.Near(Math.PI / 2, Angles.ReadableRotation(new Vec2(0, 0), new Vec2(0, 10)), 1e-9, "north up again: reads upward");
+        }
+    }
+}

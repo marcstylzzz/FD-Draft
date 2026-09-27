@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.3 (`Directory.Build.props`).
+- **Current version:** 0.5.4 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  94 tests as of v0.5.3, all passing.
+  96 tests as of v0.5.4, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -298,7 +298,7 @@ on Windows; that's still Marc's job when he runs a build.
   insert's; attributes become text), dimensions -> their picture. `Exploder` in
   FdDraft.Cad. J already ran JOIN; both are now on the right-click menu, the
   Modify menu, and Explode is on the Modify toolbar.
-- **v0.5.3** (current): Surveyor View - Marc looked for it on the palette
+- **v0.5.3**: Surveyor View - Marc looked for it on the palette
   (it had been left off in v0.4.29 for want of a command) and said it must turn
   the paper layout and the north arrow too, as MSCAD's does. SV turns the plan
   (pick a line to run level, or type a bearing to point up, or degrees): Model
@@ -312,8 +312,23 @@ on Windows; that's still Marc's job when he runs a build.
   select and zoom window work on a turned Model view; MVIEW turns new
   viewports to match. palette.ini gains Surveyor View / World View / Return,
   Text to Multiline Text and Layers Off in Useful Tools (added once to an
-  existing file). Not done: labels keep their world-readable rotation, so on a
-  turned plan some read steeply - FLIP/ROTEXT/ROTOLINE fix individual ones.
+  existing file).
+- **v0.5.4** (current): labels follow Surveyor View. Marc: "all labels must
+  follow; elevation is always at NE45 of the plan, codes and symbols by default
+  follow the same plane, unless changed; point numbers the same".
+  `SurveyorView.Relabel` (part of the same undo step as the turn): a point's
+  labels and symbol (tagged with its point number) turn about the point so they
+  keep their place round it and read level on the plan - a label moved by hand
+  keeps its spot; the elevation is always put at `elevation_angle` (45° =
+  up-right on the plan); untagged text that read level stays level (unless it
+  lies along a parallel line - then it's a bearing/distance); text along lines
+  keeps its angle and is turned end for end where it would read upside down;
+  FD-Draft's dimensions redraw. New labels read in the turned view:
+  `Angles.ViewTwist` (set by the app) feeds `ReadableRotation`, and new TEXT /
+  MTEXT / leader text / imported point numbers are level on the plan.
+  Drafting default changed to match: elevation at 45° up-right, point number at
+  -45° down-right (was elevation below-right, number above-right) -
+  `[labels] elevation_angle / point_number_angle` in the standards file.
 - **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 

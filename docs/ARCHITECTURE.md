@@ -520,6 +520,14 @@ it on Windows is the real test.
   − target) − viewCentre), i.e. the view centre is in the twisted frame. So
   turning keeps the middle by recomputing the view centre from the model
   point it showed (`SurveyorView.ModelCenter`).
+- Labels follow the turn (`SurveyorView.Relabel`, same undo step): the view
+  turns the drawing by +delta, so anything that must stay level on the plan
+  turns by -delta - point labels and symbols about their point (found by the
+  point-number tag), level notes in place; elevations are re-placed at
+  `elevation_angle` on the plan; text along a parallel line is a course label
+  and only flips 180° when it would read upside down. `Angles.ViewTwist` makes
+  every new label (ReadableRotation, point label placement) read in the view
+  as seen.
 
 ### Next in the app
 

@@ -181,12 +181,34 @@ namespace FdDraft.Core.Geometry
         /// Text rotation (radians, CCW from +X) that runs along a line and still reads
         /// left-to-right: never upside down.
         /// </summary>
-        public static double ReadableRotation(Vec2 a, Vec2 b)
+        public static double ReadableRotation(Vec2 a, Vec2 b) => ReadableRotation(a, b, ViewTwist);
+
+        /// <summary>
+        /// The same for a plan shown turned by <paramref name="twist"/> (Surveyor View): the text
+        /// runs along the line and reads left to right as the plan is seen, not as north-up.
+        /// </summary>
+        public static double ReadableRotation(Vec2 a, Vec2 b, double twist)
         {
-            double r = Math.Atan2(b.Y - a.Y, b.X - a.X);
+            double r = Math.Atan2(b.Y - a.Y, b.X - a.X) + twist;
+            r = Math.Atan2(Math.Sin(r), Math.Cos(r));
             if (r > Math.PI / 2 + 1e-9) r -= Math.PI;
             else if (r <= -Math.PI / 2 + 1e-9) r += Math.PI;
-            return r;
+            return r - twist;
+        }
+
+        /// <summary>
+        /// How far the plan is turned on screen and on the sheets (Surveyor View), radians
+        /// counter-clockwise; 0 = north up. New labels read left to right in that view. Set by the
+        /// app when the view turns; everything else only reads it.
+        /// </summary>
+        public static double ViewTwist { get; set; }
+
+        /// <summary>True when a text at <paramref name="rotation"/> reads left to right on a plan turned by <paramref name="twist"/>.</summary>
+        public static bool ReadsLeftToRight(double rotation, double twist)
+        {
+            double r = rotation + twist;
+            r = Math.Atan2(Math.Sin(r), Math.Cos(r));
+            return r > -Math.PI / 2 + 1e-6 && r <= Math.PI / 2 + 1e-6;
         }
     }
 

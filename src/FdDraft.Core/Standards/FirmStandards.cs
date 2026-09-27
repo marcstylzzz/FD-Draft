@@ -215,6 +215,11 @@ namespace FdDraft.Core.Standards
         public string AreaFormat { get; set; } = "AREA = {m2} m²";
         public bool PointNumbers { get; set; } = true;
         public bool PointElevations { get; set; } = true;
+        /// <summary>Where a point's elevation sits, as an angle on the plan (degrees counter-clockwise
+        /// from the plan's right; 45 = up-right). Kept on the plan through Surveyor View.</summary>
+        public double ElevationAngleDeg { get; set; } = 45;
+        /// <summary>Where a point's number sits, likewise (-45 = down-right, clear of the elevation).</summary>
+        public double PointNumberAngleDeg { get; set; } = -45;
         public string ElevationFormat { get; set; } = "F2";
         public List<string> NoElevationCodes { get; } = new List<string>();
         public double MinLabelledCourseMm { get; set; } = 4.0;
@@ -308,6 +313,8 @@ namespace FdDraft.Core.Standards
             s.AreaFormat = ini.GetString("labels", "area_format", s.AreaFormat);
             s.PointNumbers = ini.GetBool("labels", "point_numbers", s.PointNumbers);
             s.PointElevations = ini.GetBool("labels", "point_elevations", s.PointElevations);
+            s.ElevationAngleDeg = ini.GetDouble("labels", "elevation_angle", s.ElevationAngleDeg);
+            s.PointNumberAngleDeg = ini.GetDouble("labels", "point_number_angle", s.PointNumberAngleDeg);
             s.ElevationFormat = ini.GetString("labels", "elevation_format", s.ElevationFormat);
             AddList(s.NoElevationCodes, ini.Get("labels", "no_elevation_codes"));
             s.MinLabelledCourseMm = ini.GetDouble("labels", "min_labelled_course_mm", s.MinLabelledCourseMm);

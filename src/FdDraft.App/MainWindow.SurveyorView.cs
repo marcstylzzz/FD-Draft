@@ -23,11 +23,13 @@ namespace FdDraft.App
         /// <summary>Model's on-screen twist follows the drawing's sheets (after opening, undo, redo).</summary>
         private void SyncTwistFromDrawing(bool announce)
         {
-            if (_doc == null) { _canvas.ModelTwist = 0; return; }
+            if (_doc == null) { _canvas.ModelTwist = 0; Angles.ViewTwist = 0; return; }
             double t = SurveyorView.CurrentTwist(_doc);
             // A drawing with no sheet viewport keeps whatever the screen was turned to.
             if (_doc.Layouts.Any(l => l.IsPaperSpace && SheetScale.PlanViewport(l) != null)) _canvas.ModelTwist = t;
             else if (announce) _canvas.ModelTwist = 0;
+            // New labels read left to right as the plan is seen.
+            Angles.ViewTwist = _canvas.ModelTwist;
             if (Math.Abs(t) > 1e-12)
             {
                 _lastSurveyorTwist = t;
@@ -41,9 +43,11 @@ namespace FdDraft.App
             if (!NeedDrawing()) return;
             twist = Math.Atan2(Math.Sin(twist), Math.Cos(twist)); // -180..180
             var std = LabelStandards();
-            var cmd = SurveyorView.Apply(_doc!, twist, std.NorthArrowBlock, out int sheets, out int arrows);
+            var rules = new SurveyorView.LabelRules { FromTwist = _canvas.ModelTwist, ElevationAngleDeg = std.ElevationAngleDeg };
+            var cmd = SurveyorView.Apply(_doc!, twist, std.NorthArrowBlock, rules, out int sheets, out int arrows, out int relabelled);
             var c = _canvas.View.Center; var z = _canvas.View.Zoom;
             _canvas.ModelTwist = twist;
+            Angles.ViewTwist = twist;
             if (Math.Abs(twist) > 1e-12) _lastSurveyorTwist = twist;
             if (cmd != null)
             {
@@ -54,6 +58,7 @@ namespace FdDraft.App
             _canvas.ZoomTo(c, z);
             Log("  " + what + (Math.Abs(twist) < 1e-12 ? "" : ": plan turned " + Deg(twist) + " counter-clockwise")
                 + (sheets > 0 ? " - " + sheets + " sheet" + (sheets == 1 ? "" : "s") + " turned to match" + (arrows > 0 ? ", north arrow turned with " + (sheets == 1 ? "it" : "them") : ", no north arrow found on the sheet") : " (no sheet viewport - on screen only)")
+                + (relabelled > 0 ? "; " + relabelled + " labels and symbols turned to read on the plan (elevations at " + std.ElevationAngleDeg.ToString("0", CultureInfo.InvariantCulture) + "° up-right)" : "")
                 + (cmd != null ? "  (Ctrl+Z undoes it)" : ""));
         }
 

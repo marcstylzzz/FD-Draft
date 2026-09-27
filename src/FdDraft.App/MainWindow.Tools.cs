@@ -563,7 +563,7 @@ namespace FdDraft.App
             {
                 ParseHeightAndText(text, out double h, out string content);
                 h = DefaultTextHeight(h, text);
-                list.Add(new TextEntity { Value = content, InsertPoint = new XYZ(pts[pts.Count - 1].X, pts[pts.Count - 1].Y, 0), Height = h, Layer = GetOrCreateLayer(layer) });
+                list.Add(new TextEntity { Value = content, InsertPoint = new XYZ(pts[pts.Count - 1].X, pts[pts.Count - 1].Y, 0), Height = h, Rotation = -Angles.ViewTwist, Layer = GetOrCreateLayer(layer) });
             }
             EndTool();
             AddEntities(list, "Leader", "  leader placed");
