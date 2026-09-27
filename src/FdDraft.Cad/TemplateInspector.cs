@@ -46,7 +46,8 @@ namespace FdDraft.Cad
                 {
                     try
                     {
-                        var b = e.GetBoundingBox();
+                        var b = e is Spline sp && FdDraft.View.SplinePoints.Of(sp) is var sps && sps.Count >= 2
+                            ? CSMath.BoundingBox.FromPoints(sps) : e.GetBoundingBox();
                         if (double.IsInfinity(b.Min.X) || double.IsNaN(b.Min.X) || double.IsInfinity(b.Max.X)) continue;
                         // A box with no size (an empty text, a stray point) says nothing about space taken.
                         if (b.Max.X - b.Min.X < 0.1 && b.Max.Y - b.Min.Y < 0.1) continue;

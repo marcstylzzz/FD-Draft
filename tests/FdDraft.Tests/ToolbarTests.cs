@@ -575,5 +575,40 @@ namespace FdDraft.Tests
             Assert.Near(50, s.Horizontal, 1e-12, "3-4-5"); Assert.Near(5, s.GradePercent, 1e-12, "grade"); Assert.Near(2.5, s.DeltaZ, 1e-12, "dZ");
             Assert.Near(Math.Sqrt(2500 + 6.25), s.Slope, 1e-12, "slope");
         }
+
+        private static ACadSharp.Entities.Spline GlyphSpline(double cx, double cy, bool wrapped)
+        {
+            // A closed cubic outline round (cx, cy) - what exploded text and logo art are made of.
+            var corners = new[] { new CSMath.XYZ(cx - 5, cy - 5, 0), new CSMath.XYZ(cx + 5, cy - 5, 0), new CSMath.XYZ(cx + 5, cy + 5, 0), new CSMath.XYZ(cx - 5, cy + 5, 0) };
+            var sp = new ACadSharp.Entities.Spline { Degree = 3 };
+            var ctrl = wrapped ? corners.Concat(corners.Take(3)).ToList() : corners.ToList();
+            foreach (var c in ctrl) sp.ControlPoints.Add(c);
+            int knots = wrapped ? ctrl.Count + 3 + 1 : ctrl.Count + 2 * 3 + 1;
+            for (int k = 0; k < knots; k++) sp.Knots.Add(k);
+            sp.IsClosed = true;
+            return sp;
+        }
+
+        public static void TestClosedSplinesDoNotRayToTheOrigin()
+        {
+            foreach (bool wrapped in new[] { true, false })
+            {
+                var sp = GlyphSpline(50, 50, wrapped);
+                var pts = FdDraft.View.SplinePoints.Of(sp);
+                Assert.True(pts.Count > 20, "sampled (" + (wrapped ? "wrapped" : "unwrapped") + ")");
+                Assert.True(pts.All(q => q.X > 44 && q.X < 56 && q.Y > 44 && q.Y < 56), "every point on the outline, none at 0,0 (" + (wrapped ? "wrapped" : "unwrapped") + ")");
+                Assert.True(Math.Abs(pts[0].X - pts[pts.Count - 1].X) < 1e-9 && Math.Abs(pts[0].Y - pts[pts.Count - 1].Y) < 1e-9, "closed");
+            }
+            // In a block inserted far from the origin (a title-block logo), nothing is drawn back at the insert point.
+            var doc = new ACadSharp.CadDocument();
+            var blk = new ACadSharp.Tables.BlockRecord("LOGO");
+            blk.Entities.Add(GlyphSpline(50, 50, true));
+            doc.BlockRecords.Add(blk);
+            doc.Entities.Add(new ACadSharp.Entities.Insert(blk) { InsertPoint = new CSMath.XYZ(1000, 2000, 0) });
+            var scene = new FdDraft.View.SceneBuilder(doc).Model();
+            var all = scene.AllPrims().Where(pr => pr.Points != null).SelectMany(pr => pr.Points!).ToList();
+            Assert.True(all.Count > 20, "the logo is drawn");
+            Assert.True(all.All(q => q.X > 1044 && q.Y > 2044), "no ray to the insertion point (1000, 2000)");
+        }
 }
 }

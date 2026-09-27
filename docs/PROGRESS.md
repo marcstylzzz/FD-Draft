@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.6.0 (`Directory.Build.props`).
+- **Current version:** 0.6.1 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  100 tests as of v0.6.0, all passing.
+  101 tests as of v0.6.1, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -363,7 +363,7 @@ on Windows; that's still Marc's job when he runs a build.
   only knew N45-30-00E. `Cogo.ParseBearing` now also takes NE/SE/SW/NW + angle
   (DD.MMSS when a plain number, or D-M-S), with the quadrant typed attached or
   apart ("NE 30.0030 125.5"). N45.5E stays decimal degrees.
-- **v0.6.0** (current): MSCAD's INFO -> "CAD Line Computations" -> Traverse, from
+- **v0.6.0**: MSCAD's INFO -> "CAD Line Computations" -> Traverse, from
   Marc's screenshots. INFO on a line (or straight polyline span) opens
   `LineInfoDialog` (bearing, rotated bearing, from/to NEZ, horizontal/slope and
   the same scaled for output = x GridToGround, % grade, dZ; Traverse, Turned
@@ -377,6 +377,15 @@ on Windows; that's still Marc's job when he runs a build.
   as ground), pan/zoom pad with undo-last-leg. Each leg is one Ctrl+Z.
   Scale direction assumed: typed ground x SF = grid (the inverse of what the
   labels print) - confirm with Marc against an MSCAD result.
+- **v0.6.1** (current): "why did this happen?" - a fan of black lines from the
+  title-block logo ("ONTARIO LAND SURVEYORS" / GRAD SURVEYING, splines) to one
+  point below the sheet. ACadSharp's `Spline.PolygonalVertexes` samples from the
+  first knot; on a closed, unclamped spline (exploded text / logo outlines) the
+  curve isn't defined there and `c()` returns XYZ.Zero - (0,0) in block space,
+  i.e. the block's insertion point, one ray per glyph. `View.SplinePoints` now
+  tessellates over [knot[p], knot[n]] by de Boor (wrapping unwrapped closed
+  control points, uniform knots when missing); SceneBuilder and
+  TemplateInspector use it.
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).

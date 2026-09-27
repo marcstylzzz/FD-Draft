@@ -250,9 +250,14 @@ namespace FdDraft.View
                     Poly(el.PolygonalVertexes(64).Select(p => t.Apply(p.X, p.Y)).ToList(), false, rgb, lname, handle, snapVertices: false);
                     break;
                 case Spline sp:
-                    if (sp.TryPolygonalVertexes(96, out var spts))
+                {
+                    // Not sp.PolygonalVertexes: on closed splines (exploded text / logos) it returns
+                    // (0,0) for the first point - a ray back to the block's base point. See SplinePoints.
+                    var spts = SplinePoints.Of(sp);
+                    if (spts.Count >= 2)
                         Poly(spts.Select(p => t.Apply(p.X, p.Y)).ToList(), false, rgb, lname, handle, snapVertices: false);
                     else _skipped++;
+                }
                     break;
                 case Solid so:
                     _group.Prims.Add(new Prim
