@@ -203,6 +203,7 @@ namespace FdDraft.App
             _canvas.BoxSelected += OnBoxSelected;
             _canvas.Dragged += OnDragged;
             _canvas.RightClicked += OnRightClick;
+            _canvas.DoubleClicked += h => Dispatcher.BeginInvoke(new Action(() => OnCanvasDoubleClick(h)));
             Closing += OnClosing;
             Activated += (s, e) => { if (_reloadPaletteOnActivate) { _reloadPaletteOnActivate = false; LoadPalette(); } };
             PreviewKeyDown += OnKey;
@@ -216,6 +217,11 @@ namespace FdDraft.App
             Bind(Key.Z, ModifierKeys.Control, DoUndo);
             Bind(Key.Y, ModifierKeys.Control, DoRedo);
             Bind(Key.A, ModifierKeys.Control, SelectAll);
+            Bind(Key.C, ModifierKeys.Control, () => ClipCopy(false));
+            Bind(Key.X, ModifierKeys.Control, () => ClipCopy(false, cut: true));
+            Bind(Key.V, ModifierKeys.Control, () => ClipPaste(PasteMode.AtPoint));
+            Bind(Key.C, ModifierKeys.Control | ModifierKeys.Shift, () => ClipCopy(true));
+            Bind(Key.V, ModifierKeys.Control | ModifierKeys.Shift, () => ClipPaste(PasteMode.AsBlock));
 
             _palette.ToolClicked += RunPaletteTool;
             _palette.EditRequested += EditPalette;
@@ -397,6 +403,8 @@ namespace FdDraft.App
                 menu.Items.Add(Item("Change to current layer", "LAYER", SetSelectionLayer));
                 menu.Items.Add(Item("Properties", "", () => { if (_propertiesTab != null) _leftTabs.SelectedItem = _propertiesTab; }));
             }
+            menu.Items.Add(new Separator());
+            AddContextExtras(menu, any);
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Zoom extents", "ZE", () => _canvas.ZoomExtents()));
             menu.Items.Add(Item("Zoom previous", "ZP", ZoomPrevious));

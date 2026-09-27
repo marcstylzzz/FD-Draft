@@ -51,6 +51,8 @@ namespace FdDraft.App
         /// <summary>Right-click: the entity under the cursor (if any) and the screen point - for the
         /// context menu, or to finish the running command.</summary>
         public event Action<ulong?, Point>? RightClicked;
+        /// <summary>A double-click on an entity (no tool running): its handle.</summary>
+        public event Action<ulong>? DoubleClicked;
         /// <summary>First point of a two-point tool (inverse): a rubber band is drawn from it.</summary>
         public Vec2? RubberFrom { get; set; }
         /// <summary>True while a command is waiting for a point (Inverse, Line, Move's pick steps,
@@ -270,10 +272,30 @@ namespace FdDraft.App
                         var a = S(new Vec2(c.X1, c.Y2)); var b = S(new Vec2(c.X2, c.Y1));
                         dc.PushClip(new RectangleGeometry(new WRect(a, b)));
                     }
+                    // A text entity is drawn as several prims (a word at a time): outline it once, whole.
+                    var texts = new Dictionary<ulong, List<Prim>>();
                     foreach (var prim in g.Prims)
                     {
                         if (prim.Handle == 0 || !Selected.Contains(prim.Handle)) continue;
-                        DrawPrim(dc, prim, dip, visible, highlight: true);
+                        if (prim.Kind == PrimKind.Text)
+                        {
+                            if (!texts.TryGetValue(prim.Handle, out var list)) texts[prim.Handle] = list = new List<Prim>();
+                            list.Add(prim);
+                            DrawPrim(dc, prim, dip, visible, highlight: true, textBox: false);
+                        }
+                        else DrawPrim(dc, prim, dip, visible, highlight: true);
+                    }
+                    foreach (var list in texts.Values)
+                    {
+                        var corners = TextHit.Corners(list);
+                        var box = new StreamGeometry();
+                        using (var ctx = box.Open())
+                        {
+                            ctx.BeginFigure(S(corners[0]), false, true);
+                            ctx.PolyLineTo(new[] { S(corners[1]), S(corners[2]), S(corners[3]) }, true, false);
+                        }
+                        box.Freeze();
+                        dc.DrawGeometry(null, HighlightPen(), box);
                     }
                     if (g.Clip.HasValue) dc.Pop();
                 }
@@ -312,7 +334,7 @@ namespace FdDraft.App
 
         private static readonly Color HighlightColor = Color.FromRgb(0xFF, 0x00, 0xC8);
 
-        private void DrawPrim(DrawingContext dc, Prim p, double dip, FdDraft.Core.Standards.Rect visible, bool highlight)
+        private void DrawPrim(DrawingContext dc, Prim p, double dip, FdDraft.Core.Standards.Rect visible, bool highlight, bool textBox = true)
         {
             switch (p.Kind)
             {
@@ -362,7 +384,7 @@ namespace FdDraft.App
                     if (capPx < 1.5) return; // unreadable at this zoom; skip rather than smear
                     var at = S(p.Center);
                     if (at.X < -2000 || at.Y < -2000 || at.X > ActualWidth + 2000 || at.Y > ActualHeight + 2000) return;
-                    if (highlight)
+                    if (highlight && textBox)
                     {
                         var box = new StreamGeometry();
                         using (var ctx = box.Open())
@@ -531,6 +553,11 @@ namespace FdDraft.App
                 {
                     var world = _snap.HasValue ? _snap.Value.Point : View.ToScene(p.X, p.Y);
                     Picked?.Invoke(world);
+                }
+                else if (e.ClickCount == 2 && HitTest(p) is Prim dbl && dbl.Handle != 0 && DoubleClicked != null)
+                {
+                    _boxFrom = null; _pressedOn = null; _boxing = false; _dragging = false;
+                    DoubleClicked(dbl.Handle);
                 }
                 else
                 {

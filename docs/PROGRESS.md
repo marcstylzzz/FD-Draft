@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.6.4 (`Directory.Build.props`).
+- **Current version:** 0.6.5 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  111 tests as of v0.6.4, all passing.
+  113 tests as of v0.6.5, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -422,7 +422,7 @@ on Windows; that's still Marc's job when he runs a build.
     and fills their text too; TITLEBLOCKS adds them to an open sheet. M&M (from
     the SEVERANCE sheet), YZ (ProVision template) and Grad (GRADBLOCK) boxes
     written to G:\...\Company Template\FD-Draft Title Blocks\*.dxf.
-- **v0.6.4** (current): Grad / M&M boxes to look exactly as in MSCAD.
+- **v0.6.4**: Grad / M&M boxes to look exactly as in MSCAD.
   - Stray lines through Grad's G, D, S: the letters are spline-fit POLYLINEs and
     their control-frame vertices (VertexFlags.SplineFrameControlPoint) were drawn;
     `SceneBuilder.DrawnVertices` skips them (render, spans, labels).
@@ -435,6 +435,18 @@ on Windows; that's still Marc's job when he runs a build.
   - Text styles: face from ACAD xdata after an AnnotativeData group; file-name map
     (TEMPSITC -> Tempus Sans ITC, SourceSansPro...); a face that isn't installed
     falls back to SHX metrics as MSCAD does; oblique angle drawn (Prim.Oblique).
+- **v0.6.5** (current): MSCAD right-click parity.
+  - A selected TEXT / MTEXT outlines as one box (TextHit.Corners(list)) though it is
+    drawn a word at a time; double-click edits the whole entity (MTEXT lines as
+    lines, codes kept) - dimensions get their text editor, others Properties.
+  - Draw Order (Front, Back, Above/Under a picked object; DRAWORDER / DR): the
+    block's SortEntitiesTable (what AutoCAD/MSCAD read, saved in the DWG),
+    `DrawOrderCommand`, undoable; SceneBuilder draws in that order.
+  - Select Similar (same kind, layer, and block / text style) - SELECTSIMILAR.
+  - Clipboard: Cut Ctrl+X, Copy Ctrl+C (base = lower-left), Copy with Base Point
+    Ctrl+Shift+C, Paste Ctrl+V, Paste as Block Ctrl+Shift+V, Paste to Original
+    Coordinates. Copies live in their own drawing, so they paste across open
+    drawings (FD-Draft's own clipboard, not Windows').
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).

@@ -850,5 +850,46 @@ namespace FdDraft.Tests
             }
             finally { FdDraft.View.TextFonts.Measurer = null; }
         }
+
+        public static void TestDrawOrderFrontBackAboveUnder()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var ents = Enumerable.Range(0, 4).Select(k => new ACadSharp.Entities.Line(new CSMath.XYZ(k, 0, 0), new CSMath.XYZ(k, 1, 0))).ToList();
+            foreach (var e in ents) doc.Entities.Add(e);
+            var ms = doc.ModelSpace;
+            List<int> Order() => FdDraft.View.SceneBuilder.Ordered(ms).Select(e => ents.IndexOf((ACadSharp.Entities.Line)e)).ToList();
+            var undo = new UndoStack();
+            undo.Push(new DrawOrderCommand(ms, new[] { (ACadSharp.Entities.Entity)ents[0] }, DrawOrderCommand.Place.Front, null, "f"));
+            Assert.Equal("1,2,3,0", string.Join(",", Order()), "front = drawn last");
+            undo.Push(new DrawOrderCommand(ms, new[] { (ACadSharp.Entities.Entity)ents[3] }, DrawOrderCommand.Place.Back, null, "b"));
+            Assert.Equal("3,1,2,0", string.Join(",", Order()), "back = drawn first");
+            undo.Push(new DrawOrderCommand(ms, new[] { (ACadSharp.Entities.Entity)ents[3] }, DrawOrderCommand.Place.Above, ents[2], "a"));
+            Assert.Equal("1,2,3,0", string.Join(",", Order()), "above the picked one");
+            undo.Push(new DrawOrderCommand(ms, new[] { (ACadSharp.Entities.Entity)ents[0] }, DrawOrderCommand.Place.Under, ents[1], "u"));
+            Assert.Equal("0,1,2,3", string.Join(",", Order()), "under the picked one");
+            var prims = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Polyline).Select(p => (int)Math.Round(p.Points[0].X)).ToList();
+            Assert.Equal("0,1,2,3", string.Join(",", prims), "the drawing follows the order");
+            undo.Undo(); undo.Undo();
+            Assert.Equal("3,1,2,0", string.Join(",", Order()), "undo steps back");
+            // It survives a save: the sort table is what AutoCAD / MSCAD read.
+            string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fd-draworder.dwg");
+            using (var w = new ACadSharp.IO.DwgWriter(path, doc)) w.Write();
+            var back = ACadSharp.IO.DwgReader.Read(path);
+            var xs = FdDraft.View.SceneBuilder.Ordered(back.ModelSpace).OfType<ACadSharp.Entities.Line>().Select(l => (int)Math.Round(l.StartPoint.X)).ToList();
+            Assert.Equal("3,1,2,0", string.Join(",", xs), "kept in the saved drawing");
+        }
+
+        public static void TestSelectedNoteOutlinesAsOneBox()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var m = new ACadSharp.Entities.MText { Value = "METRIC DISTANCES AND\\PMETRES AND CAN", Height = 2, InsertPoint = new CSMath.XYZ(0, 10, 0) };
+            doc.Entities.Add(m);
+            var prims = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(p => p.Handle == m.Handle).ToList();
+            Assert.True(prims.Count >= 6, "drawn a word at a time");
+            var c = FdDraft.View.TextHit.Corners(prims);
+            Assert.Equal(4, c.Length, "one box");
+            double x1 = c.Min(q => q.X), x2 = c.Max(q => q.X), y1 = c.Min(q => q.Y), y2 = c.Max(q => q.Y);
+            Assert.True(prims.All(p => FdDraft.View.TextHit.Corners(p).All(q => q.X >= x1 - 1e-9 && q.X <= x2 + 1e-9 && q.Y >= y1 - 1e-9 && q.Y <= y2 + 1e-9)), "round every word of both lines");
+        }
 }
 }

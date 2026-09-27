@@ -52,7 +52,7 @@ namespace FdDraft.View
             _scene = new Scene { Name = "Model", DarkBackground = _dark };
             _group = new SceneGroup();
             _scene.Groups.Add(_group);
-            foreach (var e in _doc.ModelSpace.Entities) Emit(e, Affine.Identity, null, null, e.Handle, 0);
+            foreach (var e in Ordered(_doc.ModelSpace)) Emit(e, Affine.Identity, null, null, e.Handle, 0);
             Finish();
             return _scene;
         }
@@ -64,7 +64,7 @@ namespace FdDraft.View
             bool rotated = layout.PaperRotation == ACadSharp.Objects.PlotRotation.Degrees90 || layout.PaperRotation == ACadSharp.Objects.PlotRotation.Degrees270;
             double pw = rotated ? layout.PaperHeight : layout.PaperWidth, ph = rotated ? layout.PaperWidth : layout.PaperHeight;
             _scene = new Scene { Name = layout.Name, IsPaper = true, Paper = new Rect(0, 0, pw, ph) };
-            var paperEntities = layout.AssociatedBlock.Entities.ToList();
+            var paperEntities = Ordered(layout.AssociatedBlock).ToList();
 
             // Model space through each viewport first, so the sheet's own linework draws on top.
             foreach (var vp in paperEntities.OfType<Viewport>())
@@ -92,7 +92,7 @@ namespace FdDraft.View
                 };
                 _scene.Groups.Add(_group);
                 _vpFrozen = new HashSet<string>(vp.FrozenLayers.Select(l => l.Name), StringComparer.OrdinalIgnoreCase);
-                foreach (var e in _doc.ModelSpace.Entities) Emit(e, toPaper, null, null, e.Handle, 0);
+                foreach (var e in Ordered(_doc.ModelSpace)) Emit(e, toPaper, null, null, e.Handle, 0);
                 _vpFrozen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
 
@@ -355,6 +355,11 @@ namespace FdDraft.View
                 ? p.Vertices.Where(v => !v.Flags.HasFlag(VertexFlags.SplineFrameControlPoint))
                 : p.Vertices;
 
+        /// <summary>A block's entities in draw order: its sort table's (DRAWORDER) when it has one,
+        /// else as stored.</summary>
+        public static IEnumerable<Entity> Ordered(BlockRecord b) =>
+            b.SortEntitiesTable != null && b.SortEntitiesTable.Any() ? b.GetSortedEntities() : b.Entities;
+
         private void InsertBlock(Insert ins, Affine t, Layer? layer, uint rgb, ulong handle, int depth)
         {
             if (ins.Block == null || depth > 8) return;
@@ -369,7 +374,7 @@ namespace FdDraft.View
                         .After(Affine.Scale(ins.XScale, ins.YScale))
                         .After(Affine.Translate(-basePoint.X, -basePoint.Y));
                     var bt = t.After(local);
-                    foreach (var be in ins.Block.Entities)
+                    foreach (var be in Ordered(ins.Block))
                     {
                         if (be is AttributeDefinition) continue; // definitions show only through their attributes
                         Emit(be, bt, layer, rgb, handle, depth + 1);

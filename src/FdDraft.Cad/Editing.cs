@@ -642,3 +642,52 @@ namespace FdDraft.Cad.Editing
         public void Clear() { _done.Clear(); _index = 0; }
     }
 }
+
+namespace FdDraft.Cad.Editing
+{
+    /// <summary>
+    /// DRAWORDER: sets a block's (model space's, a sheet's) draw order through its sort table -
+    /// what AutoCAD and MSCAD read - reusing the entities' own handles as the sort keys, so the
+    /// first drawn gets the smallest. Undo puts the table back as it was.
+    /// </summary>
+    public sealed class DrawOrderCommand : IEditCommand
+    {
+        private readonly ACadSharp.Tables.BlockRecord _owner;
+        private readonly List<(ACadSharp.Entities.Entity Entity, ulong Key)> _before, _after;
+        public string Description { get; }
+
+        public enum Place { Front, Back, Above, Under }
+
+        public DrawOrderCommand(ACadSharp.Tables.BlockRecord owner, ICollection<ACadSharp.Entities.Entity> moving, Place place, ACadSharp.Entities.Entity? reference, string description)
+        {
+            _owner = owner;
+            Description = description;
+            var current = FdDraft.View.SceneBuilder.Ordered(owner).ToList();
+            var table = owner.SortEntitiesTable;
+            _before = table == null ? new List<(ACadSharp.Entities.Entity, ulong)>() : current.Select(e => (e, table.GetSorterHandle(e))).ToList();
+            var rest = current.Where(e => !moving.Contains(e)).ToList();
+            var moved = current.Where(moving.Contains).ToList(); // keep their order among themselves
+            int at = place switch
+            {
+                Place.Front => rest.Count,
+                Place.Back => 0,
+                Place.Above => reference != null && rest.Contains(reference) ? rest.IndexOf(reference) + 1 : rest.Count,
+                _ => reference != null && rest.Contains(reference) ? rest.IndexOf(reference) : 0,
+            };
+            var order = rest.Take(at).Concat(moved).Concat(rest.Skip(at)).ToList();
+            var keys = current.Select(e => e.Handle).OrderBy(h => h).ToList();
+            _after = order.Select((e, i) => (e, keys[i])).ToList();
+            Redo();
+        }
+
+        private void Apply(List<(ACadSharp.Entities.Entity Entity, ulong Key)> rows)
+        {
+            var table = _owner.SortEntitiesTable ?? _owner.CreateSortEntitiesTable();
+            table.Clear();
+            foreach (var (e, k) in rows) table.Add(e, k);
+        }
+
+        public void Redo() => Apply(_after);
+        public void Undo() => Apply(_before);
+    }
+}

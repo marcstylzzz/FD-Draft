@@ -76,7 +76,10 @@ FdDraft.App project in Visual Studio).
   bars", icon size and "Reset toolbar layout"; drag bars by their grip - the layout is
   remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
-  every command by toolbar. **TITLEBLOCKS** puts the firm's spare title blocks
+  every command by toolbar. Right-click also has **Clipboard** (Ctrl+X/C/V,
+  Ctrl+Shift+C copy with base point, Ctrl+Shift+V paste as block, paste to original
+  coordinates), **Draw Order** (front, back, above/under an object) and **Select
+  Similar**; double-click a text to edit all of it. **TITLEBLOCKS** puts the firm's spare title blocks
   (M&M, YZ, Grad - the standards' [title-blocks]) beside the current sheet,
   outside the paper, to move into place; drafting a job does it automatically.
   **INFO** (Line / Curve / Text Information) on a line

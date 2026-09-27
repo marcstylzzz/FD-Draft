@@ -112,6 +112,17 @@ namespace FdDraft.App
                 case "INFO": case "LIST": StartInfo(); return true;
                 case "TRAVERSE": case "TRAV": case "SIDESHOT": StartTraverse(); return true;
                 case "TITLEBLOCKS": case "TBLOCKS": PlaceTitleBlocksCommand(); return true;
+                case "SELECTSIMILAR": SelectSimilar(); return true;
+                case "COPYCLIP": ClipCopy(false); return true;
+                case "CUTCLIP": ClipCopy(false, cut: true); return true;
+                case "COPYBASE": ClipCopy(true); return true;
+                case "PASTECLIP": ClipPaste(PasteMode.AtPoint); return true;
+                case "PASTEBLOCK": ClipPaste(PasteMode.AsBlock); return true;
+                case "PASTEORIG": ClipPaste(PasteMode.Original); return true;
+                case "DRAWORDER": case "DR":
+                    var where = arg.Trim().ToUpperInvariant();
+                    DrawOrder(where.StartsWith("B") ? DrawOrderCommand.Place.Back : where.StartsWith("A") ? DrawOrderCommand.Place.Above : where.StartsWith("U") ? DrawOrderCommand.Place.Under : DrawOrderCommand.Place.Front);
+                    return true;
                 case "ADDPOINTS": AddPointsToObjects(); return true;
                 case "LOGFILE": OpenLogFile(); return true;
                 case "CALC": Launch("calc.exe", "the Windows calculator"); return true;
