@@ -917,7 +917,8 @@ namespace FdDraft.App
                 {
                     _layerCombo.Items.Add(layer.Name);
                     bool frozen = layer.Flags.HasFlag(ACadSharp.Tables.LayerFlags.Frozen) || !layer.IsOn;
-                    var check = new CheckBox { IsChecked = !frozen, IsEnabled = !frozen, VerticalAlignment = VerticalAlignment.Center, Tag = layer.Name };
+                    // Frozen or off in the drawing: unticked, and ticking it turns it on and thaws it.
+                    var check = new CheckBox { IsChecked = !frozen && !_hidden.Contains(layer.Name), VerticalAlignment = VerticalAlignment.Center, Tag = layer.Name };
                     check.Checked += (s, e) => LayerToggled((string)((CheckBox)s).Tag, true);
                     check.Unchecked += (s, e) => LayerToggled((string)((CheckBox)s).Tag, false);
                     var c = layer.Color;
@@ -928,7 +929,9 @@ namespace FdDraft.App
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Tag = layer.Name };
                     row.Children.Add(check);
                     row.Children.Add(new Rectangle { Width = 12, Height = 12, Fill = new SolidColorBrush(swatch), Stroke = Brushes.Gray, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-                    var name = new TextBlock { Text = layer.Name + (frozen ? "  (frozen)" : ""), VerticalAlignment = VerticalAlignment.Center };
+                    string state = layer.Flags.HasFlag(ACadSharp.Tables.LayerFlags.Frozen) ? "  (frozen)" : !layer.IsOn ? "  (off)" : "";
+                    if (layer.Flags.HasFlag(ACadSharp.Tables.LayerFlags.Locked)) state += "  (locked)";
+                    var name = new TextBlock { Text = layer.Name + state, VerticalAlignment = VerticalAlignment.Center };
                     if (frozen) name.Foreground = Brushes.Gray; // otherwise inherits, so it turns white when selected
                     row.Children.Add(name);
                     _layers.Items.Add(row);
@@ -943,6 +946,19 @@ namespace FdDraft.App
         private void LayerToggled(string name, bool visible)
         {
             if (_suppressLayerEvents) return;
+            if (visible && _doc != null && _doc.Layers.TryGetValue(name, out var layer)
+                && (!layer.IsOn || layer.Flags.HasFlag(ACadSharp.Tables.LayerFlags.Frozen)))
+            {
+                // Off or frozen in the drawing (LAYOFF, LAYFRZ, a template's own): ticking it turns
+                // it on and thaws it - saved with the drawing, LAYERP undoes.
+                SnapshotLayers();
+                layer.IsOn = true;
+                SetLayerFlag(layer, ACadSharp.Tables.LayerFlags.Frozen, false);
+                _hidden.Remove(name);
+                Log("  layer " + name + " on and thawed");
+                AfterLayerChange();
+                return;
+            }
             if (visible) _hidden.Remove(name); else _hidden.Add(name);
             // Keep the view where it is; only what is drawn changes.
             var center = _canvas.View.Center; var zoom = _canvas.View.Zoom;

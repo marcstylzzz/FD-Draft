@@ -580,7 +580,7 @@ namespace FdDraft.App
         private void StartDimChain(bool baseline)
         {
             if (!NeedDrawing()) return;
-            if (!(_lastDim is DimensionAligned || _lastDim is DimensionLinear) || _lastDim.Owner == null)
+            if (!(_lastDim is DimensionAligned || _lastDim is DimensionLinear) || _lastDim.Owner == null || _lastDim.Document != _doc)
             {
                 Log("  draw a linear or aligned dimension first (DIMLIN / DIM) - " + (baseline ? "baseline" : "continue") + " carries on from it");
                 return;

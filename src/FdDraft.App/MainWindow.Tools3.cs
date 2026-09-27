@@ -154,12 +154,16 @@ namespace FdDraft.App
                 var e = PickEntity(p, IsCourse);
                 if (e == null) { Log("  no line or arc there"); return; }
                 Func<double, Vec2> at; double length;
-                var arc = e is Arc ? ArcNear(e, model.Value) : null;
-                var span = arc == null ? StraightSpanNear(e, model.Value) : null;
-                if (arc == null && span == null) { arc = ArcNear(e, model.Value); }
-                if (arc != null) { var a = arc; length = a.Length; at = t => a.PointAt(t); }
-                else if (span != null) { var (s0, s1) = span.Value; length = Vec2.Distance(s0, s1); at = t => s0 + (s1 - s0) * t; }
-                else { Log("  can't use that"); return; }
+                // The span actually picked - straight or curved - of a line, arc or polyline.
+                var spans = EntityOps.SpansOf(e).ToList();
+                if (spans.Count == 0) { Log("  can't use that"); return; }
+                var near = spans.OrderBy(x => x.DistanceAndSide(model.Value, out _)).First();
+                if (near.IsArc)
+                {
+                    var a = new CoreArcHelper(near).Arc;
+                    length = a.Length; at = t => a.PointAt(t);
+                }
+                else { var (s0, s1) = (near.A, near.B); length = Vec2.Distance(s0, s1); at = t => s0 + (s1 - s0) * t; }
                 Log("  length " + F(length));
                 AskText("Points - number of equal parts, or @interval:", s =>
                 {
@@ -418,8 +422,11 @@ namespace FdDraft.App
                 string desc = f.Length > 4 ? string.Join(" ", f.Skip(4)) : "";
                 var at = new Vec2(e, n);
                 list.Add(NewPoint(at, z));
-                list.Add(new TextEntity { Value = f[0], InsertPoint = new XYZ(e + h * 0.6, n + h * 0.3, 0), Height = h, Rotation = -Angles.ViewTwist, Layer = GetOrCreateLayer(CurrentLayer()) });
-                if (desc.Length > 0) list.Add(new TextEntity { Value = desc, InsertPoint = new XYZ(e + h * 0.6, n - h * 1.3, 0), Height = h * 0.8, Layer = GetOrCreateLayer(CurrentLayer()) });
+                // Number up-right, description below it - right and up as the plan is seen (Surveyor View).
+                var right = new Vec2(Math.Cos(-Angles.ViewTwist), Math.Sin(-Angles.ViewTwist)); var up = right.Left();
+                var pn = at + right * (h * 0.6) + up * (h * 0.3); var pd = at + right * (h * 0.6) - up * (h * 1.3);
+                list.Add(new TextEntity { Value = f[0], InsertPoint = new XYZ(pn.X, pn.Y, 0), Height = h, Rotation = -Angles.ViewTwist, Layer = GetOrCreateLayer(CurrentLayer()) });
+                if (desc.Length > 0) list.Add(new TextEntity { Value = desc, InsertPoint = new XYZ(pd.X, pd.Y, 0), Height = h * 0.8, Rotation = -Angles.ViewTwist, Layer = GetOrCreateLayer(CurrentLayer()) });
                 count++;
             }
             if (count == 0) { Log("  no P,N,E[,Z,D] rows found in " + Path.GetFileName(dlg.FileName)); return; }

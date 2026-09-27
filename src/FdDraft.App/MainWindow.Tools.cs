@@ -353,7 +353,7 @@ namespace FdDraft.App
                     var list = new List<Entity> { SurveyDrafting.ToEntity(arc, GetOrCreateLayer(std.BearingLayer)) };
                     list.Add(CourseLabelling.ToEntity(new DraftText
                     {
-                        Text = SurveyCalcs.Dms(sweep, std.BearingSecondsDecimals), Position = model.Value, HeightMm = std.BearingTextMm, H = HAlign.Center, V = VAlign.Middle,
+                        Text = SurveyCalcs.Dms(sweep, std.BearingSecondsDecimals), Position = model.Value, HeightMm = std.BearingTextMm, H = HAlign.Center, V = VAlign.Middle, Rotation = -Angles.ViewTwist,
                         Layer = std.BearingLayer, Style = std.TextStyle("bearing"),
                     }, _doc!, mpm, GetOrCreateLayer));
                     AddEntities(list, "Add angle", "  angle " + SurveyCalcs.Dms(sweep, std.BearingSecondsDecimals) + "  (Ctrl+Z undoes it)");
@@ -423,7 +423,8 @@ namespace FdDraft.App
                 for (int i = 0; i < lines.Count; i++)
                     list.Add(CourseLabelling.ToEntity(new DraftText
                     {
-                        Text = lines[i], Position = model.Value - new Vec2(0, step * i), HeightMm = std.ArcTextMm, H = HAlign.Left, V = VAlign.Top,
+                        // Stacked down the plan as it's seen (Surveyor View), each line level.
+                        Text = lines[i], Position = model.Value - new Vec2(-Math.Sin(-Angles.ViewTwist), Math.Cos(-Angles.ViewTwist)) * (step * i), HeightMm = std.ArcTextMm, H = HAlign.Left, V = VAlign.Top, Rotation = -Angles.ViewTwist,
                         Layer = std.ArcLayer, Style = std.TextStyle("arc"), Kind = TextKind.ArcData,
                     }, _doc!, mpm, GetOrCreateLayer));
                 AddEntities(list, "Curve data", "  curve data placed  (Ctrl+Z undoes it)");
@@ -722,7 +723,15 @@ namespace FdDraft.App
                 var model = ModelOf(p);
                 if (model == null) return;
                 var list = new List<Entity>(tags);
-                list.AddRange(SurveyDrafting.Table(title, header, rows, model.Value, std.DistanceTextMm, mpm, CurrentLayer(), CurrentLayer(), style, _doc!, GetOrCreateLayer));
+                var table = SurveyDrafting.Table(title, header, rows, model.Value, std.DistanceTextMm, mpm, CurrentLayer(), CurrentLayer(), style, _doc!, GetOrCreateLayer);
+                if (Math.Abs(Angles.ViewTwist) > 1e-12)
+                {
+                    // Square to the plan as it's seen (Surveyor View): turned about its top-left corner.
+                    var pivot = Matrix4.CreateTranslation(new XYZ(model.Value.X, model.Value.Y, 0)) * Matrix4.CreateRotationMatrix(new XYZ(0, 0, -Angles.ViewTwist))
+                        * Matrix4.CreateTranslation(new XYZ(-model.Value.X, -model.Value.Y, 0));
+                    foreach (var te in table) EntityTransform.Apply(te, new Transform(pivot));
+                }
+                list.AddRange(table);
                 if (kind == TableKind.Lines) _nextLineTag = next; else if (kind == TableKind.Curves) _nextCurveTag = next; else _nextTieTag = next;
                 EndTool();
                 AddEntities(list, title, "  " + title.ToLowerInvariant() + " of " + rows.Count + " placed  (Ctrl+Z undoes it)");

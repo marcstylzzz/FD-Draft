@@ -76,7 +76,9 @@ FdDraft.App project in Visual Studio).
   bars", icon size and "Reset toolbar layout"; drag bars by their grip - the layout is
   remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
-  every command by toolbar.
+  every command by toolbar; the step-by-step user guide for every bar is the
+  Claude Doc "FD-Draft Toolbars - User Guide". In the Layers panel, ticking an
+  off or frozen layer turns it on and thaws it.
 - **Surveyor View** (SV, View toolbar, View menu, Useful Tools palette): turn
   the plan so north isn't up - pick a line to run level, or type a bearing to
   point up. Model turns on screen, and every sheet's plan viewport turns with

@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.7 (`Directory.Build.props`).
+- **Current version:** 0.5.8 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  98 tests as of v0.5.7, all passing.
+  98 tests as of v0.5.8, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -342,7 +342,7 @@ on Windows; that's still Marc's job when he runs a build.
   level text placed up-right. `Annotator.ElevationPlace` does that for Draft,
   ELEV45 and Surveyor View (an angle that would read upside down runs back
   toward the point instead). Point numbers stay level (down-right).
-- **v0.5.7** (current): "north arrow when moved around gets distorted and
+- **v0.5.7**: "north arrow when moved around gets distorted and
   inverts". ACadSharp's `Insert.ApplyTransform` turns the scale factors like a
   vector, so any block with a rotation (the north arrow, once Surveyor View had
   turned it) came out squashed and mirrored from a plain move (3x3 at 0.5 rad ->
@@ -351,7 +351,15 @@ on Windows; that's still Marc's job when he runs a build.
   scale all go through it). NORTHARROW - and every SV/WV/RSV - sets each
   sheet's north arrow to true north at an even, unmirrored scale, mending ones
   already damaged.
-- **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
+- **v0.5.8** (current): toolbar wiring pass while writing the user guide
+  (Claude Doc "FD-Draft Toolbars - User Guide"). Fixed: ADDANGLE text and
+  CURVEOFF lines follow the view twist; curve/line tables rotate to the view;
+  the Layers panel ticks turn on and thaw off/frozen layers (names show
+  (off)/(frozen)/(locked)); Baseline/Continue only chain onto a dimension in the
+  current drawing; PTSONOBJ uses the polyline span nearest the pick (arcs too);
+  PTIMPORT number/description text follows the view.
+- **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
+  delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 
 ## Known limits / deliberately deferred (don't re-litigate these)
