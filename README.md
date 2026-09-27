@@ -83,10 +83,10 @@ FdDraft.App project in Visual Studio).
   its north arrow, so the plot matches; coordinates and bearings are unchanged.
   World View (WV) puts north back up; Return to Surveyor View (RSV) goes back.
   Labels follow: point numbers, codes and symbols turn with their point and read
-  level on the plan, elevations always sit 45° up-right of their point (the
-  standards' `elevation_angle`), notes stay level, and bearings/distances read
+  level on the plan, elevations always run up the 45° line from their point
+  (the standards' `elevation_angle`), notes stay level, and bearings/distances read
   left to right in the new view. New labels are made for the view as seen.
-  ELEV45 puts every elevation in an existing drawing back at 45° up-right.
+  ELEV45 turns every elevation in an existing drawing to run up its 45° line.
 - **Right-click** an item for the edit menu (Undo, Redo, Erase, Select all,
   Select same layer, plus Move, Copy, Rotate, Mirror, Join (J), Explode (X), Change to current
   layer, Properties, zooms); while a command is waiting, right-click is

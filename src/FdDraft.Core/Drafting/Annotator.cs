@@ -71,11 +71,12 @@ namespace FdDraft.Core.Drafting
                 }
                 if (std.PointElevations && s.ShowElevation)
                 {
-                    var (at, h, v) = PointLabelPlace(s.Position, PointLabelDistance(off, std.ElevationTextMm * modelPerMm), std.ElevationAngleDeg, Angles.ViewTwist);
+                    // The elevation runs up its 45° line from the point (Marc's plans), as the plan is seen.
+                    var (at, rot, h, v) = ElevationPlace(s.Position, off, std.ElevationAngleDeg, Angles.ViewTwist);
                     doc.Entities.Add(new DraftText
                     {
                         Layer = s.ElevationLayer, Style = std.TextStyle("elevation"), Text = s.Elevation.ToString(std.ElevationFormat, CultureInfo.InvariantCulture),
-                        Position = at, HeightMm = std.ElevationTextMm, Rotation = -Angles.ViewTwist,
+                        Position = at, HeightMm = std.ElevationTextMm, Rotation = rot,
                         H = h, V = v, Kind = TextKind.PointElevation, PointId = s.PointId,
                     });
                 }
@@ -205,6 +206,20 @@ namespace FdDraft.Core.Drafting
         }
 
         /// <summary>Model units per paper millimetre at a scale.</summary>
+        /// <summary>
+        /// A point's elevation: the text itself runs along the line at <paramref name="angleDeg"/> on
+        /// the plan (45° = up-right, as Marc's plans have it), starting <paramref name="gap"/> out
+        /// from the point and centred on that line. If the angle would read upside down it runs back
+        /// toward the point instead, still on the same line.
+        /// </summary>
+        public static (Vec2 At, double Rotation, HAlign H, VAlign V) ElevationPlace(Vec2 point, double gap, double angleDeg, double twist)
+        {
+            double w = angleDeg * Math.PI / 180 - twist; // the line, in the drawing
+            var at = point + new Vec2(Math.Cos(w), Math.Sin(w)) * gap;
+            if (Angles.ReadsLeftToRight(w, twist)) return (at, w, HAlign.Left, VAlign.Middle);
+            return (at, w + Math.PI, HAlign.Right, VAlign.Middle);
+        }
+
         /// <summary>
         /// How far out a point's number or elevation sits: clear of the symbol, plus most of a text
         /// height, so the label's corner is plainly on its diagonal (45° up-right reads as 45°,

@@ -182,17 +182,18 @@ namespace FdDraft.Cad.Editing
                 {
                     case TextEntity t when p.HasValue && IsElevation(t, tag!.Value):
                     {
+                        // Always along its 45° line from the point, as the plan is seen.
                         var old = Of(t);
-                        var anchor = SurveyDrafting.AnchorOf(t);
-                        // Out on its diagonal, at least as far as a freshly drafted one (clear of the symbol plus most of a text height).
-                        double dist = Math.Max(Vec2.Distance(anchor, p.Value), t.Height * 1.3);
-                        var (spot, h, v) = Annotator.PointLabelPlace(p.Value, dist, elevationAngleDeg, toTwist);
+                        var (spot, rot, h, v) = Annotator.ElevationPlace(p.Value, t.Height * 0.7, elevationAngleDeg, toTwist);
                         var nw = new TextState
                         {
-                            Insert = new XYZ(spot.X, spot.Y, t.InsertPoint.Z), Align = new XYZ(spot.X, spot.Y, t.AlignmentPoint.Z), Rotation = -toTwist,
+                            Insert = new XYZ(spot.X, spot.Y, t.InsertPoint.Z), Align = new XYZ(spot.X, spot.Y, t.AlignmentPoint.Z), Rotation = rot,
                             H = h == HAlign.Left ? TextHorizontalAlignment.Left : h == HAlign.Center ? TextHorizontalAlignment.Center : TextHorizontalAlignment.Right,
                             V = v == VAlign.Bottom ? TextVerticalAlignmentType.Bottom : v == VAlign.Middle ? TextVerticalAlignmentType.Middle : TextVerticalAlignmentType.Top,
                         };
+                        bool same = Math.Abs(old.Rotation - nw.Rotation) < 1e-9 && old.H == nw.H && old.V == nw.V
+                            && Math.Abs(old.Align.X - nw.Align.X) < 1e-9 && Math.Abs(old.Align.Y - nw.Align.Y) < 1e-9;
+                        if (same) break;
                         var te = t;
                         cmds.Add(new SetPropertyCommand<TextState>(old, nw, st => Set(te, st), "Labels follow the view"));
                         changed++;

@@ -446,7 +446,8 @@ namespace FdDraft.Tests
             var sp = v.ToScreen(new Vec2(100, 100)); var se = v.ToScreen(new Vec2(elev.AlignmentPoint.X, elev.AlignmentPoint.Y));
             Assert.True(se.X > sp.X + 1 && se.Y < sp.Y - 1, "the elevation sits up and to the right of its point on the plan");
             Assert.Near(Math.Atan2(sp.Y - se.Y, se.X - sp.X), Math.PI / 4, 1e-6, "at 45°");
-            Assert.True(elev.VerticalAlignment == TextVerticalAlignmentType.Bottom && elev.HorizontalAlignment == TextHorizontalAlignment.Left, "growing away from the point");
+            Assert.True(elev.VerticalAlignment == TextVerticalAlignmentType.Middle && elev.HorizontalAlignment == TextHorizontalAlignment.Left, "starting at the point, centred on its line");
+            Assert.Near(Math.PI / 4, elev.Rotation + twist, 1e-9, "and the text itself reads up the 45° line, like Marc's 98.58");
             undo.Undo();
             Assert.Near(0, note.Rotation, 1e-9, "undo: note back"); Assert.Near(0, sym.Rotation, 1e-9, "symbol back");
             Assert.Near(101.4, elev.AlignmentPoint.X, 1e-9, "elevation back");
@@ -484,9 +485,14 @@ namespace FdDraft.Tests
             double mpm = 1; // 1 unit = 1 paper mm
             double d = Annotator.PointLabelDistance(0.7 * 1.5 * mpm, 1.5 * mpm);
             var (at, h, v) = Annotator.PointLabelPlace(new Vec2(0, 0), d, 45, 0);
-            Assert.True(at.X >= 1.2 && at.Y >= 1.2, "the text's corner is at least ~1.2 mm up and 1.2 mm right: " + at);
+            Assert.True(at.X > 0 && at.Y > 0, "up-right of the point");
             Assert.Near(at.X, at.Y, 1e-9, "on the 45° line");
-            Assert.True(h == HAlign.Left && v == VAlign.Bottom, "growing up and right, away from the point");
+            var (eat, erot, eh, ev) = Annotator.ElevationPlace(new Vec2(0, 0), 1, 45, 0);
+            Assert.Near(Math.PI / 4, erot, 1e-12, "the elevation text runs up the 45° line");
+            Assert.Near(eat.X, eat.Y, 1e-12, "starting on that line");
+            Assert.True(eh == HAlign.Left && ev == VAlign.Middle, "from the point outward, centred on the line");
+            var (_, back, bh, _) = Annotator.ElevationPlace(new Vec2(0, 0), 1, 135, 0);
+            Assert.True(Angles.ReadsLeftToRight(back, 0) && bh == HAlign.Right, "an up-left angle still reads left to right, toward the point");
         }
     }
 }

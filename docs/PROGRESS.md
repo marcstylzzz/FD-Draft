@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.5 (`Directory.Build.props`).
+- **Current version:** 0.5.6 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  97 tests as of v0.5.5, all passing.
+  97 tests as of v0.5.6, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -329,13 +329,19 @@ on Windows; that's still Marc's job when he runs a build.
   Drafting default changed to match: elevation at 45° up-right, point number at
   -45° down-right (was elevation below-right, number above-right) -
   `[labels] elevation_angle / point_number_angle` in the standards file.
-- **v0.5.5** (current): Marc's screenshot: elevations drafted "just to the
+- **v0.5.5**: Marc's screenshot: elevations drafted "just to the
   right" of the node - they were at 45° but only ~0.5 mm out, next to 1.5 mm text.
   Now `Annotator.PointLabelDistance` = symbol clearance + 0.8 text height (and
   at least 1.3 text heights when Surveyor View re-places one), so the corner is
   plainly on the diagonal. ELEV45 re-places every elevation in an existing
   drawing. Draft now opens in Model space (Marc: "default view is model
   space"); the sheet is a tab below.
+- **v0.5.6** (current): I had "45°" wrong. Marc rotated one elevation by hand
+  to show it: the elevation TEXT ITSELF runs up the 45° line from its point
+  (rotation 45° on the plan, left end at the point, centred on the line) - not
+  level text placed up-right. `Annotator.ElevationPlace` does that for Draft,
+  ELEV45 and Surveyor View (an angle that would read upside down runs back
+  toward the point instead). Point numbers stay level (down-right).
 - **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 
