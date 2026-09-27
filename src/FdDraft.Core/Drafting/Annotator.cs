@@ -61,7 +61,7 @@ namespace FdDraft.Core.Drafting
                 double off = Math.Max(s.SizeMm, 1.0) * 0.7 * modelPerMm;
                 if (std.PointNumbers)
                 {
-                    var (at, h, v) = PointLabelPlace(s.Position, off, std.PointNumberAngleDeg, Angles.ViewTwist);
+                    var (at, h, v) = PointLabelPlace(s.Position, PointLabelDistance(off, std.PointNumberTextMm * modelPerMm), std.PointNumberAngleDeg, Angles.ViewTwist);
                     doc.Entities.Add(new DraftText
                     {
                         Layer = s.NumberLayer, Style = std.TextStyle("point_number"), Text = s.PointId.ToString(CultureInfo.InvariantCulture),
@@ -71,7 +71,7 @@ namespace FdDraft.Core.Drafting
                 }
                 if (std.PointElevations && s.ShowElevation)
                 {
-                    var (at, h, v) = PointLabelPlace(s.Position, off, std.ElevationAngleDeg, Angles.ViewTwist);
+                    var (at, h, v) = PointLabelPlace(s.Position, PointLabelDistance(off, std.ElevationTextMm * modelPerMm), std.ElevationAngleDeg, Angles.ViewTwist);
                     doc.Entities.Add(new DraftText
                     {
                         Layer = s.ElevationLayer, Style = std.TextStyle("elevation"), Text = s.Elevation.ToString(std.ElevationFormat, CultureInfo.InvariantCulture),
@@ -205,6 +205,13 @@ namespace FdDraft.Core.Drafting
         }
 
         /// <summary>Model units per paper millimetre at a scale.</summary>
+        /// <summary>
+        /// How far out a point's number or elevation sits: clear of the symbol, plus most of a text
+        /// height, so the label's corner is plainly on its diagonal (45° up-right reads as 45°,
+        /// not as "just to the right").
+        /// </summary>
+        public static double PointLabelDistance(double symbolClearance, double textHeight) => symbolClearance + 0.8 * textHeight;
+
         /// <summary>
         /// Where a label goes round its point: <paramref name="distance"/> out at
         /// <paramref name="angleDeg"/> on the plan (a plan turned by <paramref name="twist"/>), anchored

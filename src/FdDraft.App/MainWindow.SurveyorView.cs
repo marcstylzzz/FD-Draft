@@ -102,6 +102,18 @@ namespace FdDraft.App
             _awaitingLine = s => { if (s.Length == 0) { EndTool(); Log("  *cancelled*"); return; } Typed(s); };
         }
 
+        /// <summary>ELEV45: every elevation put back at its angle round its point on the plan (45° up-right
+        /// by default) - for a drawing drafted before that rule, or elevations moved by accident.</summary>
+        private void PlaceElevations()
+        {
+            if (!NeedDrawing()) return;
+            var std = LabelStandards();
+            double t = _canvas.ModelTwist;
+            var cmd = SurveyorView.Relabel(_doc!, t, t, std.ElevationAngleDeg, out int n);
+            if (cmd == null || n == 0) { Log("  no elevation labels found (they're the point-tagged numbers on ELEVATION layers)"); return; }
+            Commit(cmd, "  " + n + " elevations placed " + std.ElevationAngleDeg.ToString("0", CultureInfo.InvariantCulture) + "° up-right of their points  (Ctrl+Z undoes it)");
+        }
+
         private void WorldView()
         {
             if (!NeedDrawing()) return;

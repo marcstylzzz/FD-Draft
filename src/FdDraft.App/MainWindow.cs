@@ -977,10 +977,11 @@ namespace FdDraft.App
                     return (d, r, j, s, n.ToList());
                 });
                 _job = job; _std = std;
-                SetDocument(drafter.Document, null, dirty: true, showSheet: result.Chosen!.Sheet.Layout);
+                // Opens in Model space, like MSCAD; the plan's sheet is a tab below.
+                SetDocument(drafter.Document, null, dirty: true);
                 _points.ItemsSource = job.Points.Select(p => new PointRow(p)).ToList();
                 FillCodes();
-                Log("  " + job.Settings.Name + " on " + result.Chosen.Sheet.Layout + " at " + result.Chosen.Scale.Label + " — " + result.Chosen.Reason);
+                Log("  " + job.Settings.Name + " on " + result.Chosen!.Sheet.Layout + " at " + result.Chosen.Scale.Label + " — " + result.Chosen.Reason + "  (the " + result.Chosen.Sheet.Layout + " tab below shows the sheet)");
                 foreach (var p in result.Document.Parcels)
                     Log(string.Format(CultureInfo.InvariantCulture, "  parcel {0}: area {1:F1} m², perimeter {2:F3} m", p.Code, p.Area, p.Perimeter));
                 foreach (var w in result.Document.Warnings) Log("  ! " + w);

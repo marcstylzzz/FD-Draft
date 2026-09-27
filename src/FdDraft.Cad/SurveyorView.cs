@@ -184,7 +184,8 @@ namespace FdDraft.Cad.Editing
                     {
                         var old = Of(t);
                         var anchor = SurveyDrafting.AnchorOf(t);
-                        double dist = Math.Max(Vec2.Distance(anchor, p.Value), t.Height * 0.5);
+                        // Out on its diagonal, at least as far as a freshly drafted one (clear of the symbol plus most of a text height).
+                        double dist = Math.Max(Vec2.Distance(anchor, p.Value), t.Height * 1.3);
                         var (spot, h, v) = Annotator.PointLabelPlace(p.Value, dist, elevationAngleDeg, toTwist);
                         var nw = new TextState
                         {

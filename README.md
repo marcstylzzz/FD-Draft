@@ -59,7 +59,7 @@ FdDraft.App project in Visual Studio).
 - **Draft job** (Ctrl+D): pick the FD-Pro job folder, the firm .dwt and its
   standards file, and the plan type. Every sheet is ranked with the scale it
   fits at and why. Accept the top one, or pick another sheet or scale. The plan
-  opens on its sheet, and the job's points fill the **Points** panel
+  opens in Model space (its sheet is a tab below), and the job's points fill the **Points** panel
   (double-click a point to zoom to it).
 - **Model space is black, sheets are white**, as in AutoCAD/MSCAD (colour 7
   draws white on black; plots are unaffected).
@@ -86,6 +86,7 @@ FdDraft.App project in Visual Studio).
   level on the plan, elevations always sit 45° up-right of their point (the
   standards' `elevation_angle`), notes stay level, and bearings/distances read
   left to right in the new view. New labels are made for the view as seen.
+  ELEV45 puts every elevation in an existing drawing back at 45° up-right.
 - **Right-click** an item for the edit menu (Undo, Redo, Erase, Select all,
   Select same layer, plus Move, Copy, Rotate, Mirror, Join (J), Explode (X), Change to current
   layer, Properties, zooms); while a command is waiting, right-click is

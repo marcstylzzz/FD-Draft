@@ -472,3 +472,21 @@ namespace FdDraft.Tests
         }
     }
 }
+
+namespace FdDraft.Tests
+{
+    public static partial class Tests
+    {
+        /// <summary>Marc's screenshot: an elevation 0.5 mm out from its node read as "to the right",
+        /// not 45°. It now sits clear on the diagonal.</summary>
+        public static void TestElevationSitsPlainlyOnItsDiagonal()
+        {
+            double mpm = 1; // 1 unit = 1 paper mm
+            double d = Annotator.PointLabelDistance(0.7 * 1.5 * mpm, 1.5 * mpm);
+            var (at, h, v) = Annotator.PointLabelPlace(new Vec2(0, 0), d, 45, 0);
+            Assert.True(at.X >= 1.2 && at.Y >= 1.2, "the text's corner is at least ~1.2 mm up and 1.2 mm right: " + at);
+            Assert.Near(at.X, at.Y, 1e-9, "on the 45° line");
+            Assert.True(h == HAlign.Left && v == VAlign.Bottom, "growing up and right, away from the point");
+        }
+    }
+}
