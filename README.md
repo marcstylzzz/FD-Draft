@@ -76,7 +76,10 @@ FdDraft.App project in Visual Studio).
   bars", icon size and "Reset toolbar layout"; drag bars by their grip - the layout is
   remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
-  every command by toolbar. **INFO** (Line / Curve / Text Information) on a line
+  every command by toolbar. **TITLEBLOCKS** puts the firm's spare title blocks
+  (M&M, YZ, Grad - the standards' [title-blocks]) beside the current sheet,
+  outside the paper, to move into place; drafting a job does it automatically.
+  **INFO** (Line / Curve / Text Information) on a line
   opens Line Computations; its **Traverse** button (or TRAVERSE) picks a start
   point and opens "Traverse or Side Shots": type bearing (N73.1010E, NE73.1010,
   N73-10-10E or a DD.MMSS azimuth) and distance for each leg - with Input scale

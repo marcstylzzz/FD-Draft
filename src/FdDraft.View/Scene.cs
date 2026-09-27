@@ -62,8 +62,12 @@ namespace FdDraft.View
         public double Height;
         public double Rotation;
         public double WidthFactor = 1;
-        /// <summary>Text in an SHX font: spaces are drawn en-wide (see <see cref="ShxMetrics"/>).</summary>
-        public bool WideSpaces;
+        /// <summary>A TrueType face to draw in (Broadway, Arial...); null = Arial. SHX fonts are
+        /// drawn as Arial sized to their own metrics.</summary>
+        public string? Font;
+        /// <summary>For text in <see cref="Font"/>: its width in scene units, so a renderer without
+        /// that face (the PDF's Helvetica) can stretch its own to fill the same space. 0 = none.</summary>
+        public double FitWidth;
         public HAlign H = HAlign.Left;
         public VAlign V = VAlign.Bottom;
         /// <summary>0xRRGGBB.</summary>

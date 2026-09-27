@@ -1439,14 +1439,18 @@ namespace FdDraft.Tests
                 InsertPoint = new CSMath.XYZ(0, 100, 0), Height = 2, RectangleWidth = 100, AttachmentPoint = ACadSharp.Entities.AttachmentPointType.TopLeft,
             };
             doc.ModelSpace.Entities.Add(note);
-            var lines = new SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == PrimKind.Text).OrderByDescending(p => p.Center.Y).ToList();
-            Assert.True(lines.Count >= 3, "the long paragraph wraps onto more than one line: " + string.Join(" | ", lines.Select(l => l.Text)));
-            Assert.True(lines.All(l => PdfSceneWriter.MeasureText(l.Text, 2) <= 100 + 1e-9), "every line fits the box");
-            Assert.Equal("SECOND PARAGRAPH", lines.Last().Text, "paragraph breaks still start a new line");
-            Assert.True(string.Join(" ", lines.Take(lines.Count - 1).Select(l => l.Text)).StartsWith("THE INTENDED PLOT SIZE OF THIS PLAN IS 559mm"), "words kept in order");
+            // (No style = txt.shx: drawn a word at a time; a line is the words at one height.)
+            List<string> Lines() => new SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == PrimKind.Text)
+                .GroupBy(p => Math.Round(p.Center.Y, 6)).OrderByDescending(g => g.Key)
+                .Select(g => string.Join(" ", g.OrderBy(p => p.Center.X).Select(p => p.Text))).ToList();
+            var lines = Lines();
+            Assert.True(lines.Count >= 3, "the long paragraph wraps onto more than one line: " + string.Join(" | ", lines));
+            Assert.True(lines.All(l => ShxMetrics.Width(l, 2) <= 100 + 1e-9), "every line fits the box");
+            Assert.Equal("SECOND PARAGRAPH", lines.Last(), "paragraph breaks still start a new line");
+            Assert.True(string.Join(" ", lines.Take(lines.Count - 1)).StartsWith("THE INTENDED PLOT SIZE OF THIS PLAN IS 559mm"), "words kept in order");
 
             note.RectangleWidth = 0;
-            Assert.Equal(2, new SceneBuilder(doc).Model().AllPrims().Count(p => p.Kind == PrimKind.Text), "no box width: no wrapping, one line per paragraph");
+            Assert.Equal(2, Lines().Count, "no box width: no wrapping, one line per paragraph");
         }
             // ---- moving drafted labels (v0.4.25) --------------------------------------------------
 

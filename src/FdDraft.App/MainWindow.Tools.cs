@@ -111,6 +111,7 @@ namespace FdDraft.App
                 case "CONFIG": OpenStandardsFile(); return true;
                 case "INFO": case "LIST": StartInfo(); return true;
                 case "TRAVERSE": case "TRAV": case "SIDESHOT": StartTraverse(); return true;
+                case "TITLEBLOCKS": case "TBLOCKS": PlaceTitleBlocksCommand(); return true;
                 case "ADDPOINTS": AddPointsToObjects(); return true;
                 case "LOGFILE": OpenLogFile(); return true;
                 case "CALC": Launch("calc.exe", "the Windows calculator"); return true;

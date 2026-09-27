@@ -108,10 +108,11 @@ namespace FdDraft.App
                 {
                     double capPx = p.Height * k;
                     if (capPx < 0.4) return;
-                    var ft = new FormattedText(p.WideSpaces ? FdDraft.View.ShxMetrics.Spaced(p.Text) : p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface, EmSize, Brush(p.Rgb), dip);
-                    double s = capPx / (EmSize * CapRatio);
+                    var (face, capRatio) = WpfFonts.Of(p.Font);
+                    var ft = new FormattedText(p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, EmSize, Brush(p.Rgb), dip);
+                    double s = capPx / (EmSize * capRatio);
                     double dx = p.H == HAlign.Left ? 0 : p.H == HAlign.Center ? -ft.Width / 2 : -ft.Width;
-                    double cap = EmSize * CapRatio;
+                    double cap = EmSize * capRatio;
                     double dy = p.V == VAlign.Bottom ? -ft.Baseline : p.V == VAlign.Middle ? -ft.Baseline + cap / 2 : -ft.Baseline + cap;
                     var m = Matrix.Identity;
                     m.Translate(dx, dy);

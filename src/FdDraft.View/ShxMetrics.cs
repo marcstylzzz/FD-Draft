@@ -1,20 +1,26 @@
 using System;
+using System.Collections.Generic;
 using ACadSharp.Tables;
 
 namespace FdDraft.View
 {
     /// <summary>
-    /// How wide text in an AutoCAD SHX font (romans, simplex, txt, a Leroy font...) comes out, so
-    /// FD-Draft - which draws every font as Arial - puts words where AutoCAD does. SHX fonts are
-    /// wider than Arial, spaces most of all (about three quarters of the cap height against
-    /// Arial's two fifths): drawn as Arial, an indented note ran into the heading word before it,
-    /// and MTEXT wrapped a word or two later than AutoCAD. Widths are the Hershey simplex font's,
-    /// which romans/simplex are built from, in units where the cap height is 21.
+    /// How wide text in an AutoCAD SHX font (msurvey, romans, simplex, a Leroy font...) comes out,
+    /// so FD-Draft - which draws every font as Arial - puts words where AutoCAD and MSCAD do. SHX
+    /// letters are a little wider than Arial's and their spaces over twice as wide: drawn as plain
+    /// Arial, a note indented with spaces ran into the heading word before it, and MTEXT wrapped
+    /// words later than MSCAD. Letter advances are the Hershey simplex font's (the family these
+    /// fonts come from), scaled and with the space width measured off Marc's MSCAD screen of the
+    /// firm's msurvey.shx notes (DISTANCES / HEREON ... at 2.5 and 2.0 mm).
+    /// SceneBuilder draws SHX text a word at a time, each word stretched to its SHX width and
+    /// placed where these metrics put it.
     /// </summary>
     public static class ShxMetrics
     {
-        /// <summary>The space drawn for an SHX space: Arial's en space (half an em).</summary>
-        public const char WideSpace = ' ';
+        /// <summary>Letter widths relative to Hershey simplex.</summary>
+        public const double LetterScale = 1.02;
+        /// <summary>A space, in cap heights.</summary>
+        public const double Space = 0.935;
 
         private static readonly int[] Advance =
         {
@@ -45,32 +51,36 @@ namespace FdDraft.View
                 || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>One character's advance, in cap heights.</summary>
+        public static double CharWidth(char ch)
+        {
+            if (ch == ' ' || ch == '\u00A0') return Space;
+            int units = ch >= 32 && ch <= 126 ? Advance[ch - 32] : ch == '°' ? 14 : ch == '±' ? 26 : ch == 'Ø' ? 22 : 20;
+            return units / 21.0 * LetterScale;
+        }
+
         /// <summary>Width of <paramref name="text"/> in an SHX font at cap height <paramref name="capHeight"/>.</summary>
         public static double Width(string text, double capHeight)
         {
-            double units = 0;
-            foreach (char ch in text)
-            {
-                if (ch == WideSpace) units += Advance[0];
-                else if (ch >= 32 && ch <= 126) units += Advance[ch - 32];
-                else if (ch == '°') units += 14;
-                else if (ch == '±') units += 26;
-                else if (ch == 'Ø') units += 22;
-                else units += 20;
-            }
-            return units / 21.0 * capHeight;
+            double w = 0;
+            foreach (char ch in text) w += CharWidth(ch);
+            return w * capHeight;
         }
 
-        /// <summary>The text as drawn for a prim with <see cref="Prim.WideSpaces"/>: each space an en space.</summary>
-        public static string Spaced(string text) => text.Replace(' ', WideSpace);
-
-        /// <summary>The horizontal stretch that makes Arial with wide spaces as long as the SHX
-        /// text, kept within reason.</summary>
-        public static double Stretch(string text)
+        /// <summary>The words of a line with where each starts and how wide it is, in cap heights.</summary>
+        public static List<(string Word, double X, double W)> Words(string text)
         {
-            double arial = PdfSceneWriter.MeasureText(text, 1, wideSpaces: true);
-            if (arial < 1e-9) return 1;
-            return Math.Max(0.6, Math.Min(1.8, Width(text, 1) / arial));
+            var result = new List<(string, double, double)>();
+            double x = 0; int i = 0;
+            while (i < text.Length)
+            {
+                if (text[i] == ' ' || text[i] == '\u00A0') { x += Space; i++; continue; }
+                int j = i; double w = 0;
+                while (j < text.Length && text[j] != ' ' && text[j] != '\u00A0') { w += CharWidth(text[j]); j++; }
+                result.Add((text.Substring(i, j - i), x, w));
+                x += w; i = j;
+            }
+            return result;
         }
     }
 }

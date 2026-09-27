@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.6.2 (`Directory.Build.props`).
+- **Current version:** 0.6.3 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  103 tests as of v0.6.2, all passing.
+  108 tests as of v0.6.3, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -386,7 +386,7 @@ on Windows; that's still Marc's job when he runs a build.
   tessellates over [knot[p], knot[n]] by de Boor (wrapping unwrapped closed
   control points, uniform knots when missing); SceneBuilder and
   TemplateInspector use it.
-- **v0.6.2** (current): "fill isnt there" / "texts are overlapping" (Marc's
+- **v0.6.2**: "fill isnt there" / "texts are overlapping" (Marc's
   sheet vs the same sheet in MSCAD). HATCH was never drawn: `HatchShapes`
   builds the loops (line, arc, ellipse, spline, bulged polyline edges; a
   clockwise edge's angles are mirrored) and SceneBuilder draws solid (and
@@ -400,6 +400,28 @@ on Windows; that's still Marc's job when he runs a build.
   within a pixel) now: MTEXT wraps at SHX widths; SHX text draws with en-wide
   spaces (`Prim.WideSpaces`; PDF via Tw) stretched to its SHX length; MTEXT
   takes its style's width factor.
+- **v0.6.3** (current): checked against Marc's real files (G: job folders:
+  26-009 SEVERANCE.dwg, its plotted 39R-15184 PDF, Marc\GRADBLOCK.dwg,
+  Company Template\ProVisionTemplate-2024.dwt).
+  - Text: SHX lines drawn a word at a time, each word placed/stretched to msurvey
+    widths (Hershey x1.02, space 0.935 cap - fitted to the plotted PDF; wraps
+    now match it line for line; MTEXT wrap allows a side bearing of overshoot).
+  - MTEXT inline formatting (`MTextLayout`): {groups}, \H (x and absolute), \f/\F
+    face (TrueType vs SHX), \C/\c colour, \W, \pxq alignment, \P, \S, tabs
+    (stop 4.78 h, measured off the legend). Title-block MTEXT no longer 3x size.
+  - TrueType faces kept (`Prim.Font`, `TextFonts`, App `WpfFonts`): the M&M
+    name stays Broadway on screen/plot; PDF stretches Helvetica to its width
+    (`Prim.FitWidth`). PDF Tz is now set on every text (it leaked between words).
+  - Hatch loops chained from unordered edges (Grad logo's stray blue wedges);
+    `AciPalette` fixes ACadSharp's 5 wrong index colours (145 drew bright blue);
+    WIPEOUT drawn as its frame (the set-monument square).
+  - Spare title blocks: `TitleBlocks.Extract` (a box out of a sheet or file,
+    frame lower-right at 0,0) and `PlaceBeside` (as FD-TITLEBLOCK-* blocks right
+    of the paper on non-plotting FD-Title-Blocks, bottoms level with the sheet's
+    box, labelled). Standards [title-blocks] name = file; drafting places them
+    and fills their text too; TITLEBLOCKS adds them to an open sheet. M&M (from
+    the SEVERANCE sheet), YZ (ProVision template) and Grad (GRADBLOCK) boxes
+    written to G:\...\Company Template\FD-Draft Title Blocks\*.dxf.
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).

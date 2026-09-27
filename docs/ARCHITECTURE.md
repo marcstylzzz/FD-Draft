@@ -507,6 +507,16 @@ it on Windows is the real test.
   Layer Previous keeps its own stack of snapshots; locked layers are filtered
   out of every selection path (click, box, select all, select by layer, drag).
 
+### MTEXT formatting, fonts and spare title blocks (v0.6.3)
+
+`View/MTextLayout.cs` parses MTEXT inline codes into paragraphs of runs and wraps them;
+SceneBuilder lays the lines out and emits a prim per word (SHX words stretched to
+`ShxMetrics` widths; TrueType words in their own face via `Prim.Font`, measured through
+`TextFonts.Measurer`, which the app sets to `WpfFonts.Measure`). `Cad/TitleBlocks.cs`
+extracts a title-block box to its own file and places spare boxes beside a layout
+(TemplateDrafter.PlaceTitleBlocks, MainWindow.TitleBlocks.cs). `View/AciPalette.cs`
+is the index-colour table everything reads.
+
 ### Hatches and SHX text (v0.6.2)
 
 `View/HatchShapes.cs` turns a HATCH's boundary paths into loops and pattern segments;

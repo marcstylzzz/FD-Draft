@@ -252,6 +252,12 @@ namespace FdDraft.Core.Standards
 
         // [titleblock-replace]: regex = replacement, applied to every paper-space text of the chosen layout.
         public List<KeyValuePair<string, string>> TitleBlockReplacements { get; } = new List<KeyValuePair<string, string>>();
+        // [title-blocks]
+        /// <summary>Alternative title-block boxes (name, drawing file) kept beside each drafted
+        /// sheet for a quick swap. Each file's model space holds the box at paper mm, its frame's
+        /// lower-right corner at 0,0. Relative paths are from the standards file's folder.</summary>
+        public List<(string Name, string Path)> TitleBlocks { get; } = new List<(string, string)>();
+
         // [scalebar]
         public bool ScaleBarRelabel { get; set; } = true;
         public string ScaleBarAnchor { get; set; } = "SCALE 1:#";
@@ -260,6 +266,9 @@ namespace FdDraft.Core.Standards
         {
             var s = FromIni(IniFile.Parse(File.ReadAllLines(path)));
             if (s.Name.Length == 0) s.Name = Path.GetFileNameWithoutExtension(path);
+            string dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
+            for (int i = 0; i < s.TitleBlocks.Count; i++)
+                if (!Path.IsPathRooted(s.TitleBlocks[i].Path)) s.TitleBlocks[i] = (s.TitleBlocks[i].Name, Path.GetFullPath(Path.Combine(dir, s.TitleBlocks[i].Path)));
             return s;
         }
 
@@ -289,6 +298,7 @@ namespace FdDraft.Core.Standards
             s.BlockUnitMm = ini.GetDouble("text", "block_unit_mm", s.BlockUnitMm);
 
             foreach (var kv in ini.Section("text-styles")) s.TextStyles[kv.Key] = kv.Value;
+            foreach (var kv in ini.Section("title-blocks")) if (kv.Value.Trim().Length > 0) s.TitleBlocks.Add((kv.Key.Trim(), kv.Value.Trim()));
 
             s.BearingLayer = ini.GetString("layers", "bearing", s.BearingLayer);
             s.DistanceLayer = ini.GetString("layers", "distance", s.DistanceLayer);

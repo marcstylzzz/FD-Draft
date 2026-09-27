@@ -93,6 +93,8 @@ namespace FdDraft.App
         public MainWindow()
         {
             Title = "FD-Draft";
+            // TrueType text (a company name in Broadway) is laid out with Windows' own metrics.
+            FdDraft.View.TextFonts.Measurer = WpfFonts.Measure;
             // Fit the screen it opens on - a fixed 1440x900 ran off the bottom of a scaled laptop screen.
             var work = SystemParameters.WorkArea;
             var place = WindowFit.Place(_settings.WindowBounds,
@@ -925,7 +927,7 @@ namespace FdDraft.App
                     Color swatch;
                     if (c.IsTrueColor) swatch = Color.FromRgb(c.R, c.G, c.B);
                     else if (c.Index <= 0 || c.Index == 7 || c.Index >= 256) swatch = Colors.Black;
-                    else { var rgb = ACadSharp.Color.GetIndexRGB((byte)c.Index); swatch = Color.FromRgb(rgb[0], rgb[1], rgb[2]); }
+                    else { var (r, g, b) = FdDraft.View.AciPalette.Of(c.Index); swatch = Color.FromRgb(r, g, b); }
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Tag = layer.Name };
                     row.Children.Add(check);
                     row.Children.Add(new Rectangle { Width = 12, Height = 12, Fill = new SolidColorBrush(swatch), Stroke = Brushes.Gray, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });

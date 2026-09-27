@@ -145,8 +145,7 @@ namespace FdDraft.View
                 else
                 {
                     aci = c.Index <= 0 || c.Index >= 256 ? (short)7 : c.Index;
-                    var v = Color.GetIndexRGB((byte)aci);
-                    rgb = aci == 7 ? 0x000000u : (uint)(v[0] << 16 | v[1] << 8 | v[2]);
+                    rgb = aci == 7 ? 0x000000u : AciPalette.Rgb(aci);
                 }
             }
             double lw;
@@ -170,13 +169,11 @@ namespace FdDraft.View
             if (_dark)
             {
                 if (i <= 0 || i == 7 || i >= 256) return 0xFFFFFF;
-                var d = Color.GetIndexRGB((byte)i);
-                return (uint)(d[0] << 16 | d[1] << 8 | d[2]);
+                return AciPalette.Rgb(i);
             }
             // 7 is "white on black, black on white"; plans are viewed on white paper.
             if (i <= 0 || i == 7 || i >= 256) return 0x000000;
-            var rgb = Color.GetIndexRGB((byte)i);
-            uint v = (uint)(rgb[0] << 16 | rgb[1] << 8 | rgb[2]);
+            uint v = AciPalette.Rgb(i);
             // Very light colours (yellow 2, 50-ish) vanish on white; darken them for the screen.
             return Readable(v);
         }
@@ -270,6 +267,22 @@ namespace FdDraft.View
                 case Hatch hatch:
                     EmitHatch(hatch, t, rgb, lname, handle);
                     break;
+                case Wipeout wo:
+                {
+                    // A wipeout masks what's under it; drawn here as its frame (the "set monument"
+                    // square is one). Boundary vertices run -0.5..0.5 across the image, y down.
+                    var v = wo.ClipBoundaryVertices;
+                    var corners = v.Count > 2 ? v.Select(q => (q.X, q.Y)).ToList()
+                        : v.Count == 2 ? new List<(double, double)> { (v[0].X, v[0].Y), (v[1].X, v[0].Y), (v[1].X, v[1].Y), (v[0].X, v[1].Y) }
+                        : new List<(double, double)> { (-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5) };
+                    var pts = corners.Select(c =>
+                    {
+                        double a = (c.Item1 + 0.5) * wo.Size.X, b = (0.5 - c.Item2) * wo.Size.Y;
+                        return t.Apply(wo.InsertPoint.X + wo.UVector.X * a + wo.VVector.X * b, wo.InsertPoint.Y + wo.UVector.Y * a + wo.VVector.Y * b);
+                    }).ToList();
+                    Poly(pts, true, rgb, lname, handle, snapVertices: false);
+                    break;
+                }
                 case Point pt:
                 {
                     var p = t.Apply(pt.Location.X, pt.Location.Y);
@@ -316,10 +329,11 @@ namespace FdDraft.View
             if (h.IsSolid || h.GradientColor?.Enabled == true)
             {
                 uint fill = rgb;
-                if (h.GradientColor?.Enabled == true && h.GradientColor.Colors.Count > 0 && h.GradientColor.Colors[0].Color.IsTrueColor)
+                if (h.GradientColor?.Enabled == true && h.GradientColor.Colors.Count > 0)
                 {
                     var c = h.GradientColor.Colors[0].Color;
-                    fill = (uint)(c.R << 16 | c.G << 8 | c.B);
+                    if (c.IsTrueColor) fill = (uint)(c.R << 16 | c.G << 8 | c.B);
+                    else if (c.Index > 0 && c.Index < 256) fill = AciPalette.Rgb(c.Index);
                 }
                 var placed = loops.Select(Place).ToList();
                 _group.Prims.Add(new Prim
@@ -396,49 +410,122 @@ namespace FdDraft.View
                 TextVerticalAlignmentType.Top => VAlign.Top,
                 _ => VAlign.Bottom,
             };
-            string text = Decode(te.Value);
             double wf = te.WidthFactor <= 0 ? 1 : te.WidthFactor;
-            bool shx = ShxMetrics.IsShx(te.Style);
-            if (shx) wf *= ShxMetrics.Stretch(text);
-            _group.Prims.Add(new Prim
+            TextLine(Decode(te.Value), new Vec2(at.X, at.Y), te.Height, te.Rotation, h, v, wf, ShxMetrics.IsShx(te.Style), t, rgb, layer, handle, TextFonts.Of(te.Style));
+        }
+
+        /// <summary>
+        /// One line of text. In an SHX style it goes down a word at a time: each word placed and
+        /// stretched to where and how wide the SHX font draws it (see <see cref="ShxMetrics"/>);
+        /// otherwise as one Arial run.
+        /// </summary>
+        private void TextLine(string text, Vec2 anchor, double height, double rot, HAlign h, VAlign v, double wf, bool shx, Affine t, uint rgb, string layer, ulong handle, string? font = null)
+        {
+            if (!shx)
             {
-                Kind = PrimKind.Text, Text = text, Center = t.Apply(at.X, at.Y),
-                Height = te.Height * t.ScaleFactor, Rotation = te.Rotation + t.Rotation, WidthFactor = wf, WideSpaces = shx,
-                H = h, V = v, Rgb = rgb, Layer = layer, Handle = handle,
-            });
+                _group.Prims.Add(new Prim
+                {
+                    Kind = PrimKind.Text, Text = text, Center = t.Apply(anchor), Height = height * t.ScaleFactor, Rotation = rot + t.Rotation,
+                    WidthFactor = wf, H = h, V = v, Rgb = rgb, Layer = layer, Handle = handle,
+                    Font = font, FitWidth = font != null ? TextFonts.Width(font, text, height) * wf * t.ScaleFactor : 0,
+                });
+                return;
+            }
+            var words = ShxMetrics.Words(text);
+            if (words.Count == 1 && words[0].X == 0)
+            {
+                // One word (a bearing, a distance, a point number): one prim, keeping its alignment.
+                double one = PdfSceneWriter.MeasureText(text, height);
+                _group.Prims.Add(new Prim
+                {
+                    Kind = PrimKind.Text, Text = text, Center = t.Apply(anchor), Height = height * t.ScaleFactor, Rotation = rot + t.Rotation,
+                    WidthFactor = one > 0 ? words[0].W * height * wf / one : wf, H = h, V = v, Rgb = rgb, Layer = layer, Handle = handle,
+                });
+                return;
+            }
+            double total = ShxMetrics.Width(text, height) * wf;
+            double start = h == HAlign.Left ? 0 : h == HAlign.Center ? -total / 2 : -total;
+            var dir = new Vec2(Math.Cos(rot), Math.Sin(rot));
+            foreach (var (word, x, w) in words)
+            {
+                double arial = PdfSceneWriter.MeasureText(word, height);
+                if (arial <= 0) continue;
+                var at = anchor + dir * (start + x * height * wf);
+                _group.Prims.Add(new Prim
+                {
+                    Kind = PrimKind.Text, Text = word, Center = t.Apply(at), Height = height * t.ScaleFactor, Rotation = rot + t.Rotation,
+                    WidthFactor = w * height * wf / arial, H = HAlign.Left, V = v, Rgb = rgb, Layer = layer, Handle = handle,
+                });
+            }
         }
 
         private void MTextLines(MText mt, Affine t, uint rgb, string layer, ulong handle)
         {
-            var lines = PlainMText(mt.Value);
-            if (lines.Count == 0) return;
+            var paras = MTextLayout.Parse(mt.Value, mt.Height, ShxMetrics.IsShx(mt.Style), TextFonts.Of(mt.Style));
+            double styleWidth = mt.Style != null && mt.Style.Width > 0 ? mt.Style.Width : 1;
+            foreach (var r in paras.SelectMany(p => p.Runs)) r.Width *= styleWidth;
+            int ap = (int)mt.AttachmentPoint; // 1..9: TL TC TR ML MC MR BL BC BR
+            if (ap < 1 || ap > 9) ap = 1;
+            char defaultAlign = ap % 3 == 1 ? 'l' : ap % 3 == 2 ? 'c' : 'r';
             // AutoCAD wraps each paragraph to the MTEXT's box width; without that, a long note
             // runs off the sheet as one line.
-            bool shx = ShxMetrics.IsShx(mt.Style);
-            double styleWidth = mt.Style != null && mt.Style.Width > 0 ? mt.Style.Width : 1;
-            if (mt.RectangleWidth > 0)
-                lines = Wrap(lines, mt.RectangleWidth, mt.Height, shx ? (Func<string, double, double>)((x, hh) => ShxMetrics.Width(x, hh) * styleWidth) : (x, hh) => PdfSceneWriter.MeasureText(x, hh) * styleWidth);
-            int ap = (int)mt.AttachmentPoint; // 1..9: TL TC TR ML MC MR BL BC BR
-            var h = ap % 3 == 1 ? HAlign.Left : ap % 3 == 2 ? HAlign.Center : HAlign.Right;
-            double pitch = mt.Height * 1.667 * (mt.LineSpacing <= 0 ? 1 : mt.LineSpacing);
-            double blockH = pitch * (lines.Count - 1);
-            // Offset of the first line's top from the attachment point, along the text's "up" direction.
-            double firstTop = ap <= 3 ? 0 : ap <= 6 ? blockH / 2 + mt.Height / 2 : blockH + mt.Height;
+            double rw = mt.RectangleWidth > 0 ? mt.RectangleWidth : 0;
+            var lines = new List<(List<MTextLayout.Piece> Pieces, char Align, double Width, double Height)>();
+            foreach (var p in paras)
+                foreach (var l in MTextLayout.Wrap(p, rw))
+                {
+                    double h = l.Count > 0 ? l.Max(x => x.Run.Height) : (p.Runs.Count > 0 ? p.Runs[0].Height : mt.Height);
+                    double lw = 0;
+                    foreach (var x in l) lw = x.Tab ? MTextLayout.AfterTab(lw, x.Run.Height) : lw + x.Width;
+                    lines.Add((l, p.Align == '\0' ? defaultAlign : p.Align, lw, h));
+                }
+            if (!lines.Any(l => l.Pieces.Any(x => !x.Space))) return;
+            double boxW = rw > 0 ? rw : lines.Max(l => l.Width);
+            double boxLeft = ap % 3 == 1 ? 0 : ap % 3 == 2 ? -boxW / 2 : -boxW;
+            double ls = mt.LineSpacing <= 0 ? 1 : mt.LineSpacing;
+            // Baselines below the top: the first a cap height down, then 1.667 heights apart.
+            var baseline = new double[lines.Count];
+            for (int i = 0; i < lines.Count; i++)
+                baseline[i] = i == 0 ? -lines[0].Height : baseline[i - 1] - (0.667 * lines[i - 1].Height + lines[i].Height) * ls;
+            double total = -baseline[lines.Count - 1];
+            double shift = ap <= 3 ? 0 : ap <= 6 ? total / 2 : total;
             double rot = mt.Rotation;
+            var dir = new Vec2(Math.Cos(rot), Math.Sin(rot));
             var up = new Vec2(-Math.Sin(rot), Math.Cos(rot));
             var origin = new Vec2(mt.InsertPoint.X, mt.InsertPoint.Y);
             for (int i = 0; i < lines.Count; i++)
             {
-                if (lines[i].Length == 0) continue;
-                var top = origin + up * (firstTop - i * pitch);
-                string text = lines[i]; double wf = styleWidth;
-                if (shx) wf *= ShxMetrics.Stretch(text);
-                _group.Prims.Add(new Prim
+                var (pieces, align, width, _) = lines[i];
+                double x0 = boxLeft + (align == 'c' ? (boxW - width) / 2 : align == 'r' ? boxW - width : 0), x = x0;
+                foreach (var piece in pieces)
                 {
-                    Kind = PrimKind.Text, Text = text, Center = t.Apply(top), Height = mt.Height * t.ScaleFactor, WidthFactor = wf, WideSpaces = shx,
-                    Rotation = rot + t.Rotation, H = h, V = VAlign.Top, Rgb = rgb, Layer = layer, Handle = handle,
-                });
+                    if (piece.Tab) { x = x0 + MTextLayout.AfterTab(x - x0, piece.Run.Height); continue; }
+                    double w = piece.Width;
+                    if (!piece.Space)
+                    {
+                        double arial = PdfSceneWriter.MeasureText(piece.Text, piece.Run.Height);
+                        var at = origin + dir * x + up * (baseline[i] + shift);
+                        uint color = piece.Run.Aci == -1 ? piece.Run.TrueColor : piece.Run.Aci > 0 ? IndexRgb(piece.Run.Aci) : rgb;
+                        _group.Prims.Add(new Prim
+                        {
+                            Kind = PrimKind.Text, Text = piece.Text, Center = t.Apply(at), Height = piece.Run.Height * t.ScaleFactor,
+                            Rotation = rot + t.Rotation, H = HAlign.Left, V = VAlign.Bottom,
+                            // A TrueType face draws at its own width; Arial-drawn SHX text is stretched to the SHX width.
+                            WidthFactor = piece.Run.Font != null ? piece.Run.Width : arial > 0 ? w / arial : 1,
+                            Font = piece.Run.Font, FitWidth = piece.Run.Font != null ? w * t.ScaleFactor : 0,
+                            Rgb = color, Layer = layer, Handle = handle,
+                        });
+                    }
+                    x += w;
+                }
             }
+        }
+
+        /// <summary>An index colour as drawn on screen (colour 7 black on paper, pale ones darkened).</summary>
+        private uint IndexRgb(int i)
+        {
+            if (_dark) return i == 7 ? 0xFFFFFF : AciPalette.Rgb(i);
+            return i == 7 ? 0x000000 : Readable(AciPalette.Rgb(i));
         }
 
         /// <summary>

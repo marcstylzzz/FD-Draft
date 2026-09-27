@@ -672,17 +672,126 @@ namespace FdDraft.Tests
             doc.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "SHOWN HEREON ARE GROUND", Height = 2, Style = shx, InsertPoint = new CSMath.XYZ(0, 0, 0) });
             doc.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "SHOWN HEREON ARE GROUND", Height = 2, Style = ttf, InsertPoint = new CSMath.XYZ(0, 10, 0) });
             var scene = new FdDraft.View.SceneBuilder(doc).Model();
-            var t = scene.AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text).OrderBy(p => p.Center.Y).ToList();
-            Assert.True(t[0].WideSpaces && !t[1].WideSpaces, "SHX text gets wide spaces, TrueType doesn't");
-            Assert.Equal("SHOWN HEREON ARE GROUND", t[0].Text, "the text itself unchanged");
-            double drawn = FdDraft.View.PdfSceneWriter.MeasureText(t[0].Text, 2, true) * t[0].WidthFactor;
-            Assert.Near(FdDraft.View.ShxMetrics.Width("SHOWN HEREON ARE GROUND", 2), drawn, 1e-9, "drawn as long as AutoCAD draws it");
-            Assert.True(drawn > FdDraft.View.PdfSceneWriter.MeasureText(t[1].Text, 2) * 1.02, "and longer than plain Arial");
+            var words = scene.AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y < 5).OrderBy(p => p.Center.X).ToList();
+            var arial = scene.AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y > 5).ToList();
+            Assert.Equal(4, words.Count, "SHX text goes down a word at a time");
+            Assert.Equal(1, arial.Count, "TrueType text stays one run");
+            Assert.Equal("SHOWN HEREON ARE GROUND", arial[0].Text, "unchanged");
+            // Each word stretched to its SHX width, and the last one ends where the SHX line ends.
+            var last = words[3];
+            double end = last.Center.X + FdDraft.View.PdfSceneWriter.MeasureText(last.Text, 2) * last.WidthFactor;
+            Assert.Near(FdDraft.View.ShxMetrics.Width("SHOWN HEREON ARE GROUND", 2), end, 1e-9, "line as long as MSCAD draws it");
+            // MSCAD's note: "DISTANCES" at 2.5 then a 2.0 note indented 12 spaces - the indent clears the word.
+            Assert.True(FdDraft.View.ShxMetrics.Width(new string(' ', 12), 2) > FdDraft.View.ShxMetrics.Width("DISTANCES", 2.5), "the indent clears DISTANCES");
             // MTEXT wraps where AutoCAD would: at SHX widths.
             var box = FdDraft.View.ShxMetrics.Width("THE INTENDED PLOT SIZE", 2) + 0.5;
             doc.Entities.Add(new ACadSharp.Entities.MText { Value = "THE INTENDED PLOT SIZE OF THIS", Height = 2, RectangleWidth = box, Style = shx, InsertPoint = new CSMath.XYZ(0, 50, 0) });
-            var lines = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y > 40).OrderByDescending(p => p.Center.Y).Select(p => p.Text).ToList();
+            var lines = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y > 40)
+                .GroupBy(p => Math.Round(p.Center.Y, 6)).OrderByDescending(g => g.Key).Select(g => string.Join(" ", g.OrderBy(p => p.Center.X).Select(p => p.Text))).ToList();
             Assert.Equal("THE INTENDED PLOT SIZE", lines[0], "first line breaks at the SHX width");
+        }
+
+
+        public static void TestMTextInlineFormattingIsHonoured()
+        {
+            var paras = FdDraft.View.MTextLayout.Parse("\\pxql;{\\fBroadway|b0|i0;M&M SURVEYING LTD.\\P\\pxqc;\\Fmsurvey.shx;\\H0.3333x;\\C1;TOPOGRAPHIC SURVEYS}", 6, true);
+            Assert.Equal(2, paras.Count, "two paragraphs");
+            Assert.Equal("Broadway", paras[0].Runs[0].Font, "the company name keeps its face");
+            Assert.True(!paras[0].Runs[0].Shx, "Broadway is TrueType");
+            Assert.Near(6, paras[0].Runs[0].Height, 1e-9, "full height");
+            Assert.Near(2, paras[1].Runs[0].Height, 1e-3, "\\H0.3333x makes the second line a third");
+            Assert.True(paras[1].Runs[0].Shx && paras[1].Runs[0].Font == null, "\\F msurvey.shx is SHX");
+            Assert.Equal(1, paras[1].Runs[0].Aci, "\\C1 red");
+            Assert.Equal('c', paras[1].Align, "\\pxqc centres it");
+            // The scene: the small line really is small, and centred in the box.
+            var doc = new ACadSharp.CadDocument();
+            var m = new ACadSharp.Entities.MText { Value = "{\\H0.5x;SMALL}\\P\\pxqc;BIG", Height = 4, RectangleWidth = 100, InsertPoint = new CSMath.XYZ(0, 50, 0) };
+            doc.Entities.Add(m);
+            var prims = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text).ToList();
+            Assert.Near(2, prims.First(p => p.Text == "SMALL").Height, 1e-9, "inline height");
+            var big = prims.First(p => p.Text == "BIG");
+            double bw = FdDraft.View.ShxMetrics.Width("BIG", 4);
+            Assert.Near(50 - bw / 2, big.Center.X, 1e-9, "centred paragraph");
+        }
+
+        public static void TestAciPaletteCorrectsAcadSharp()
+        {
+            Assert.Equal(0x3F6F7Fu, FdDraft.View.AciPalette.Rgb(145), "145 is slate, not bright blue");
+            Assert.Equal(0x7FFF7Fu, FdDraft.View.AciPalette.Rgb(91), "91");
+            Assert.Equal(0x5200A5u, FdDraft.View.AciPalette.Rgb(192), "192");
+            Assert.Equal(0xFF0000u, FdDraft.View.AciPalette.Rgb(1), "the rest from the table");
+        }
+
+        public static void TestHatchEdgesOutOfOrderStillMakeOneLoop()
+        {
+            var h = new ACadSharp.Entities.Hatch { IsSolid = true };
+            var path = new ACadSharp.Entities.Hatch.BoundaryPath();
+            void L(double x1, double y1, double x2, double y2) => path.Edges.Add(new ACadSharp.Entities.Hatch.BoundaryPath.Line { Start = new CSMath.XY(x1, y1), End = new CSMath.XY(x2, y2) });
+            L(0, 0, 10, 0); L(0, 10, 0, 0); L(10, 0, 10, 10); L(0, 10, 10, 10); // shuffled and one reversed
+            h.Paths.Add(path);
+            var loops = FdDraft.View.HatchShapes.Loops(h);
+            Assert.Equal(1, loops.Count, "one loop");
+            Assert.Equal(4, loops[0].Count, "the square's four corners");
+            double area = 0;
+            for (int i = 0; i < 4; i++) { var a = loops[0][i]; var b = loops[0][(i + 1) % 4]; area += a.X * b.Y - b.X * a.Y; }
+            Assert.Near(100, Math.Abs(area) / 2, 1e-9, "a square, not a bow-tie");
+        }
+
+        public static void TestTitleBlocksExtractAndWaitBesideTheSheet()
+        {
+            // A sheet with its box in the lower right (frame 716..846 x 15..55) and other notes.
+            var src = new ACadSharp.CadDocument();
+            var lay = new ACadSharp.Objects.Layout("22X34") { PaperWidth = 863.6, PaperHeight = 558.8 };
+            src.Layouts.Add(lay);
+            var sheet = lay.AssociatedBlock.Entities;
+            var frame = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (716.0, 15.0), (846.0, 15.0), (846.0, 55.0), (716.0, 55.0) }) frame.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            sheet.Add(frame);
+            sheet.Add(new ACadSharp.Entities.Line(new CSMath.XYZ(716, 25, 0), new CSMath.XYZ(846, 25, 0)));
+            sheet.Add(new ACadSharp.Entities.TextEntity { Value = "Y. ZHANG SURVEYING LIMITED", Height = 4, InsertPoint = new CSMath.XYZ(740, 43, 0) });
+            sheet.Add(new ACadSharp.Entities.MText { Value = "\\P{\\fBroadway|b0;BIG NAME}", Height = 6, InsertPoint = new CSMath.XYZ(730, 58, 0) }); // opens with an empty line, above the frame
+            sheet.Add(new ACadSharp.Entities.TextEntity { Value = "THIS PLAN OF SURVEY RELATES TO...", Height = 2, InsertPoint = new CSMath.XYZ(716, 56.5, 0) }); // above: not the box's
+            sheet.Add(new ACadSharp.Entities.TextEntity { Value = "SURVEYOR'S CERTIFICATE", Height = 2.5, InsertPoint = new CSMath.XYZ(716, 98, 0) });
+            var box = FdDraft.Cad.TitleBlocks.Extract(src, "22X34", new FdDraft.Core.Standards.Rect(714, 14, 848, 56));
+            Assert.True(box != null, "box extracted");
+            var texts = box!.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Select(t => t.Value).ToList();
+            Assert.True(texts.Contains("Y. ZHANG SURVEYING LIMITED") && !texts.Any(t => t.StartsWith("THIS PLAN")) && !texts.Any(t => t.StartsWith("SURVEYOR")), "only the box's own text");
+            Assert.Equal(1, box.ModelSpace.Entities.OfType<ACadSharp.Entities.MText>().Count(), "the MTEXT that starts above its frame comes along");
+            var ext = FdDraft.Cad.TitleBlocks.Extent(box)!.Value;
+            Assert.Near(0, ext.X2, 1e-9, "frame's right edge at 0"); Assert.Near(0, ext.Y1, 1e-9, "bottom at 0"); Assert.Near(130, ext.Width, 1e-9, "130 wide");
+
+            // Round trip through a DXF file, then beside another drawing's sheet.
+            string file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fd-tb-test.dxf");
+            using (var w = new ACadSharp.IO.DxfWriter(file, box, false)) w.Write();
+            var back = FdDraft.Cad.TitleBlocks.Read(file);
+            var target = new ACadSharp.CadDocument();
+            var tl = new ACadSharp.Objects.Layout("22X34") { PaperWidth = 863.6, PaperHeight = 558.8 };
+            target.Layouts.Add(tl);
+            var tf = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (716.0, 20.0), (846.0, 20.0), (846.0, 60.0), (716.0, 60.0) }) tf.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            tl.AssociatedBlock.Entities.Add(tf);
+            var report = new System.Collections.Generic.List<string>();
+            int n = FdDraft.Cad.TitleBlocks.PlaceBeside(target, tl, new[] { ("YZ", back), ("M&M", back) }, report);
+            Assert.Equal(2, n, "both placed");
+            var ins = tl.AssociatedBlock.Entities.OfType<ACadSharp.Entities.Insert>().OrderBy(i => i.InsertPoint.X).ToList();
+            Assert.True(ins.All(i => i.InsertPoint.X - 130 > 863.6), "outside the paper, to the right");
+            Assert.True(ins.All(i => Math.Abs(i.InsertPoint.Y - 20) < 1e-9), "bottoms level with the sheet's own box");
+            Assert.True(ins[1].InsertPoint.X - 130 > ins[0].InsertPoint.X, "side by side, not overlapping");
+            Assert.True(ins.All(i => i.Layer.Name == "FD-Title-Blocks" && !i.Layer.PlotFlag), "on their own non-plotting layer");
+            Assert.Equal(0, FdDraft.Cad.TitleBlocks.PlaceBeside(target, tl, new[] { ("YZ", back) }), "not placed twice");
+            var scene = new FdDraft.View.SceneBuilder(target).Layout("22X34");
+            Assert.True(scene.AllPrims().Any(p => p.Kind == FdDraft.View.PrimKind.Text && p.Text == "ZHANG" && p.Center.X > 863.6), "drawn beside the sheet");
+        }
+
+        public static void TestSpareTitleBlocksGetTheJobFilledIn()
+        {
+            var std = FdDraft.Core.Standards.FirmStandards.Load(System.IO.Path.Combine(RepoRoot(), "standards", "provision-2024.standards.ini"));
+            Assert.Equal(3, std.TitleBlocks.Count, "M&M, YZ and Grad listed");
+            string Fill(string pattern, string text, string rep) => FdDraft.Core.Layout.SimplePattern.Replace(pattern, text, rep);
+            var rules = std.TitleBlockReplacements.ToDictionary(k => k.Key, k => k.Value);
+            Assert.Equal("{\\H0.75x;PROJECT No.: }26-077", Fill("PROJECT No.: }*", "{\\H0.75x;PROJECT No.: }26-009", rules["PROJECT No.: }*"].Replace("{job.name}", "26-077")), "M&M project number, formatting kept");
+            Assert.Equal("PROJECT No. 26-077", Fill("PROJECT No. #-#", "PROJECT No. 2026-033", rules["PROJECT No. #-#"].Replace("{job.name}", "26-077")), "Grad's");
+            Assert.True(!FdDraft.Core.Layout.SimplePattern.IsMatch("PROJECT No. #-#", "{\\H0.75x;PROJECT No.: }26-009"), "Grad's rule leaves M&M's alone");
         }
 }
 }

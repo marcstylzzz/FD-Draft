@@ -23,16 +23,27 @@ namespace FdDraft.View
             var loops = new List<List<Vec2>>();
             foreach (var path in h.Paths)
             {
-                var loop = new List<Vec2>();
-                foreach (var edge in path.Edges)
+                var pieces = path.Edges.Select(EdgePoints).Where(p => p.Count > 0).ToList();
+                if (pieces.Count == 0) continue;
+                // Edges are not always stored head to tail (or in order): chain them, each time taking
+                // the piece whose nearer end meets the loop's end, turned round if need be.
+                var loop = new List<Vec2>(pieces[0]);
+                pieces.RemoveAt(0);
+                while (pieces.Count > 0)
                 {
-                    var pts = EdgePoints(edge);
-                    if (pts.Count == 0) continue;
-                    // Edges are meant to run head to tail; where one is stored the other way round, turn it.
-                    if (loop.Count > 0 && Vec2.Distance(loop[loop.Count - 1], pts[pts.Count - 1]) < Vec2.Distance(loop[loop.Count - 1], pts[0]) - 1e-12)
-                        pts.Reverse();
-                    foreach (var q in pts)
-                        if (loop.Count == 0 || Vec2.Distance(loop[loop.Count - 1], q) > 1e-12) loop.Add(q);
+                    var end = loop[loop.Count - 1];
+                    int best = 0; bool flip = false; double bd = double.MaxValue;
+                    for (int k = 0; k < pieces.Count; k++)
+                    {
+                        double ds = Vec2.Distance(end, pieces[k][0]), de = Vec2.Distance(end, pieces[k][pieces[k].Count - 1]);
+                        if (ds < bd) { bd = ds; best = k; flip = false; }
+                        if (de < bd) { bd = de; best = k; flip = true; }
+                    }
+                    var next = pieces[best];
+                    pieces.RemoveAt(best);
+                    if (flip) next.Reverse();
+                    foreach (var q in next)
+                        if (Vec2.Distance(loop[loop.Count - 1], q) > 1e-12) loop.Add(q);
                 }
                 if (loop.Count > 1 && Vec2.Distance(loop[0], loop[loop.Count - 1]) < 1e-12) loop.RemoveAt(loop.Count - 1);
                 if (loop.Count >= 3) loops.Add(loop);

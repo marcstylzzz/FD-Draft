@@ -60,6 +60,7 @@ namespace FdDraft.Cad
             DrawModel(result.Document, result.ModelPerMm);
             AddViewport(layout, chosen.Sheet.Area, result.Document.GeometryExtents(), chosen.Scale);
             AddNorthArrow(layout, chosen.Sheet.Area);
+            PlaceTitleBlocks(layout);
             FillTitleBlock(layout, filler, chosen.Scale);
             Freeze(result.Family?.FreezeLayers ?? new List<string>());
             if (_std.DeleteOtherLayouts) RemoveOtherLayouts(layout.Name);
@@ -300,6 +301,12 @@ namespace FdDraft.Cad
             var ents = layout.AssociatedBlock.Entities;
             var texts = ents.OfType<TextEntity>().Where(t => !(t is AttributeDefinition) && !(t is AttributeEntity)).ToList();
             var mtexts = ents.OfType<MText>().ToList();
+            // The spare title blocks beside the sheet get the same job details, ready to swap in.
+            foreach (var b in _doc.BlockRecords.Where(b => b.Name.StartsWith(TitleBlocks.BlockPrefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                texts.AddRange(b.Entities.OfType<TextEntity>().Where(t => !(t is AttributeDefinition)));
+                mtexts.AddRange(b.Entities.OfType<MText>());
+            }
             int ticks = 0, changed = 0;
 
             if (_std.ScaleBarRelabel)
@@ -331,6 +338,20 @@ namespace FdDraft.Cad
                 if (s != null) { m.Value = AcadText(s); changed++; }
             }
             _report.Add("Title block: " + changed + " text(s) filled in" + (ticks > 0 ? ", scale bar relabelled (" + ticks + " ticks)." : "."));
+        }
+
+        /// <summary>The standards' [title-blocks] beside the sheet, outside the paper.</summary>
+        private void PlaceTitleBlocks(ACadSharp.Objects.Layout layout)
+        {
+            if (_std.TitleBlocks.Count == 0) return;
+            var boxes = new List<(string, CadDocument)>();
+            foreach (var (name, path) in _std.TitleBlocks)
+            {
+                try { boxes.Add((name, TitleBlocks.Read(path))); }
+                catch (Exception ex)
+                { _report.Add("Title block " + name + " not added - couldn't read " + path + " (" + ex.Message + ")."); }
+            }
+            TitleBlocks.PlaceBeside(_doc, layout, boxes, _report);
         }
 
         private void Freeze(IList<string> patterns)
