@@ -9,7 +9,7 @@ namespace FdDraft.Core.Geometry
     public static class Cogo
     {
         /// <summary>
-        /// A quadrant bearing such as "N45-30-00E", "N45.5E", "N45d30'00"E", or a plain
+        /// A quadrant bearing such as "N45-30-00E", "N45.5E", "N45d30'00"E", "NE30.0030" (DD.MMSS), or a plain
         /// azimuth in decimal degrees ("125.5"). Returns the azimuth in radians, 0 = north,
         /// clockwise - the same convention as <see cref="FdDraft.Core.Geometry.Angles"/>.
         /// </summary>
@@ -19,6 +19,26 @@ namespace FdDraft.Core.Geometry
             if (s.Length == 0) throw new FormatException("empty bearing");
             char first = char.ToUpperInvariant(s[0]);
             char last = char.ToUpperInvariant(s[^1]);
+            // Quadrant first, then the angle: "NE30.0030" / "ne 30-00-30". A dotted number here
+            // is DD.MMSS (30.0030 = 30°00'30"), the way surveyors key bearings in MSCAD.
+            if (s.Length > 2 && (first == 'N' || first == 'S') && "EW".IndexOf(char.ToUpperInvariant(s[1])) >= 0
+                && (char.IsDigit(s[^1]) || s[^1] == '"' || s[^1] == '\''))
+            {
+                char ew = char.ToUpperInvariant(s[1]);
+                string rest = s.Substring(2).Trim();
+                double angle;
+                if (double.TryParse(rest, NumberStyles.Float, CultureInfo.InvariantCulture, out double dms))
+                    angle = FromDdMmSs(dms);
+                else
+                {
+                    var parts = rest.Split(new[] { '-', ':', 'd', 'D', 'm', 'M', 's', 'S', '\'', '"', '°', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
+                    if (parts.Length == 0) throw new FormatException("bearing has no numbers: " + text);
+                    angle = parts[0] + (parts.Length > 1 ? parts[1] / 60.0 : 0) + (parts.Length > 2 ? parts[2] / 3600.0 : 0);
+                }
+                if (angle < 0 || angle > 90) throw new FormatException("a quadrant bearing is 0 to 90 degrees: " + text);
+                return Normalize(QuadrantToAzimuth(first, ew, angle) * Math.PI / 180.0);
+            }
             if ((first == 'N' || first == 'S') && (last == 'E' || last == 'W') && s.Length > 2)
             {
                 string mid = s.Substring(1, s.Length - 2);
@@ -29,17 +49,30 @@ namespace FdDraft.Core.Geometry
                 double min = nums.Length > 1 ? nums[1] : 0;
                 double sec = nums.Length > 2 ? nums[2] : 0;
                 double angle = deg + min / 60.0 + sec / 3600.0;
-                double az = (first, last) switch
-                {
-                    ('N', 'E') => angle,
-                    ('S', 'E') => 180 - angle,
-                    ('S', 'W') => 180 + angle,
-                    _ => 360 - angle, // N.. W
-                };
-                return Normalize(az * Math.PI / 180.0);
+                return Normalize(QuadrantToAzimuth(first, last, angle) * Math.PI / 180.0);
             }
             // A plain azimuth in decimal degrees (0 = north, clockwise).
             return Normalize(double.Parse(s, CultureInfo.InvariantCulture) * Math.PI / 180.0);
+        }
+
+        private static double QuadrantToAzimuth(char ns, char ew, double angle) => (ns, ew) switch
+        {
+            ('N', 'E') => angle,
+            ('S', 'E') => 180 - angle,
+            ('S', 'W') => 180 + angle,
+            _ => 360 - angle, // N.. W
+        };
+
+        /// <summary>DD.MMSS (30.0030 = 30°00'30", 45.3015 = 45°30'15") to decimal degrees.</summary>
+        public static double FromDdMmSs(double v)
+        {
+            double a = Math.Abs(v);
+            double deg = Math.Floor(a);
+            double mmss = Math.Round((a - deg) * 10000, 6);
+            double min = Math.Floor(mmss / 100);
+            double sec = mmss - min * 100;
+            if (min >= 60 || sec >= 60) throw new FormatException("minutes and seconds must be under 60: " + v.ToString(CultureInfo.InvariantCulture));
+            return Math.Sign(v == 0 ? 1 : v) * (deg + min / 60.0 + sec / 3600.0);
         }
 
         private static double Normalize(double radians)
@@ -58,7 +91,11 @@ namespace FdDraft.Core.Geometry
         {
             azimuthRadians = 0; distance = 0;
             var parts = text.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2) return false;
+            // "NE 30.0030 125.5": the quadrant typed apart from its angle.
+            if (parts.Length == 3 && parts[0].Length == 2 && "NS".IndexOf(char.ToUpperInvariant(parts[0][0])) >= 0
+                && "EW".IndexOf(char.ToUpperInvariant(parts[0][1])) >= 0)
+                parts = new[] { parts[0] + parts[1], parts[2] };
+            if (parts.Length != 2) return false;
             try
             {
                 azimuthRadians = ParseBearing(parts[0]);

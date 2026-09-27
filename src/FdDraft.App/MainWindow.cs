@@ -561,7 +561,7 @@ namespace FdDraft.App
             Log("  TRIM / EXTEND   select the edges (or nothing = everything), then pick lines to cut / lengthen (blank ends)");
             Log("  FILLET  type the radius (0 = sharp corner), then pick two lines on the parts to keep");
             Log("  LAYER   select entities, LAYER, moves them to the toolbar's current layer   · or the Set Layer button");
-            Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 (blank ends)");
+            Log("  LINE    pick or type E,N for the start, then BEARING DISTANCE for each leg, e.g. N45-30-00E 125.50 or NE45.3000 125.50 (blank ends)");
             Log("          C closes back to the start and reports misclosure, precision and area; U undoes the last leg");
             Log("  ID      pick points to read their N/E (and survey point number, elevation)");
             Log("  JOIN (J)    select lines/arcs/polylines that meet end to end, J makes one polyline (closed if it closes)");
@@ -1727,7 +1727,7 @@ namespace FdDraft.App
                 }
                 if (!Cogo.TryParseLeg(s, out double az, out double dist))
                 {
-                    Log("  type BEARING DISTANCE, e.g. N45-30-00E 125.50 (blank ends)");
+                    Log("  type BEARING DISTANCE, e.g. N45-30-00E 125.50 or NE45.3000 125.50 (DD.MMSS) - blank ends");
                     return;
                 }
                 var to = new Vec2(cur.Value.X + dist * Math.Sin(az), cur.Value.Y + dist * Math.Cos(az));

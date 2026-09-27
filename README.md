@@ -209,7 +209,7 @@ FdDraft.App project in Visual Studio).
   whole polyline; **VXADD** adds one where you pick on a span - on an arc
   it lands on the curve and splits the arc exactly.
 - **Line** draws by bearing and distance: pick or type an E,N start point,
-  then type each leg (`N45-30-00E 125.50`), chaining like a data collector -
+  then type each leg (`N45-30-00E 125.50`, or quadrant first in DD.MMSS: `NE30.0030 125.50`), chaining like a data collector -
   blank ends it. Type **C** to close back to the start: it draws the
   closing course and reports the misclosure (dN, dE), the precision
   (1:n over the traverse length) and the closed area; **U** takes back

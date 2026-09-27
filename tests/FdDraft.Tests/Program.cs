@@ -408,6 +408,14 @@ namespace FdDraft.Tests
             Assert.Near(125.50, dist, 1e-9, "leg distance");
             Assert.True(!Cogo.TryParseLeg("just one word", out _, out _), "one word is not a leg");
             Assert.True(!Cogo.TryParseLeg("N45E 0", out _, out _), "zero distance is rejected");
+            Assert.Near(30 + 30 / 3600.0, Cogo.ParseBearing("ne30.0030") * 180 / Math.PI, 1e-9, "NE + DD.MMSS");
+            Assert.Near(180 - (45 + 30 / 60.0 + 15 / 3600.0), Cogo.ParseBearing("SE45.3015") * 180 / Math.PI, 1e-9, "SE + DD.MMSS");
+            Assert.Near(180 + 10.5, Cogo.ParseBearing("sw10-30-00") * 180 / Math.PI, 1e-9, "SW + dashes");
+            Assert.Near(360 - 89, Cogo.ParseBearing("NW89") * 180 / Math.PI, 1e-9, "NW whole degrees");
+            Assert.True(Cogo.TryParseLeg("ne30.0030 125.5", out double qaz, out double qd) && Math.Abs(qd - 125.5) < 1e-12
+                && Math.Abs(qaz * 180 / Math.PI - (30 + 30 / 3600.0)) < 1e-9, "Marc's leg: ne30.0030 125.5");
+            Assert.True(Cogo.TryParseLeg("NE 30.0030 125.5", out double qaz2, out _) && Math.Abs(qaz2 - qaz) < 1e-12, "quadrant typed apart");
+            Assert.True(!Cogo.TryParseLeg("NE30.7000 10", out _, out _), "70 minutes is rejected");
 
             Assert.True(Cogo.TryParseCoordinate("500.25,1200.75", out double e, out double n), "coordinate parses");
             Assert.Near(500.25, e, 1e-9, "coordinate E"); Assert.Near(1200.75, n, 1e-9, "coordinate N");
