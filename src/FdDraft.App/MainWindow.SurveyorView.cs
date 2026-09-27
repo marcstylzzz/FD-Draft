@@ -114,6 +114,15 @@ namespace FdDraft.App
             Commit(cmd, "  " + n + " elevations placed " + std.ElevationAngleDeg.ToString("0", CultureInfo.InvariantCulture) + "° up-right of their points  (Ctrl+Z undoes it)");
         }
 
+        /// <summary>NORTHARROW: each sheet's north arrow back to true north for its plan, at an even scale.</summary>
+        private void RepairNorthArrows()
+        {
+            if (!NeedDrawing()) return;
+            var cmd = SurveyorView.RepairNorthArrows(_doc!, LabelStandards().NorthArrowBlock, out int n);
+            if (cmd == null) { Log("  no north arrow found on the sheets (a block named like NORTH, or the standards' north-arrow block)"); return; }
+            Commit(cmd, "  " + n + " north arrow" + (n == 1 ? "" : "s") + " pointing true north, evenly scaled  (Ctrl+Z undoes it)");
+        }
+
         private void WorldView()
         {
             if (!NeedDrawing()) return;

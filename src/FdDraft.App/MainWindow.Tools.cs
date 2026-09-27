@@ -134,6 +134,7 @@ namespace FdDraft.App
                 case "SV": case "SURVEYORVIEW": StartSurveyorView(arg); return true;
                 case "WV": case "WORLDVIEW": WorldView(); return true;
                 case "ELEV45": case "ELEVPLACE": PlaceElevations(); return true;
+                case "NORTHARROW": case "NARROW": RepairNorthArrows(); return true;
                 case "RSV": case "RETURNSV": case "RETURN_SURVEYORVIEW": ReturnToSurveyorView(); return true;
             }
             return false;

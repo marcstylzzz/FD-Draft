@@ -496,3 +496,41 @@ namespace FdDraft.Tests
         }
     }
 }
+
+namespace FdDraft.Tests
+{
+    public static partial class Tests
+    {
+        /// <summary>Marc: the north arrow distorted and inverted when moved - after Surveyor View had
+        /// turned it, ACadSharp's own transform garbled a rotated block's scale.</summary>
+        public static void TestRotatedBlockSurvivesMoveRotateMirror()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var b = new ACadSharp.Tables.BlockRecord("NORTH"); doc.BlockRecords.Add(b);
+            foreach (var rot in new[] { 0.0, 0.5, 2.0, -1.0, Math.PI })
+            {
+                var ins = new Insert(b) { InsertPoint = new CSMath.XYZ(40, 250, 0), XScale = 3, YScale = 3, ZScale = 3, Rotation = rot };
+                doc.ModelSpace.Entities.Add(ins);
+                var undo = new UndoStack();
+                undo.Push(TransformEntitiesCommand.Move(new Entity[] { ins }, 10, 5, "m"));
+                Assert.Near(3, ins.XScale, 1e-9, "move keeps x scale at rotation " + rot); Assert.Near(3, ins.YScale, 1e-9, "and y scale");
+                Assert.Near(Math.Sin(rot), Math.Sin(ins.Rotation), 1e-9, "and the rotation"); Assert.Near(Math.Cos(rot), Math.Cos(ins.Rotation), 1e-9, "(cos)");
+                Assert.Near(50, ins.InsertPoint.X, 1e-9, "moved"); Assert.Near(255, ins.InsertPoint.Y, 1e-9, "moved");
+                undo.Push(TransformEntitiesCommand.Rotate(new Entity[] { ins }, new CSMath.XYZ(0, 0, 0), 0.3, "r"));
+                Assert.Near(3, ins.XScale, 1e-9, "rotate keeps the scale"); Assert.Near(3, ins.YScale, 1e-9, "rotate keeps the scale");
+                Assert.Near(Math.Sin(rot + 0.3), Math.Sin(ins.Rotation), 1e-9, "turned by the rotation");
+                undo.Undo(); undo.Undo();
+                Assert.Near(3, ins.XScale, 1e-9, "undo leaves it whole"); Assert.Near(3, ins.YScale, 1e-9, "undo leaves it whole");
+                Assert.Near(40, ins.InsertPoint.X, 1e-9, "and back in place");
+            }
+            // A north arrow already mangled by the old bug is mended.
+            var layout = new ACadSharp.Objects.Layout("S1"); doc.Layouts.Add(layout);
+            var bad = new Insert(b) { InsertPoint = new CSMath.XYZ(10, 10, 0), XScale = -0.9035, YScale = 4.1453, ZScale = 3, Rotation = 0.5 };
+            layout.AssociatedBlock.Entities.Add(bad);
+            var fix = SurveyorView.RepairNorthArrows(doc, "", out int fixedArrows);
+            Assert.True(fix != null && fixedArrows == 1, "the arrow is found");
+            Assert.True(bad.XScale > 0 && Math.Abs(bad.XScale - bad.YScale) < 1e-9, "even and not mirrored");
+            Assert.Near(0, bad.Rotation, 1e-9, "pointing true north on a north-up sheet");
+        }
+    }
+}

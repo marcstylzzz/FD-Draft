@@ -81,8 +81,7 @@ namespace FdDraft.Cad.Editing
                 sheets++;
                 foreach (var arrow in NorthArrows(layout, northArrowBlock))
                 {
-                    var a = arrow;
-                    cmds.Add(new SetPropertyCommand<double>(a.Rotation, Angles.Normalize2Pi(a.Rotation + delta), r => a.Rotation = r, "Surveyor view"));
+                    cmds.Add(TrueNorth(arrow, twist));
                     arrows++;
                 }
             }
@@ -267,6 +266,35 @@ namespace FdDraft.Cad.Editing
             }
             public void Undo() => Draw(_from);
             public void Redo() => Draw(_to);
+        }
+
+        /// <summary>
+        /// A north arrow set to point true north on a sheet whose plan is turned by
+        /// <paramref name="twist"/>, with an even, unmirrored scale (the size it had) - which also
+        /// mends one squashed or flipped by the old block-transform bug.
+        /// </summary>
+        public static IEditCommand TrueNorth(Insert arrow, double twist)
+        {
+            double k = Math.Sqrt(Math.Abs(arrow.XScale * arrow.YScale));
+            if (k < 1e-12) k = Math.Max(Math.Abs(arrow.XScale), Math.Abs(arrow.YScale));
+            if (k < 1e-12) k = 1;
+            var a = arrow;
+            var old = (a.Rotation, a.XScale, a.YScale, a.ZScale);
+            var nw = (Angles.Normalize2Pi(twist), k, k, k);
+            return new SetPropertyCommand<(double, double, double, double)>(old, nw, st => { a.Rotation = st.Item1; a.XScale = st.Item2; a.YScale = st.Item3; a.ZScale = st.Item4; }, "North arrow");
+        }
+
+        /// <summary>Every sheet's north arrow pointing true north for its plan viewport's twist, evenly scaled. Null when there's none.</summary>
+        public static IEditCommand? RepairNorthArrows(CadDocument doc, string northArrowBlock, out int arrows)
+        {
+            arrows = 0;
+            var cmds = new List<IEditCommand>();
+            foreach (var layout in doc.Layouts.Where(l => l.IsPaperSpace))
+            {
+                double twist = SheetScale.PlanViewport(layout)?.TwistAngle ?? 0;
+                foreach (var arrow in NorthArrows(layout, northArrowBlock)) { cmds.Add(TrueNorth(arrow, twist)); arrows++; }
+            }
+            return cmds.Count == 0 ? null : new CompositeCommand(cmds, "North arrow");
         }
 
         /// <summary>The twist that lays a line level, reading left to right.</summary>

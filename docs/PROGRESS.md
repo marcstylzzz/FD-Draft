@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.6 (`Directory.Build.props`).
+- **Current version:** 0.5.7 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  97 tests as of v0.5.6, all passing.
+  98 tests as of v0.5.7, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -336,12 +336,21 @@ on Windows; that's still Marc's job when he runs a build.
   plainly on the diagonal. ELEV45 re-places every elevation in an existing
   drawing. Draft now opens in Model space (Marc: "default view is model
   space"); the sheet is a tab below.
-- **v0.5.6** (current): I had "45°" wrong. Marc rotated one elevation by hand
+- **v0.5.6**: I had "45°" wrong. Marc rotated one elevation by hand
   to show it: the elevation TEXT ITSELF runs up the 45° line from its point
   (rotation 45° on the plan, left end at the point, centred on the line) - not
   level text placed up-right. `Annotator.ElevationPlace` does that for Draft,
   ELEV45 and Surveyor View (an angle that would read upside down runs back
   toward the point instead). Point numbers stay level (down-right).
+- **v0.5.7** (current): "north arrow when moved around gets distorted and
+  inverts". ACadSharp's `Insert.ApplyTransform` turns the scale factors like a
+  vector, so any block with a rotation (the north arrow, once Surveyor View had
+  turned it) came out squashed and mirrored from a plain move (3x3 at 0.5 rad ->
+  -0.90 x 4.15). `EntityTransform.TransformFlatInsert` now works a plan block's
+  rotation and scale out from where its own axes land (move, rotate, copy, drag,
+  scale all go through it). NORTHARROW - and every SV/WV/RSV - sets each
+  sheet's north arrow to true north at an even, unmirrored scale, mending ones
+  already damaged.
 - **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 

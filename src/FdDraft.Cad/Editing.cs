@@ -166,7 +166,12 @@ namespace FdDraft.Cad.Editing
                 case Insert ins:
                 {
                     var aligns = ins.Attributes.Select(a => (a, a.AlignmentPoint)).ToList();
-                    ins.ApplyTransform(t); // transforms each attribute's insertion point itself
+                    if (Math.Abs(ins.Normal.X) < 1e-12 && Math.Abs(ins.Normal.Y) < 1e-12 && ins.Normal.Z > 0)
+                    {
+                        TransformFlatInsert(ins, t);
+                        foreach (var a in ins.Attributes) a.ApplyTransform(t);
+                    }
+                    else ins.ApplyTransform(t); // transforms each attribute's insertion point itself
                     foreach (var (a, p) in aligns) a.AlignmentPoint = t.ApplyTransform(p);
                     break;
                 }
@@ -174,6 +179,30 @@ namespace FdDraft.Cad.Editing
                     e.ApplyTransform(t);
                     break;
             }
+        }
+
+        /// <summary>
+        /// A block reference in the plan (normal up) through a transform, worked out from where its
+        /// own x and y axes land. ACadSharp's Insert.ApplyTransform treats the scale factors as a
+        /// vector and turns them with the block, so a rotated block (a north arrow after Surveyor
+        /// View) came out squashed and mirrored from a plain move.
+        /// </summary>
+        private static void TransformFlatInsert(Insert ins, Transform t)
+        {
+            var p = ins.InsertPoint;
+            double c = Math.Cos(ins.Rotation), s = Math.Sin(ins.Rotation);
+            var p2 = t.ApplyTransform(p);
+            var ux = t.ApplyTransform(new XYZ(p.X + c, p.Y + s, p.Z)) - p2;   // where the block's x axis goes
+            var uy = t.ApplyTransform(new XYZ(p.X - s, p.Y + c, p.Z)) - p2;   // and its y axis
+            double kx = Math.Sqrt(ux.X * ux.X + ux.Y * ux.Y), ky = Math.Sqrt(uy.X * uy.X + uy.Y * uy.Y);
+            if (kx < 1e-12 || ky < 1e-12) { ins.InsertPoint = p2; return; }
+            bool mirrored = ux.X * uy.Y - ux.Y * uy.X < 0;
+            ins.InsertPoint = p2;
+            ins.Rotation = Math.Atan2(ux.Y, ux.X);
+            ins.XScale *= kx;
+            ins.YScale *= mirrored ? -ky : ky;
+            // Z scale follows the average in-plane scale for a uniform transform.
+            ins.ZScale *= Math.Sqrt(kx * ky);
         }
 
         /// <summary>An MTEXT direction vector carried through a transform (null when it has none).</summary>
