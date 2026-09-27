@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.9 (`Directory.Build.props`).
+- **Current version:** 0.6.0 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  98 tests as of v0.5.9, all passing.
+  100 tests as of v0.6.0, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -358,11 +358,25 @@ on Windows; that's still Marc's job when he runs a build.
   (off)/(frozen)/(locked)); Baseline/Continue only chain onto a dimension in the
   current drawing; PTSONOBJ uses the polyline span nearest the pick (arcs too);
   PTIMPORT number/description text follows the view.
-- **v0.5.9** (current): "tried line function didnt work" - Marc keyed a leg as
+- **v0.5.9**: "tried line function didnt work" - Marc keyed a leg as
   `ne30.0030 125.5` (quadrant first, angle in DD.MMSS, as in MSCAD) and LINE
   only knew N45-30-00E. `Cogo.ParseBearing` now also takes NE/SE/SW/NW + angle
   (DD.MMSS when a plain number, or D-M-S), with the quadrant typed attached or
   apart ("NE 30.0030 125.5"). N45.5E stays decimal degrees.
+- **v0.6.0** (current): MSCAD's INFO -> "CAD Line Computations" -> Traverse, from
+  Marc's screenshots. INFO on a line (or straight polyline span) opens
+  `LineInfoDialog` (bearing, rotated bearing, from/to NEZ, horizontal/slope and
+  the same scaled for output = x GridToGround, % grade, dZ; Traverse, Turned
+  Angle, Tangent to Arc, Curve Calcs, List Line; Angle/Angle, Deflection,
+  Proportioning dimmed). Traverse (also the TRAVERSE command) picks a start
+  point, then the modeless `TraverseDialog` ("Traverse or Side Shots"): bearing
+  (N73.1010E / NE73.1010 / N73-10-10E / DD.MMSS azimuth), distance x the job's
+  scale factor when Input scale is on (ground in, grid drawn -
+  `Cogo.TraverseLegFrom`), bearing correction, Traverse vs Side Shot, next
+  point number (point + number text), bearing/distance labels (printed back
+  as ground), pan/zoom pad with undo-last-leg. Each leg is one Ctrl+Z.
+  Scale direction assumed: typed ground x SF = grid (the inverse of what the
+  labels print) - confirm with Marc against an MSCAD result.
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).

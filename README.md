@@ -76,7 +76,11 @@ FdDraft.App project in Visual Studio).
   bars", icon size and "Reset toolbar layout"; drag bars by their grip - the layout is
   remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
-  every command by toolbar; the step-by-step user guide for every bar is the
+  every command by toolbar. **INFO** (Line / Curve / Text Information) on a line
+  opens Line Computations; its **Traverse** button (or TRAVERSE) picks a start
+  point and opens "Traverse or Side Shots": type bearing (N73.1010E, NE73.1010,
+  N73-10-10E or a DD.MMSS azimuth) and distance for each leg - with Input scale
+  on, typed distances are multiplied by the job's scale factor. The step-by-step user guide for every bar is the
   Claude Doc "FD-Draft Toolbars - User Guide". In the Layers panel, ticking an
   off or frozen layer turns it on and thaws it.
 - **Surveyor View** (SV, View toolbar, View menu, Useful Tools palette): turn

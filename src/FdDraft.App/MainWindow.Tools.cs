@@ -110,6 +110,7 @@ namespace FdDraft.App
                 // ---- main control
                 case "CONFIG": OpenStandardsFile(); return true;
                 case "INFO": case "LIST": StartInfo(); return true;
+                case "TRAVERSE": case "TRAV": case "SIDESHOT": StartTraverse(); return true;
                 case "ADDPOINTS": AddPointsToObjects(); return true;
                 case "LOGFILE": OpenLogFile(); return true;
                 case "CALC": Launch("calc.exe", "the Windows calculator"); return true;
@@ -147,7 +148,7 @@ namespace FdDraft.App
             Log("  FD Text Edit / Text: LEROY 080 STYLE ARROWS SCALEONE SCALETXT ROTEXT ROTOLINE SLIDETEXT TEXTEDIT MTEXT TXT2MTXT");
             Log("  Layers: LAYISO LAYUNISO LAYOFF LAYON LAYFRZ LAYTHW LAYLCK LAYULK LAYMCH LAYMCUR LAYCUR LAYCOPY LAYDEL LAYWHAT LAYERSTATE LAYERP SETBYLAYER");
             Log("  Dimensioning: QDIM DIMLIN DIM DIMANG DIMBASELINE DIMCONTINUE CENTERMARK CENTERLINE DIMTEXT DIMROTATE DIMTEDIT DIMHOME DIMSTYLE DIMSTATUS DIMUPDATE");
-            Log("  FD Calcs: PTSONOBJ TURNANGLE STAOFF TANLINE JOINDESC BESTLINE BESTCURVE CURVECALC CURVETAN   FD Coordinate: PTEXPORT PTIMPORT DELPOINTS LISTP SCALEP ZOOMP");
+            Log("  FD Calcs: PTSONOBJ TURNANGLE STAOFF TANLINE JOINDESC BESTLINE BESTCURVE CURVECALC CURVETAN TRAVERSE (or INFO on a line > Traverse)   FD Coordinate: PTEXPORT PTIMPORT DELPOINTS LISTP SCALEP ZOOMP");
             Log("  Main: INFO ADDPOINTS CONFIG LOGFILE CALC   (every toolbar button is one of these - hover a button to see its command)");
         }
 

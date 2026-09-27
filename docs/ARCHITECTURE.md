@@ -507,6 +507,16 @@ it on Windows is the real test.
   Layer Previous keeps its own stack of snapshots; locked layers are filtered
   out of every selection path (click, box, select all, select by layer, drag).
 
+### Line Computations and Traverse (v0.6.0)
+
+INFO on a line opens `LineInfoDialog` (numbers from `Core.Geometry.LineComputation`).
+Its Traverse button, or TRAVERSE, runs `MainWindow.Traverse.cs`: a start pick, then the
+modeless `TraverseDialog`, whose `Leg` callback computes each leg with
+`Cogo.TraverseLegFrom` (bearing incl. DD.MMSS, correction, typed distance x input
+scale) and commits line + point + number + `CourseLabelling.Annotate` labels as one
+`CompositeCommand`. The pad pans via `DrawingCanvas.PanBy`; its undo pops the leg history
+alongside `_undo`.
+
 ### Surveyor View (v0.5.3)
 
 - One angle, three places: `ViewTransform.Twist` turns Model on screen (all

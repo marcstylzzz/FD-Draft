@@ -164,6 +164,15 @@ namespace FdDraft.App
             InvalidateVisual();
         }
 
+        /// <summary>Pans by a number of pixels (the drawing moves that way on screen).</summary>
+        public void PanBy(double dx, double dy)
+        {
+            PushView();
+            UpdateSize();
+            View.PanPixels(dx, dy);
+            InvalidateVisual();
+        }
+
         /// <summary>Zooms in or out about the middle of the view.</summary>
         public void ZoomBy(double factor)
         {

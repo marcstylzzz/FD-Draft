@@ -13,7 +13,11 @@ namespace FdDraft.Core.Geometry
         /// azimuth in decimal degrees ("125.5"). Returns the azimuth in radians, 0 = north,
         /// clockwise - the same convention as <see cref="FdDraft.Core.Geometry.Angles"/>.
         /// </summary>
-        public static double ParseBearing(string text)
+        public static double ParseBearing(string text) => ParseBearing(text, plainIsDdMmSs: false);
+
+        /// <summary>As <see cref="ParseBearing(string)"/>; with <paramref name="plainIsDdMmSs"/> a plain
+        /// azimuth is DD.MMSS (73.1010 = 73°10'10"), as MSCAD's Traverse dialog takes it.</summary>
+        public static double ParseBearing(string text, bool plainIsDdMmSs)
         {
             string s = text.Trim();
             if (s.Length == 0) throw new FormatException("empty bearing");
@@ -48,11 +52,17 @@ namespace FdDraft.Core.Geometry
                 double deg = nums[0];
                 double min = nums.Length > 1 ? nums[1] : 0;
                 double sec = nums.Length > 2 ? nums[2] : 0;
-                double angle = deg + min / 60.0 + sec / 3600.0;
+                double angle = nums.Length == 1 && plainIsDdMmSs ? FromDdMmSs(deg) : deg + min / 60.0 + sec / 3600.0;
                 return Normalize(QuadrantToAzimuth(first, last, angle) * Math.PI / 180.0);
             }
             // A plain azimuth in decimal degrees (0 = north, clockwise).
-            return Normalize(double.Parse(s, CultureInfo.InvariantCulture) * Math.PI / 180.0);
+            if (s.IndexOfAny(new[] { '-', ':', '°', '\'', '"', ' ' }, 1) > 0)
+            {
+                if (!TryParseAngleText(s, out double r)) throw new FormatException("not a bearing: " + text);
+                return Normalize(r);
+            }
+            double plain = double.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture);
+            return Normalize((plainIsDdMmSs ? FromDdMmSs(plain) : plain) * Math.PI / 180.0);
         }
 
         private static double QuadrantToAzimuth(char ns, char ew, double angle) => (ns, ew) switch
@@ -105,6 +115,61 @@ namespace FdDraft.Core.Geometry
             catch (FormatException) { return false; }
         }
 
+        /// <summary>
+        /// An angle typed as D°M'S", D-M-S or DD.MMSS (a plain number: 0.0130 = 0°01'30"); a
+        /// leading minus makes it negative. Radians.
+        /// </summary>
+        public static bool TryParseAngleText(string text, out double radians)
+        {
+            radians = 0;
+            string s = (text ?? "").Trim();
+            if (s.Length == 0) return false;
+            bool neg = s[0] == '-';
+            if (neg || s[0] == '+') s = s.Substring(1).Trim();
+            if (s.Length == 0) return false;
+            double deg;
+            if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double plain))
+            {
+                try { deg = FromDdMmSs(plain); } catch (FormatException) { return false; }
+            }
+            else
+            {
+                var parts = s.Split(new[] { '-', ':', '°', '\'', '"', ' ', 'd', 'D', 'm', 'M', 's', 'S' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0 || parts.Length > 3) return false;
+                deg = 0;
+                double[] div = { 1, 60, 3600 };
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || v < 0) return false;
+                    if (i > 0 && v >= 60) return false;
+                    deg += v / div[i];
+                }
+            }
+            radians = (neg ? -deg : deg) * Math.PI / 180.0;
+            return true;
+        }
+
+        /// <summary>
+        /// One Traverse / Side Shot leg, as MSCAD's "Traverse or Side Shots" dialog works it: the typed
+        /// bearing (quadrant or DD.MMSS azimuth) plus any bearing correction, and the typed distance
+        /// times the scale factor when input scaling is on (ground in, grid drawn). Null + a reason
+        /// when the input doesn't read.
+        /// </summary>
+        public static TraverseLeg? TraverseLegFrom(Vec2 from, string bearing, string distance, double correctionRadians, double inputScale, out string error)
+        {
+            error = "";
+            double az;
+            try { az = ParseBearing(bearing, plainIsDdMmSs: true); }
+            catch (FormatException) { error = "the bearing doesn't read - e.g. N73.1010E, NE73.1010, N73-10-10E or 73.1010"; return null; }
+            if (!double.TryParse((distance ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double typed) || typed <= 0)
+            { error = "type a distance greater than 0"; return null; }
+            if (inputScale <= 0) inputScale = 1;
+            az = Normalize(az + correctionRadians);
+            double grid = typed * inputScale;
+            var to = new Vec2(from.X + grid * Math.Sin(az), from.Y + grid * Math.Cos(az));
+            return new TraverseLeg(from, to, az, typed, grid);
+        }
+
         /// <summary>"E,N" or "N,E label:E" style coordinate text ("500.00,1200.00"). Returns
         /// (Easting, Northing) to match FD-Draft's XY = (E, N) convention.</summary>
         public static bool TryParseCoordinate(string text, out double easting, out double northing)
@@ -115,5 +180,17 @@ namespace FdDraft.Core.Geometry
             return double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out easting)
                 && double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out northing);
         }
+    }
+
+    /// <summary>A computed traverse leg: the typed (ground) distance and the grid distance drawn.</summary>
+    public readonly struct TraverseLeg
+    {
+        public Vec2 From { get; }
+        public Vec2 To { get; }
+        public double Azimuth { get; }
+        public double TypedDistance { get; }
+        public double GridDistance { get; }
+        public TraverseLeg(Vec2 from, Vec2 to, double azimuth, double typed, double grid)
+        { From = from; To = to; Azimuth = azimuth; TypedDistance = typed; GridDistance = grid; }
     }
 }

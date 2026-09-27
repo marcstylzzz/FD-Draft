@@ -56,7 +56,7 @@ namespace FdDraft.App
             if (!NeedDrawing()) return;
             var std = LabelStandards();
             double g2g = GridToGround(std);
-            PickLoop("INFO", "Information - pick a line, curve or text:", "pick entities to report on (Esc ends)", p =>
+            PickLoop("INFO", "Information - pick a line, curve or text:", "pick entities to report on - a line opens Line Computations (Traverse, Turned Angle, Curve Calcs); Esc ends", p =>
             {
                 var model = ModelOf(p);
                 if (model == null) return;
@@ -68,7 +68,7 @@ namespace FdDraft.App
                     case Line l:
                     {
                         var a = new Vec2(l.StartPoint.X, l.StartPoint.Y); var b = new Vec2(l.EndPoint.X, l.EndPoint.Y);
-                        Log("  line" + layer + ": " + BearingText(a, b) + "  " + F(Vec2.Distance(a, b) * g2g) + "   from " + NE(a) + " to " + NE(b));
+                        ShowLineInfo(a, b, l.StartPoint.Z, l.EndPoint.Z, "Drawing data. Line" + layer + (Math.Abs(l.StartPoint.Z - l.EndPoint.Z) < 1e-12 && Math.Abs(l.StartPoint.Z) < 1e-12 ? ", 2D." : "."));
                         break;
                     }
                     case Arc arc:
@@ -87,6 +87,7 @@ namespace FdDraft.App
                             ? "curve " + string.Join("  ", SurveyDrafting.CurveData(new CoreArcHelper(s).Arc, std, g2g))
                             : BearingText(s.A, s.B) + "  " + F(Vec2.Distance(s.A, s.B) * g2g);
                         Log("  polyline" + layer + " (" + spans.Count + " spans, length " + F(total * g2g) + "): this span " + span);
+                        if (!s.IsArc) ShowLineInfo(s.A, s.B, 0, 0, "Drawing data. Polyline span" + layer + ".");
                         break;
                     }
                     case TextEntity t:

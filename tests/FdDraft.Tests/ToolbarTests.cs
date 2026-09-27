@@ -532,5 +532,48 @@ namespace FdDraft.Tests
             Assert.True(bad.XScale > 0 && Math.Abs(bad.XScale - bad.YScale) < 1e-9, "even and not mirrored");
             Assert.Near(0, bad.Rotation, 1e-9, "pointing true north on a north-up sheet");
         }
-    }
+    
+        public static void TestTraverseLegAppliesScaleFactorAndCorrection()
+        {
+            // MSCAD's Line Computations example: N73°10'10"E, 36.948 from 4878046.806 N 280371.227 E.
+            var from = new FdDraft.Core.Geometry.Vec2(280371.227, 4878046.806);
+            var leg = FdDraft.Core.Geometry.Cogo.TraverseLegFrom(from, "N73.1010E", "36.948", 0, 1.0, out string err);
+            Assert.True(leg != null, "N73.1010E reads: " + err);
+            Assert.Near(280406.593, leg!.Value.To.X, 2e-3, "to E");
+            Assert.Near(4878057.504, leg.Value.To.Y, 2e-3, "to N");
+            foreach (var form in new[] { "NE73.1010", "n73-10-10e", "73.1010", "73-10-10" })
+            {
+                var l2 = FdDraft.Core.Geometry.Cogo.TraverseLegFrom(from, form, "36.948", 0, 1.0, out _);
+                Assert.True(l2 != null && Math.Abs(l2.Value.Azimuth - leg.Value.Azimuth) < 1e-9, "same bearing as " + form);
+            }
+            // Input scale: 100.000 ground at SF 0.9996 is drawn 99.960 grid.
+            var s = FdDraft.Core.Geometry.Cogo.TraverseLegFrom(new FdDraft.Core.Geometry.Vec2(0, 0), "0", "100", 0, 0.9996, out _)!.Value;
+            Assert.Near(99.96, s.GridDistance, 1e-9, "grid = ground x SF"); Assert.Near(100, s.TypedDistance, 1e-12, "typed kept");
+            Assert.Near(99.96, s.To.Y, 1e-9, "due north");
+            // Bearing correction is added: N0E + 0°01'30" (typed DD.MMSS 0.0130).
+            Assert.True(FdDraft.Core.Geometry.Cogo.TryParseAngleText("0.0130", out double corr), "correction reads");
+            Assert.Near(90 / 3600.0, corr * 180 / Math.PI, 1e-12, "0.0130 = 1'30\"");
+            Assert.True(FdDraft.Core.Geometry.Cogo.TryParseAngleText("-0°01'30\"", out double neg) && Math.Abs(neg + corr) < 1e-12, "negative D M S");
+            var c = FdDraft.Core.Geometry.Cogo.TraverseLegFrom(new FdDraft.Core.Geometry.Vec2(0, 0), "N0E", "10", corr, 1, out _)!.Value;
+            Assert.Near(corr, c.Azimuth, 1e-12, "corrected");
+            // Bad input is refused with a reason, not drawn.
+            Assert.True(FdDraft.Core.Geometry.Cogo.TraverseLegFrom(from, "N73.1010E", "0", 0, 1, out string e1) == null && e1.Length > 0, "zero distance refused");
+            Assert.True(FdDraft.Core.Geometry.Cogo.TraverseLegFrom(from, "banana", "5", 0, 1, out string e2) == null && e2.Length > 0, "nonsense bearing refused");
+            Assert.True(FdDraft.Core.Geometry.Cogo.TraverseLegFrom(from, "N73.7010E", "5", 0, 1, out _) == null, "70 minutes refused");
+            // LINE keeps a plain azimuth in decimal degrees.
+            Assert.Near(125.5, FdDraft.Core.Geometry.Cogo.ParseBearing("125.5") * 180 / Math.PI, 1e-9, "LINE unchanged");
+        }
+
+        public static void TestLineComputationNumbers()
+        {
+            var c = new FdDraft.Core.Geometry.LineComputation(280371.227, 4878046.806, 0, 280406.593, 4878057.504, 0, 1 / 0.9998);
+            Assert.Near(36.948, c.Horizontal, 1e-3, "horizontal (from 3-decimal coordinates)");
+            Assert.Near(73 + 10 / 60.0 + 10 / 3600.0, c.Azimuth * 180 / Math.PI, 2.0 / 3600, "N73°10'10\"E within 2 seconds (the shown coordinates are rounded)");
+            Assert.Near(c.Horizontal / 0.9998, c.ScaledHorizontal, 1e-9, "scaled = grid / SF (as labels print)");
+            Assert.Near(0, c.GradePercent, 1e-12, "flat");
+            var s = new FdDraft.Core.Geometry.LineComputation(0, 0, 10, 30, 40, 12.5);
+            Assert.Near(50, s.Horizontal, 1e-12, "3-4-5"); Assert.Near(5, s.GradePercent, 1e-12, "grade"); Assert.Near(2.5, s.DeltaZ, 1e-12, "dZ");
+            Assert.Near(Math.Sqrt(2500 + 6.25), s.Slope, 1e-12, "slope");
+        }
+}
 }
