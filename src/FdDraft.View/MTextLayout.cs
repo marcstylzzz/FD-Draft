@@ -22,6 +22,7 @@ namespace FdDraft.View
             public bool Shx;
             /// <summary>The TrueType face (\f or the style's), null for Arial / SHX.</summary>
             public string? Font;
+            public bool Underline;
             public double Width = 1;
             /// <summary>An inline colour: index (1-255) or -1 for <see cref="TrueColor"/>; 0 = the entity's.</summary>
             public int Aci;
@@ -37,7 +38,7 @@ namespace FdDraft.View
 
         private struct State
         {
-            public double Height; public bool Shx; public string? Font; public double Width; public int Aci; public uint TrueColor;
+            public double Height; public bool Shx; public string? Font; public bool Underline; public double Width; public int Aci; public uint TrueColor;
         }
 
         public static List<Paragraph> Parse(string value, double height, bool shx, string? font = null)
@@ -50,7 +51,7 @@ namespace FdDraft.View
             void Flush()
             {
                 if (sb.Length == 0) return;
-                paras[paras.Count - 1].Runs.Add(new Run { Text = SceneBuilder.Decode(sb.ToString()), Height = st.Height, Shx = st.Shx, Font = st.Font, Width = st.Width, Aci = st.Aci, TrueColor = st.TrueColor });
+                paras[paras.Count - 1].Runs.Add(new Run { Text = SceneBuilder.Decode(sb.ToString()), Height = st.Height, Shx = st.Shx, Font = st.Font, Underline = st.Underline, Width = st.Width, Aci = st.Aci, TrueColor = st.TrueColor });
                 sb.Clear();
             }
             string Arg(ref int i)
@@ -136,7 +137,9 @@ namespace FdDraft.View
                         break;
                     case 'A': case 'T': case 'Q':
                         Arg(ref k); break;
-                    case 'L': case 'l': case 'O': case 'o': case 'K': case 'k': case 'N': case 'n':
+                    case 'L': Flush(); st.Underline = true; break;
+                    case 'l': Flush(); st.Underline = false; break;
+                    case 'O': case 'o': case 'K': case 'k': case 'N': case 'n':
                         break;
                     default:
                         sb.Append(code); break;
@@ -201,7 +204,10 @@ namespace FdDraft.View
             {
                 double pw = piece.Width;
                 // A line may run a letter's side bearing past the box: AutoCAD measures to the ink.
-                if (!piece.Space && hasWord && width > 0 && w + pw > width + 0.2 * piece.Run.Height)
+                // A TrueType face is measured by Windows, not the way AutoCAD did it: give it 5% more room
+                // so a name AutoCAD fitted on one line (M&M's, in Broadway) isn't broken in two.
+                double slack = 0.2 * piece.Run.Height + (piece.Run.Font != null ? 0.05 * width : 0);
+                if (!piece.Space && hasWord && width > 0 && w + pw > width + slack)
                 {
                     while (line.Count > 0 && line[line.Count - 1].Space) line.RemoveAt(line.Count - 1);
                     lines.Add(line);

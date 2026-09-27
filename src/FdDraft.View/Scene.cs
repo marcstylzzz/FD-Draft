@@ -68,6 +68,8 @@ namespace FdDraft.View
         /// <summary>For text in <see cref="Font"/>: its width in scene units, so a renderer without
         /// that face (the PDF's Helvetica) can stretch its own to fill the same space. 0 = none.</summary>
         public double FitWidth;
+        /// <summary>Oblique (slant) angle of text, radians; 0 = upright.</summary>
+        public double Oblique;
         public HAlign H = HAlign.Left;
         public VAlign V = VAlign.Bottom;
         /// <summary>0xRRGGBB.</summary>

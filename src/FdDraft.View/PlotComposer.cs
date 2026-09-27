@@ -148,7 +148,7 @@ namespace FdDraft.View
                 Text = p.Text,
                 Height = p.Height * k,
                 Rotation = p.Rotation + map.Rotation,
-                WidthFactor = p.WidthFactor, Font = p.Font, FitWidth = p.FitWidth * k,
+                WidthFactor = p.WidthFactor, Font = p.Font, FitWidth = p.FitWidth * k, Oblique = p.Oblique,
                 H = p.H, V = p.V,
                 Rgb = rgb, PlotRgb = rgb, Aci = p.Aci,
                 LineWeightMm = p.LineWeightMm, PenMm = penMm,

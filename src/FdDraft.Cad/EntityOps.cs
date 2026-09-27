@@ -282,7 +282,7 @@ namespace FdDraft.Cad.Editing
                 case LwPolyline lp when lp.Vertices.Count >= 2:
                     return Construct.Spans(lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), lp.Vertices.Select(v => v.Bulge).ToList(), lp.IsClosed);
                 case Polyline2D p2 when p2.Vertices.Count >= 2:
-                    return Construct.Spans(p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), p2.Vertices.Select(v => v.Bulge).ToList(), p2.IsClosed);
+                    return Construct.Spans(FdDraft.View.SceneBuilder.DrawnVertices(p2).Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), FdDraft.View.SceneBuilder.DrawnVertices(p2).Select(v => v.Bulge).ToList(), p2.IsClosed);
                 default:
                     return Array.Empty<Construct.Span>();
             }

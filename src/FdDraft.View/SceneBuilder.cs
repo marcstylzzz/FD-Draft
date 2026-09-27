@@ -224,7 +224,7 @@ namespace FdDraft.View
                     Bulged(pl.Vertices.Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), pl.IsClosed, t, rgb, lname, handle);
                     break;
                 case Polyline2D p2:
-                    Bulged(p2.Vertices.Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), p2.IsClosed, t, rgb, lname, handle);
+                    Bulged(DrawnVertices(p2).Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), p2.IsClosed, t, rgb, lname, handle);
                     break;
                 case ACadSharp.Entities.Arc a:
                 {
@@ -347,6 +347,14 @@ namespace FdDraft.View
                 Poly(new List<Vec2> { t.Apply(flip ? -a.X : a.X, a.Y), t.Apply(flip ? -b.X : b.X, b.Y) }, false, rgb, layer, handle, snapVertices: false);
         }
 
+        /// <summary>A POLYLINE's vertices as drawn: a spline-fit polyline also keeps its spline's
+        /// control frame (flagged vertices that AutoCAD never draws) - drawn, they put stray lines
+        /// through the Grad logo's letters.</summary>
+        public static IEnumerable<Vertex> DrawnVertices(Polyline2D p) =>
+            p.Vertices.Any(v => v.Flags.HasFlag(VertexFlags.SplineFrameControlPoint))
+                ? p.Vertices.Where(v => !v.Flags.HasFlag(VertexFlags.SplineFrameControlPoint))
+                : p.Vertices;
+
         private void InsertBlock(Insert ins, Affine t, Layer? layer, uint rgb, ulong handle, int depth)
         {
             if (ins.Block == null || depth > 8) return;
@@ -411,7 +419,12 @@ namespace FdDraft.View
                 _ => VAlign.Bottom,
             };
             double wf = te.WidthFactor <= 0 ? 1 : te.WidthFactor;
-            TextLine(Decode(te.Value), new Vec2(at.X, at.Y), te.Height, te.Rotation, h, v, wf, ShxMetrics.IsShx(te.Style), t, rgb, layer, handle, TextFonts.Of(te.Style));
+            var font = TextFonts.Of(te.Style);
+            bool shx = ShxMetrics.IsShx(te.Style);
+            if (font != null && !TextFonts.Available(font)) { font = null; shx = true; } // not installed: MSCAD draws it as SHX
+            int first = _group.Prims.Count;
+            TextLine(Decode(te.Value), new Vec2(at.X, at.Y), te.Height, te.Rotation, h, v, wf, shx, t, rgb, layer, handle, font);
+            for (int i = first; i < _group.Prims.Count; i++) _group.Prims[i].Oblique = te.ObliqueAngle;
         }
 
         /// <summary>
@@ -461,7 +474,12 @@ namespace FdDraft.View
 
         private void MTextLines(MText mt, Affine t, uint rgb, string layer, ulong handle)
         {
-            var paras = MTextLayout.Parse(mt.Value, mt.Height, ShxMetrics.IsShx(mt.Style), TextFonts.Of(mt.Style));
+            var styleFont = TextFonts.Of(mt.Style);
+            bool styleShx = ShxMetrics.IsShx(mt.Style);
+            if (styleFont != null && !TextFonts.Available(styleFont)) { styleFont = null; styleShx = true; }
+            var paras = MTextLayout.Parse(mt.Value, mt.Height, styleShx, styleFont);
+            foreach (var r in paras.SelectMany(p => p.Runs))
+                if (r.Font != null && !TextFonts.Available(r.Font)) { r.Font = null; r.Shx = true; }
             double styleWidth = mt.Style != null && mt.Style.Width > 0 ? mt.Style.Width : 1;
             foreach (var r in paras.SelectMany(p => p.Runs)) r.Width *= styleWidth;
             int ap = (int)mt.AttachmentPoint; // 1..9: TL TC TR ML MC MR BL BC BR
@@ -497,8 +515,21 @@ namespace FdDraft.View
             {
                 var (pieces, align, width, _) = lines[i];
                 double x0 = boxLeft + (align == 'c' ? (boxW - width) / 2 : align == 'r' ? boxW - width : 0), x = x0;
+                // Underlined stretches (\L ... \l): one line under each, a fifth of the height below the baseline.
+                double? ulStart = null; double ulH = 0; uint ulRgb = rgb;
+                void EndUnderline(double at)
+                {
+                    if (ulStart == null) return;
+                    var a = origin + dir * ulStart.Value + up * (baseline[i] + shift - 0.2 * ulH);
+                    var b = origin + dir * at + up * (baseline[i] + shift - 0.2 * ulH);
+                    Poly(new List<Vec2> { t.Apply(a), t.Apply(b) }, false, ulRgb, layer, handle, snapVertices: false);
+                    ulStart = null;
+                }
+                double lastInk = x0;
                 foreach (var piece in pieces)
                 {
+                    if (piece.Run.Underline && !piece.Space && ulStart == null) { ulStart = x; ulH = piece.Run.Height; ulRgb = piece.Run.Aci == -1 ? piece.Run.TrueColor : piece.Run.Aci > 0 ? IndexRgb(piece.Run.Aci) : rgb; }
+                    if (!piece.Run.Underline) EndUnderline(lastInk);
                     if (piece.Tab) { x = x0 + MTextLayout.AfterTab(x - x0, piece.Run.Height); continue; }
                     double w = piece.Width;
                     if (!piece.Space)
@@ -517,7 +548,9 @@ namespace FdDraft.View
                         });
                     }
                     x += w;
+                    if (!piece.Space) lastInk = x;
                 }
+                EndUnderline(lastInk);
             }
         }
 

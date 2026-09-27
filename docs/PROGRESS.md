@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.6.3 (`Directory.Build.props`).
+- **Current version:** 0.6.4 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  108 tests as of v0.6.3, all passing.
+  111 tests as of v0.6.4, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -400,7 +400,7 @@ on Windows; that's still Marc's job when he runs a build.
   within a pixel) now: MTEXT wraps at SHX widths; SHX text draws with en-wide
   spaces (`Prim.WideSpaces`; PDF via Tw) stretched to its SHX length; MTEXT
   takes its style's width factor.
-- **v0.6.3** (current): checked against Marc's real files (G: job folders:
+- **v0.6.3**: checked against Marc's real files (G: job folders:
   26-009 SEVERANCE.dwg, its plotted 39R-15184 PDF, Marc\GRADBLOCK.dwg,
   Company Template\ProVisionTemplate-2024.dwt).
   - Text: SHX lines drawn a word at a time, each word placed/stretched to msurvey
@@ -422,6 +422,19 @@ on Windows; that's still Marc's job when he runs a build.
     and fills their text too; TITLEBLOCKS adds them to an open sheet. M&M (from
     the SEVERANCE sheet), YZ (ProVision template) and Grad (GRADBLOCK) boxes
     written to G:\...\Company Template\FD-Draft Title Blocks\*.dxf.
+- **v0.6.4** (current): Grad / M&M boxes to look exactly as in MSCAD.
+  - Stray lines through Grad's G, D, S: the letters are spline-fit POLYLINEs and
+    their control-frame vertices (VertexFlags.SplineFrameControlPoint) were drawn;
+    `SceneBuilder.DrawnVertices` skips them (render, spans, labels).
+  - Pattern hatch crossings counted against the stored edges, not chained loops
+    (a path's outer ring and counter with gaps between them no longer joins).
+  - M&M: "M&M SURVEYING LTD." broke onto two lines - WpfFonts sized Broadway by its
+    own cap height; AutoCAD uses Arial's em ratio for every TrueType face. TrueType
+    lines get 5% wrap slack; \L underline drawn; msurvey lower case 0.94 x Hershey
+    (fitted to M&M's address lines on 39R-15184).
+  - Text styles: face from ACAD xdata after an AnnotativeData group; file-name map
+    (TEMPSITC -> Tempus Sans ITC, SourceSansPro...); a face that isn't installed
+    falls back to SHX metrics as MSCAD does; oblique angle drawn (Prim.Oblique).
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).

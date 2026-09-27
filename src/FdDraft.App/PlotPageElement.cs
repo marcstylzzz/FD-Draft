@@ -116,6 +116,7 @@ namespace FdDraft.App
                     double dy = p.V == VAlign.Bottom ? -ft.Baseline : p.V == VAlign.Middle ? -ft.Baseline + cap / 2 : -ft.Baseline + cap;
                     var m = Matrix.Identity;
                     m.Translate(dx, dy);
+                    if (p.Oblique != 0) m.Append(new Matrix(1, 0, -Math.Tan(p.Oblique), 1, 0, 0)); // slant about the baseline
                     m.Scale(s * p.WidthFactor, s);
                     m.Rotate(-p.Rotation * 180 / Math.PI);
                     var at = P(p.Center.X, p.Center.Y);

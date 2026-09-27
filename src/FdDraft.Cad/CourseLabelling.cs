@@ -44,7 +44,7 @@ namespace FdDraft.Cad.Editing
                     texts.AddRange(ForSpans(Construct.Spans(lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), lp.Vertices.Select(v => v.Bulge).ToList(), lp.IsClosed), std, modelPerMm, gridToGround));
                     break;
                 case Polyline2D p2 when p2.Vertices.Count >= 2:
-                    texts.AddRange(ForSpans(Construct.Spans(p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), p2.Vertices.Select(v => v.Bulge).ToList(), p2.IsClosed), std, modelPerMm, gridToGround));
+                    texts.AddRange(ForSpans(Construct.Spans(FdDraft.View.SceneBuilder.DrawnVertices(p2).Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), FdDraft.View.SceneBuilder.DrawnVertices(p2).Select(v => v.Bulge).ToList(), p2.IsClosed), std, modelPerMm, gridToGround));
                     break;
             }
             return texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList();

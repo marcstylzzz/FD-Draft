@@ -132,7 +132,8 @@ namespace FdDraft.View
                             // Always set: Tz is text state and outlives ET, so a stretched word before this one
                             // would otherwise stretch this one too.
                             c.Append(F(stretch * 100)).Append(" Tz ");
-                            c.Append(F(cos)).Append(' ').Append(F(sin)).Append(' ').Append(F(-sin)).Append(' ').Append(F(cos)).Append(' ').Append(F(tx)).Append(' ').Append(F(ty))
+                            double tan = Math.Tan(p.Oblique);
+                            c.Append(F(cos)).Append(' ').Append(F(sin)).Append(' ').Append(F(tan * cos - sin)).Append(' ').Append(F(tan * sin + cos)).Append(' ').Append(F(tx)).Append(' ').Append(F(ty))
                              .Append(" Tm (").Append(Escape(bytes)).Append(") Tj ET\n");
                             break;
                         }

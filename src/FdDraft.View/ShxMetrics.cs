@@ -19,6 +19,9 @@ namespace FdDraft.View
     {
         /// <summary>Letter widths relative to Hershey simplex.</summary>
         public const double LetterScale = 1.02;
+        /// <summary>Lower-case letters relative to Hershey simplex (msurvey's are narrower - fitted to
+        /// M&amp;M's address lines on the plotted 39R-15184).</summary>
+        public const double LowerScale = 0.94;
         /// <summary>A space, in cap heights.</summary>
         public const double Space = 0.935;
 
@@ -56,7 +59,7 @@ namespace FdDraft.View
         {
             if (ch == ' ' || ch == '\u00A0') return Space;
             int units = ch >= 32 && ch <= 126 ? Advance[ch - 32] : ch == '°' ? 14 : ch == '±' ? 26 : ch == 'Ø' ? 22 : 20;
-            return units / 21.0 * LetterScale;
+            return units / 21.0 * (ch >= 'a' && ch <= 'z' ? LowerScale : LetterScale);
         }
 
         /// <summary>Width of <paramref name="text"/> in an SHX font at cap height <paramref name="capHeight"/>.</summary>

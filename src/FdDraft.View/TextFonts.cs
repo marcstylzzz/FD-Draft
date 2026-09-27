@@ -17,6 +17,10 @@ namespace FdDraft.View
         /// <summary>(face, text, cap height) -> width, or null when the face isn't available.</summary>
         public static Func<string, string, double, double?>? Measurer;
 
+        /// <summary>Whether the face can be drawn here. Without a measurer (tests) every face counts
+        /// as available. A face that isn't installed is drawn the way MSCAD falls back: as SHX.</summary>
+        public static bool Available(string font) => Measurer == null || Measurer(font, "M", 1) != null;
+
         public static double Width(string? font, string text, double capHeight)
         {
             if (font != null && Measurer != null && Measurer(font, text, capHeight) is double w) return w;
@@ -28,7 +32,10 @@ namespace FdDraft.View
             ["arial"] = "Arial", ["arialn"] = "Arial Narrow", ["arialbd"] = "Arial", ["broadw"] = "Broadway", ["times"] = "Times New Roman",
             ["calibri"] = "Calibri", ["verdana"] = "Verdana", ["tahoma"] = "Tahoma", ["cour"] = "Courier New", ["segoeui"] = "Segoe UI",
             ["gothic"] = "Century Gothic", ["romantic"] = "Romantic", ["swissek"] = "Swis721 Ex BT", ["swiss"] = "Swis721 BT",
-            ["isocpeur"] = "ISOCPEUR", ["isocp"] = "ISOCP", ["simplex"] = "Simplex", ["romans"] = "RomanS", ["txt"] = "Txt",
+            ["isocpeur"] = "ISOCPEUR", ["tempsitc"] = "Tempus Sans ITC", ["sourcesanspro-regular"] = "Source Sans Pro",
+            ["sourcesanspro-blackit"] = "Source Sans Pro Black", ["sourcesanspro-bold"] = "Source Sans Pro", ["calibrib"] = "Calibri",
+            ["timesbd"] = "Times New Roman", ["couri"] = "Courier New", ["georgia"] = "Georgia", ["garamond"] = "Garamond", ["bookos"] = "Bookman Old Style",
+            ["bernhc"] = "Bernard MT Condensed", ["copperplate"] = "Copperplate Gothic Bold", ["coprgtb"] = "Copperplate Gothic Bold", ["coprgtl"] = "Copperplate Gothic Light", ["isocp"] = "ISOCP", ["simplex"] = "Simplex", ["romans"] = "RomanS", ["txt"] = "Txt",
         };
 
         /// <summary>A face name from an \f code or a font file name ("BROADW.TTF" -> "Broadway").</summary>
@@ -42,10 +49,20 @@ namespace FdDraft.View
         public static string? Of(TextStyle? style)
         {
             if (style == null || ShxMetrics.IsShx(style)) return null;
-            // AutoCAD keeps the face name in the style's ACAD extended data.
+            // AutoCAD keeps the face name in the style's ACAD extended data (after any
+            // "AnnotativeData { ... }" group another app put there first).
+            string? face = null;
             foreach (var kv in style.ExtendedData)
+            {
+                int depth = 0;
                 foreach (var r in kv.Value.Records)
-                    if (r is ACadSharp.XData.ExtendedDataString s && !string.IsNullOrWhiteSpace(s.Value)) return s.Value.Trim();
+                {
+                    if (r is ACadSharp.XData.ExtendedDataControlString c) { depth += c.IsClosing ? -1 : 1; continue; }
+                    if (depth == 0 && r is ACadSharp.XData.ExtendedDataString s && !string.IsNullOrWhiteSpace(s.Value)
+                        && !s.Value.Equals("AnnotativeData", StringComparison.OrdinalIgnoreCase)) face = s.Value.Trim();
+                }
+            }
+            if (face != null) return face;
             string fam = Family(style.Filename);
             return fam.Equals("Arial", StringComparison.OrdinalIgnoreCase) ? null : fam;
         }

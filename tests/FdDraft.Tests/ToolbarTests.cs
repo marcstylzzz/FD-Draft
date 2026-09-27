@@ -793,5 +793,62 @@ namespace FdDraft.Tests
             Assert.Equal("PROJECT No. 26-077", Fill("PROJECT No. #-#", "PROJECT No. 2026-033", rules["PROJECT No. #-#"].Replace("{job.name}", "26-077")), "Grad's");
             Assert.True(!FdDraft.Core.Layout.SimplePattern.IsMatch("PROJECT No. #-#", "{\\H0.75x;PROJECT No.: }26-009"), "Grad's rule leaves M&M's alone");
         }
+
+        public static void TestSplineFitPolylineDrawsWithoutItsControlFrame()
+        {
+            // Grad's letters are spline-fit POLYLINEs: the frame's control vertices are stored with
+            // the curve's and never drawn - drawn, they put stray lines through G, D and S.
+            var p = new ACadSharp.Entities.Polyline2D();
+            p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(0, 0, 0)) { Flags = ACadSharp.Entities.VertexFlags.SplineFrameControlPoint });
+            p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(50, 50, 0)) { Flags = ACadSharp.Entities.VertexFlags.SplineFrameControlPoint });
+            foreach (var x in new[] { 1.0, 2, 3 }) p.Vertices.Add(new ACadSharp.Entities.Vertex2D(new CSMath.XYZ(x, 1, 0)) { Flags = ACadSharp.Entities.VertexFlags.SplineVertexFromSplineFitting });
+            var doc = new ACadSharp.CadDocument();
+            doc.Entities.Add(p);
+            var pts = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(q => q.Kind == FdDraft.View.PrimKind.Polyline).SelectMany(q => q.Points).ToList();
+            Assert.True(pts.Count >= 3 && pts.All(q => Math.Abs(q.Y - 1) < 1e-9), "only the fitted curve is drawn");
+        }
+
+        public static void TestPatternHatchIgnoresGapsBetweenItsLoops()
+        {
+            // A "D": outer ring then counter in one boundary path, with a gap between them (as Grad's
+            // is stored). No hatch line may cross the counter.
+            var h = new ACadSharp.Entities.Hatch { IsSolid = false, Pattern = new ACadSharp.Entities.HatchPattern("ANSI31") };
+            h.Pattern.Lines.Add(new ACadSharp.Entities.HatchPattern.Line { Angle = Math.PI / 4, BasePoint = new CSMath.XY(0, 0), Offset = new CSMath.XY(-0.2, 0.2) });
+            var path = new ACadSharp.Entities.Hatch.BoundaryPath();
+            void L(double x1, double y1, double x2, double y2) => path.Edges.Add(new ACadSharp.Entities.Hatch.BoundaryPath.Line { Start = new CSMath.XY(x1, y1), End = new CSMath.XY(x2, y2) });
+            L(0, 0, 10, 0); L(10, 0, 10, 10); L(10, 10, 0, 10); L(0, 10, 0, 0);
+            L(3, 3, 3, 7); L(3, 7, 7, 7); L(7, 7, 7, 3); L(7, 3, 3, 3);
+            h.Paths.Add(path);
+            var segs = FdDraft.View.HatchShapes.PatternSegments(h, FdDraft.View.HatchShapes.Loops(h));
+            Assert.True(segs.Count > 20, "hatched");
+            foreach (var (a, b) in segs)
+                for (double f = 0.02; f < 1; f += 0.04)
+                {
+                    var q = a + (b - a) * f;
+                    Assert.True(!(q.X > 3.05 && q.X < 6.95 && q.Y > 3.05 && q.Y < 6.95), "nothing inside the counter");
+                }
+        }
+
+        public static void TestTitleBlockTextStylesDrawLikeMscad()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var logo = new ACadSharp.Tables.TextStyle("LOGO") { Filename = "TEMPSITC.TTF" };
+            var yy = new ACadSharp.Tables.TextStyle("YY") { Filename = "SourceSansPro-Regular.ttf" };
+            doc.TextStyles.Add(logo); doc.TextStyles.Add(yy);
+            Assert.Equal("Tempus Sans ITC", FdDraft.View.TextFonts.Of(logo), "face from the font file");
+            doc.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "PLAN SUBMISSION FORM", Height = 2, ObliqueAngle = 15 * Math.PI / 180, InsertPoint = new CSMath.XYZ(0, 0, 0) });
+            doc.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "TORONTO", Height = 2, Style = yy, InsertPoint = new CSMath.XYZ(0, 20, 0) });
+            doc.Entities.Add(new ACadSharp.Entities.MText { Value = "{\\L\\fBroadway|b0;M&M SURVEYING LTD.}", Height = 6, InsertPoint = new CSMath.XYZ(0, 50, 0) });
+            FdDraft.View.TextFonts.Measurer = (f, t, h) => f == "Broadway" ? FdDraft.View.PdfSceneWriter.MeasureText(t, h) * 1.1 : (double?)null; // only Broadway "installed"
+            try
+            {
+                var prims = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().ToList();
+                Assert.True(prims.Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y < 5).All(p => Math.Abs(p.Oblique - 15 * Math.PI / 180) < 1e-9), "slanted, as its oblique angle says");
+                Assert.True(prims.Any(p => p.Text == "TORONTO" && p.Font == null), "a face that isn't installed falls back to SHX, as MSCAD does");
+                Assert.True(prims.Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y > 40).All(p => p.Font == "Broadway"), "the company name stays Broadway");
+                Assert.True(prims.Any(p => p.Kind == FdDraft.View.PrimKind.Polyline && p.Points.All(q => q.Y > 40 && q.Y < 50)), "and is underlined (\\L)");
+            }
+            finally { FdDraft.View.TextFonts.Measurer = null; }
+        }
 }
 }

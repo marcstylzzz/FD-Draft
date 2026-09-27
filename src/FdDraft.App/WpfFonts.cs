@@ -34,7 +34,10 @@ namespace FdDraft.App
             {
                 bool matches = false;
                 foreach (var n in names) if (n.Equals(family, StringComparison.OrdinalIgnoreCase)) matches = true;
-                if (matches) result = (tf, g.CapsHeight > 0.2 ? g.CapsHeight : ArialCapRatio, true);
+                // AutoCAD sizes every TrueType face by the same em-to-height ratio (Arial's): a display
+                // face like Broadway comes out with shorter capitals, not a bigger em. Scaling by the
+                // face's own cap height made "M&M SURVEYING LTD." too wide to fit its box.
+                if (matches) result = (tf, ArialCapRatio, true);
             }
             Cache[family] = result;
             return result;
