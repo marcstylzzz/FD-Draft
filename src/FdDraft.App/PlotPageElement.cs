@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
@@ -86,7 +87,15 @@ namespace FdDraft.App
                         var pts = new List<WPoint>(p.Points.Count - 1);
                         for (int i = 1; i < p.Points.Count; i++) pts.Add(P(p.Points[i].X, p.Points[i].Y));
                         ctx.PolyLineTo(pts, true, true);
+                        if (p.Holes != null)
+                            foreach (var hole in p.Holes)
+                            {
+                                if (hole.Count < 2) continue;
+                                ctx.BeginFigure(P(hole[0].X, hole[0].Y), fill, true);
+                                ctx.PolyLineTo(hole.Skip(1).Select(v => P(v.X, v.Y)).ToList(), true, true);
+                            }
                     }
+                    if (p.Holes != null) geo.FillRule = FillRule.EvenOdd;
                     geo.Freeze();
                     if (p.Kind == PrimKind.Fill) dc.DrawGeometry(Brush(p.Rgb), null, geo);
                     else dc.DrawGeometry(null, PenFor(p, k), geo);
@@ -99,7 +108,7 @@ namespace FdDraft.App
                 {
                     double capPx = p.Height * k;
                     if (capPx < 0.4) return;
-                    var ft = new FormattedText(p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface, EmSize, Brush(p.Rgb), dip);
+                    var ft = new FormattedText(p.WideSpaces ? FdDraft.View.ShxMetrics.Spaced(p.Text) : p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface, EmSize, Brush(p.Rgb), dip);
                     double s = capPx / (EmSize * CapRatio);
                     double dx = p.H == HAlign.Left ? 0 : p.H == HAlign.Center ? -ft.Width / 2 : -ft.Width;
                     double cap = EmSize * CapRatio;

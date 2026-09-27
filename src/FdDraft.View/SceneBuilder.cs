@@ -267,6 +267,9 @@ namespace FdDraft.View
                         Points = new List<Vec2> { t.Apply(so.FirstCorner.X, so.FirstCorner.Y), t.Apply(so.SecondCorner.X, so.SecondCorner.Y), t.Apply(so.FourthCorner.X, so.FourthCorner.Y), t.Apply(so.ThirdCorner.X, so.ThirdCorner.Y) },
                     });
                     break;
+                case Hatch hatch:
+                    EmitHatch(hatch, t, rgb, lname, handle);
+                    break;
                 case Point pt:
                 {
                     var p = t.Apply(pt.Location.X, pt.Location.Y);
@@ -299,6 +302,35 @@ namespace FdDraft.View
                     _skipped++;
                     break;
             }
+        }
+
+        /// <summary>A HATCH: solid (and gradient, drawn in its first colour) as an even-odd fill of
+        /// its loops; a pattern as its line segments clipped to them.</summary>
+        private void EmitHatch(Hatch h, Affine t, uint rgb, string layer, ulong handle)
+        {
+            var loops = HatchShapes.Loops(h);
+            if (loops.Count == 0) { _skipped++; return; }
+            // A hatch with its normal pointing down has its plane's X mirrored.
+            bool flip = h.Normal.Z < 0;
+            List<Vec2> Place(List<Vec2> l) => l.Select(v => t.Apply(flip ? -v.X : v.X, v.Y)).ToList();
+            if (h.IsSolid || h.GradientColor?.Enabled == true)
+            {
+                uint fill = rgb;
+                if (h.GradientColor?.Enabled == true && h.GradientColor.Colors.Count > 0 && h.GradientColor.Colors[0].Color.IsTrueColor)
+                {
+                    var c = h.GradientColor.Colors[0].Color;
+                    fill = (uint)(c.R << 16 | c.G << 8 | c.B);
+                }
+                var placed = loops.Select(Place).ToList();
+                _group.Prims.Add(new Prim
+                {
+                    Kind = PrimKind.Fill, Rgb = fill, Layer = layer, Handle = handle, Closed = true,
+                    Points = placed[0], Holes = placed.Count > 1 ? placed.Skip(1).ToList() : null,
+                });
+                return;
+            }
+            foreach (var (a, b) in HatchShapes.PatternSegments(h, loops))
+                Poly(new List<Vec2> { t.Apply(flip ? -a.X : a.X, a.Y), t.Apply(flip ? -b.X : b.X, b.Y) }, false, rgb, layer, handle, snapVertices: false);
         }
 
         private void InsertBlock(Insert ins, Affine t, Layer? layer, uint rgb, ulong handle, int depth)
@@ -364,10 +396,14 @@ namespace FdDraft.View
                 TextVerticalAlignmentType.Top => VAlign.Top,
                 _ => VAlign.Bottom,
             };
+            string text = Decode(te.Value);
+            double wf = te.WidthFactor <= 0 ? 1 : te.WidthFactor;
+            bool shx = ShxMetrics.IsShx(te.Style);
+            if (shx) wf *= ShxMetrics.Stretch(text);
             _group.Prims.Add(new Prim
             {
-                Kind = PrimKind.Text, Text = Decode(te.Value), Center = t.Apply(at.X, at.Y),
-                Height = te.Height * t.ScaleFactor, Rotation = te.Rotation + t.Rotation, WidthFactor = te.WidthFactor <= 0 ? 1 : te.WidthFactor,
+                Kind = PrimKind.Text, Text = text, Center = t.Apply(at.X, at.Y),
+                Height = te.Height * t.ScaleFactor, Rotation = te.Rotation + t.Rotation, WidthFactor = wf, WideSpaces = shx,
                 H = h, V = v, Rgb = rgb, Layer = layer, Handle = handle,
             });
         }
@@ -378,7 +414,10 @@ namespace FdDraft.View
             if (lines.Count == 0) return;
             // AutoCAD wraps each paragraph to the MTEXT's box width; without that, a long note
             // runs off the sheet as one line.
-            if (mt.RectangleWidth > 0) lines = Wrap(lines, mt.RectangleWidth, mt.Height);
+            bool shx = ShxMetrics.IsShx(mt.Style);
+            double styleWidth = mt.Style != null && mt.Style.Width > 0 ? mt.Style.Width : 1;
+            if (mt.RectangleWidth > 0)
+                lines = Wrap(lines, mt.RectangleWidth, mt.Height, shx ? (Func<string, double, double>)((x, hh) => ShxMetrics.Width(x, hh) * styleWidth) : (x, hh) => PdfSceneWriter.MeasureText(x, hh) * styleWidth);
             int ap = (int)mt.AttachmentPoint; // 1..9: TL TC TR ML MC MR BL BC BR
             var h = ap % 3 == 1 ? HAlign.Left : ap % 3 == 2 ? HAlign.Center : HAlign.Right;
             double pitch = mt.Height * 1.667 * (mt.LineSpacing <= 0 ? 1 : mt.LineSpacing);
@@ -392,9 +431,11 @@ namespace FdDraft.View
             {
                 if (lines[i].Length == 0) continue;
                 var top = origin + up * (firstTop - i * pitch);
+                string text = lines[i]; double wf = styleWidth;
+                if (shx) wf *= ShxMetrics.Stretch(text);
                 _group.Prims.Add(new Prim
                 {
-                    Kind = PrimKind.Text, Text = lines[i], Center = t.Apply(top), Height = mt.Height * t.ScaleFactor,
+                    Kind = PrimKind.Text, Text = text, Center = t.Apply(top), Height = mt.Height * t.ScaleFactor, WidthFactor = wf, WideSpaces = shx,
                     Rotation = rot + t.Rotation, H = h, V = VAlign.Top, Rgb = rgb, Layer = layer, Handle = handle,
                 });
             }
@@ -405,12 +446,13 @@ namespace FdDraft.View
         /// (Helvetica metrics, as the PDF plots). A single word wider than the box stays whole on
         /// its own line, as in AutoCAD; leading spaces (used in notes for hanging indents) are kept.
         /// </summary>
-        public static List<string> Wrap(List<string> paragraphs, double width, double height)
+        public static List<string> Wrap(List<string> paragraphs, double width, double height, Func<string, double, double>? measure = null)
         {
+            measure ??= (x, hh) => PdfSceneWriter.MeasureText(x, hh);
             var result = new List<string>();
             foreach (var para in paragraphs)
             {
-                if (para.Length == 0 || PdfSceneWriter.MeasureText(para, height) <= width) { result.Add(para); continue; }
+                if (para.Length == 0 || measure(para, height) <= width) { result.Add(para); continue; }
                 int lead = para.Length - para.TrimStart(' ').Length;
                 var words = para.Substring(lead).Split(' ');
                 var line = new System.Text.StringBuilder(new string(' ', lead));
@@ -418,7 +460,7 @@ namespace FdDraft.View
                 foreach (var w in words)
                 {
                     string candidate = empty ? line + w : line + " " + w;
-                    if (!empty && PdfSceneWriter.MeasureText(candidate, height) > width)
+                    if (!empty && measure(candidate, height) > width)
                     {
                         result.Add(line.ToString());
                         line.Clear().Append(w);

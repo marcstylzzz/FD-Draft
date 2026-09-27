@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -45,6 +46,15 @@ namespace FdDraft.View
                     string col = "#" + p.Rgb.ToString("X6", CultureInfo.InvariantCulture);
                     switch (p.Kind)
                     {
+                        case PrimKind.Fill when p.Holes != null:
+                            sb.Append("<path fill-rule=\"evenodd\" fill=\"" + col + "\" d=\"");
+                            foreach (var loop in new[] { p.Points }.Concat(p.Holes))
+                            {
+                                for (int i = 0; i < loop.Count; i++) sb.Append(i == 0 ? "M" : "L").Append(F(X(loop[i].X))).Append(',').Append(F(Y(loop[i].Y))).Append(' ');
+                                sb.Append("Z ");
+                            }
+                            sb.Append("\"/>\n");
+                            break;
                         case PrimKind.Polyline:
                         case PrimKind.Fill:
                             sb.Append(p.Kind == PrimKind.Fill ? "<polygon points=\"" : "<polyline points=\"");

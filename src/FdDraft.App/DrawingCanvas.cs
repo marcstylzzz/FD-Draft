@@ -327,7 +327,15 @@ namespace FdDraft.App
                         var pts = new List<WPoint>(p.Points.Count - 1);
                         for (int i = 1; i < p.Points.Count; i++) pts.Add(S(p.Points[i]));
                         ctx.PolyLineTo(pts, true, false);
+                        if (p.Holes != null)
+                            foreach (var hole in p.Holes)
+                            {
+                                if (hole.Count < 2) continue;
+                                ctx.BeginFigure(S(hole[0]), !highlight, true);
+                                ctx.PolyLineTo(hole.Skip(1).Select(S).ToList(), true, false);
+                            }
                     }
+                    if (p.Holes != null) geo.FillRule = FillRule.EvenOdd;
                     geo.Freeze();
                     if (highlight) dc.DrawGeometry(null, HighlightPen(), geo);
                     else if (p.Kind == PrimKind.Fill) dc.DrawGeometry(BrushFor(p.Rgb), null, geo);
@@ -368,7 +376,7 @@ namespace FdDraft.App
                     }
                     if (!_texts.TryGetValue(p, out var ft))
                     {
-                        ft = new FormattedText(p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface, EmSize, BrushFor(p.Rgb), dip);
+                        ft = new FormattedText(p.WideSpaces ? FdDraft.View.ShxMetrics.Spaced(p.Text) : p.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface, EmSize, BrushFor(p.Rgb), dip);
                         _texts[p] = ft;
                     }
                     double k = capPx / (EmSize * CapRatio);

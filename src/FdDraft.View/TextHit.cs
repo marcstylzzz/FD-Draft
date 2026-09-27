@@ -25,7 +25,7 @@ namespace FdDraft.View
         private static void Box(Prim t, out double x0, out double y0, out double w, out double h)
         {
             h = Math.Max(t.Height, 1e-9);
-            w = Math.Max(PdfSceneWriter.MeasureText(t.Text, h) * (t.WidthFactor <= 0 ? 1 : t.WidthFactor), h * 0.5);
+            w = Math.Max(PdfSceneWriter.MeasureText(t.Text, h, t.WideSpaces) * (t.WidthFactor <= 0 ? 1 : t.WidthFactor), h * 0.5);
             x0 = t.H == HAlign.Left ? 0 : t.H == HAlign.Center ? -w / 2 : -w;
             y0 = t.V == VAlign.Bottom ? 0 : t.V == VAlign.Middle ? -h / 2 : -h;
         }

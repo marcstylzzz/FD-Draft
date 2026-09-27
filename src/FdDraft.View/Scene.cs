@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using FdDraft.Core.Drafting;
@@ -50,6 +51,9 @@ namespace FdDraft.View
         public PrimKind Kind;
         /// <summary>Polyline/Fill vertices (arcs already tessellated).</summary>
         public List<Vec2> Points = new List<Vec2>();
+        /// <summary>A Fill's further loops (a hatch's islands, the holes in letters); the whole
+        /// fill is even-odd. Null for a single outline.</summary>
+        public List<List<Vec2>>? Holes;
         public bool Closed;
         public Vec2 Center;
         public double Radius;
@@ -58,6 +62,8 @@ namespace FdDraft.View
         public double Height;
         public double Rotation;
         public double WidthFactor = 1;
+        /// <summary>Text in an SHX font: spaces are drawn en-wide (see <see cref="ShxMetrics"/>).</summary>
+        public bool WideSpaces;
         public HAlign H = HAlign.Left;
         public VAlign V = VAlign.Bottom;
         /// <summary>0xRRGGBB.</summary>
@@ -95,7 +101,7 @@ namespace FdDraft.View
                 default:
                 {
                     double x1 = double.MaxValue, y1 = double.MaxValue, x2 = double.MinValue, y2 = double.MinValue;
-                    foreach (var p in Points)
+                    foreach (var p in Holes == null ? Points : Points.Concat(Holes.SelectMany(h => h)))
                     {
                         if (p.X < x1) x1 = p.X; if (p.Y < y1) y1 = p.Y;
                         if (p.X > x2) x2 = p.X; if (p.Y > y2) y2 = p.Y;

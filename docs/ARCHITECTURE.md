@@ -507,6 +507,15 @@ it on Windows is the real test.
   Layer Previous keeps its own stack of snapshots; locked layers are filtered
   out of every selection path (click, box, select all, select by layer, drag).
 
+### Hatches and SHX text (v0.6.2)
+
+`View/HatchShapes.cs` turns a HATCH's boundary paths into loops and pattern segments;
+solid fills are one `Prim` of kind Fill with `Holes` (even-odd in every renderer).
+`View/ShxMetrics.cs` sizes text in SHX styles (Hershey simplex widths): SceneBuilder
+wraps MTEXT with it and sets `Prim.WideSpaces` + a WidthFactor stretch so Arial-drawn
+text is as long as AutoCAD's. `View/SplinePoints.cs` tessellates splines (ACadSharp's
+own returns (0,0) on unclamped closed ones).
+
 ### Line Computations and Traverse (v0.6.0)
 
 INFO on a line opens `LineInfoDialog` (numbers from `Core.Geometry.LineComputation`).

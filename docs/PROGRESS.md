@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.6.1 (`Directory.Build.props`).
+- **Current version:** 0.6.2 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  101 tests as of v0.6.1, all passing.
+  103 tests as of v0.6.2, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -377,7 +377,7 @@ on Windows; that's still Marc's job when he runs a build.
   as ground), pan/zoom pad with undo-last-leg. Each leg is one Ctrl+Z.
   Scale direction assumed: typed ground x SF = grid (the inverse of what the
   labels print) - confirm with Marc against an MSCAD result.
-- **v0.6.1** (current): "why did this happen?" - a fan of black lines from the
+- **v0.6.1**: "why did this happen?" - a fan of black lines from the
   title-block logo ("ONTARIO LAND SURVEYORS" / GRAD SURVEYING, splines) to one
   point below the sheet. ACadSharp's `Spline.PolygonalVertexes` samples from the
   first knot; on a closed, unclamped spline (exploded text / logo outlines) the
@@ -386,6 +386,20 @@ on Windows; that's still Marc's job when he runs a build.
   tessellates over [knot[p], knot[n]] by de Boor (wrapping unwrapped closed
   control points, uniform knots when missing); SceneBuilder and
   TemplateInspector use it.
+- **v0.6.2** (current): "fill isnt there" / "texts are overlapping" (Marc's
+  sheet vs the same sheet in MSCAD). HATCH was never drawn: `HatchShapes`
+  builds the loops (line, arc, ellipse, spline, bulged polyline edges; a
+  clockwise edge's angles are mirrored) and SceneBuilder draws solid (and
+  gradient, first colour) hatches as one even-odd Fill (`Prim.Holes` - letters
+  keep their holes; canvas, plot, PDF `f*`, SVG evenodd) and pattern hatches as
+  their dash lines clipped to the loops (capped at 20k segments). Text: every
+  font was drawn as Arial, but the template's styles are SHX (romans-like):
+  spaces there are ~0.76 cap high wide vs Arial's 0.39, so an indented note ran
+  into its red heading word and MTEXT wrapped late. `ShxMetrics` (Hershey
+  simplex advances - measured against Marc's MSCAD screenshot they match
+  within a pixel) now: MTEXT wraps at SHX widths; SHX text draws with en-wide
+  spaces (`Prim.WideSpaces`; PDF via Tw) stretched to its SHX length; MTEXT
+  takes its style's width factor.
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).

@@ -18,13 +18,14 @@ namespace FdDraft.View
     {
         /// <summary>The spline as a polyline of about <paramref name="segments"/> pieces (block
         /// coordinates). Falls back to the fit points; empty when there's nothing usable.</summary>
-        public static List<XYZ> Of(Spline sp, int segments = 96)
+        public static List<XYZ> Of(Spline sp, int segments = 96) =>
+            Curve(sp.ControlPoints.ToArray(), sp.Weights.ToArray(), sp.Knots.ToArray(), sp.Degree, sp.IsClosed, sp.FitPoints.ToList(), segments);
+
+        /// <summary>The same for raw spline data (a hatch boundary's spline edge).</summary>
+        public static List<XYZ> Curve(XYZ[] ctrl, double[] weights, double[] knots, int p, bool closed, List<XYZ> fitPoints, int segments = 96)
         {
-            var ctrl = sp.ControlPoints.ToArray();
-            var knots = sp.Knots.ToArray();
-            int p = sp.Degree;
             int n = ctrl.Length;
-            var w = sp.Weights.Count == n ? sp.Weights.ToArray() : Enumerable.Repeat(1.0, n).ToArray();
+            var w = weights.Length == n ? weights : Enumerable.Repeat(1.0, n).ToArray();
             // A closed spline may keep its control points unwrapped, with p more knots than an open
             // one: wrap the first p points round to the end so it is an ordinary B-spline.
             if (p >= 1 && n > p && knots.Length == n + 2 * p + 1)
@@ -36,7 +37,7 @@ namespace FdDraft.View
             // No (or an odd) knot vector: uniform, clamped when open, unclamped when closed.
             if (p >= 1 && n > p && knots.Length != n + p + 1)
             {
-                if (sp.IsClosed && n > p)
+                if (closed)
                 {
                     ctrl = ctrl.Concat(ctrl.Take(p)).ToArray(); w = w.Concat(w.Take(p)).ToArray(); n = ctrl.Length;
                     knots = Enumerable.Range(0, n + p + 1).Select(i => (double)i).ToArray();
@@ -54,13 +55,13 @@ namespace FdDraft.View
                         double u = i == segments ? u1 : u0 + (u1 - u0) * i / segments;
                         if (Evaluate(ctrl, w, knots, p, u) is XYZ pt) pts.Add(pt);
                     }
-                    if (sp.IsClosed && pts.Count > 2 && !Same(pts[0], pts[pts.Count - 1])) pts.Add(pts[0]);
+                    if (closed && pts.Count > 2 && !Same(pts[0], pts[pts.Count - 1])) pts.Add(pts[0]);
                     if (pts.Count >= 2) return pts;
                 }
             }
             // No usable control frame: join the fit points.
-            var fit = sp.FitPoints.ToList();
-            if (fit.Count >= 2 && sp.IsClosed && !Same(fit[0], fit[fit.Count - 1])) fit.Add(fit[0]);
+            var fit = fitPoints.ToList();
+            if (fit.Count >= 2 && closed && !Same(fit[0], fit[fit.Count - 1])) fit.Add(fit[0]);
             return fit.Count >= 2 ? fit : new List<XYZ>();
         }
 

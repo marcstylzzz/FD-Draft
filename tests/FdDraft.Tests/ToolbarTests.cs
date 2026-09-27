@@ -610,5 +610,79 @@ namespace FdDraft.Tests
             Assert.True(all.Count > 20, "the logo is drawn");
             Assert.True(all.All(q => q.X > 1044 && q.Y > 2044), "no ray to the insertion point (1000, 2000)");
         }
+
+        public static ACadSharp.Entities.Hatch LetterO(double cx, double cy, bool solid)
+        {
+            // An "O": a 10 x 10 square with a round hole - outer as lines, hole as a clockwise arc
+            // edge, a bulged polyline loop beside it.
+            var h = new ACadSharp.Entities.Hatch { IsSolid = solid };
+            var outer = new ACadSharp.Entities.Hatch.BoundaryPath();
+            var c = new[] { (cx - 5, cy - 5), (cx + 5, cy - 5), (cx + 5, cy + 5), (cx - 5, cy + 5) };
+            for (int i = 0; i < 4; i++)
+                outer.Edges.Add(new ACadSharp.Entities.Hatch.BoundaryPath.Line { Start = new CSMath.XY(c[i].Item1, c[i].Item2), End = new CSMath.XY(c[(i + 1) % 4].Item1, c[(i + 1) % 4].Item2) });
+            h.Paths.Add(outer);
+            var hole = new ACadSharp.Entities.Hatch.BoundaryPath();
+            hole.Edges.Add(new ACadSharp.Entities.Hatch.BoundaryPath.Arc { Center = new CSMath.XY(cx, cy), Radius = 3, StartAngle = 0, EndAngle = 2 * Math.PI, CounterClockWise = false });
+            h.Paths.Add(hole);
+            if (!solid)
+            {
+                h.Pattern = new ACadSharp.Entities.HatchPattern("ANSI31");
+                h.Pattern.Lines.Add(new ACadSharp.Entities.HatchPattern.Line { Angle = Math.PI / 4, BasePoint = new CSMath.XY(0, 0), Offset = new CSMath.XY(-0.7071, 0.7071) });
+            }
+            return h;
+        }
+
+        public static void TestHatchesFillWithTheirHolesOpen()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.Entities.Add(LetterO(0, 0, true));
+            var pl = new ACadSharp.Entities.Hatch { IsSolid = true };
+            var path = new ACadSharp.Entities.Hatch.BoundaryPath();
+            var poly = new ACadSharp.Entities.Hatch.BoundaryPath.Polyline { IsClosed = true };
+            poly.Vertices.Add(new CSMath.XYZ(20, 0, 1)); poly.Vertices.Add(new CSMath.XYZ(30, 0, 1)); // two half circles: a disc of radius 5 about (25, 0)
+            path.Edges.Add(poly); pl.Paths.Add(path);
+            doc.Entities.Add(pl);
+            doc.Entities.Add(LetterO(50, 0, false));
+            var scene = new FdDraft.View.SceneBuilder(doc).Model();
+            var fills = scene.AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Fill).ToList();
+            Assert.Equal(2, fills.Count, "two solid hatches fill");
+            var o = fills.First(f => f.Points.All(q => q.X < 10));
+            Assert.True(o.Holes != null && o.Holes.Count == 1, "the O keeps its hole");
+            Assert.True(o.Holes![0].All(q => Math.Abs(Math.Sqrt(q.X * q.X + q.Y * q.Y) - 3) < 1e-9), "hole on the radius-3 circle");
+            var disc = fills.First(f => f.Points.All(q => q.X >= 19.99));
+            Assert.True(disc.Points.All(q => Math.Abs(Math.Sqrt((q.X - 25) * (q.X - 25) + q.Y * q.Y) - 5) < 1e-6), "bulged loop is the circle");
+            Assert.True(disc.Points.Any(q => q.Y > 4.9) && disc.Points.Any(q => q.Y < -4.9), "both halves");
+            // The pattern hatch: 45-degree lines, all inside the square and none inside the hole.
+            var lines = scene.AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Polyline && p.Points.All(q => q.X > 40)).ToList();
+            Assert.True(lines.Count > 10, "pattern lines drawn: " + lines.Count);
+            foreach (var l in lines)
+            {
+                var m = (l.Points[0] + l.Points[1]) * 0.5;
+                Assert.True(Math.Abs(m.X - 50) <= 5 + 1e-6 && Math.Abs(m.Y) <= 5 + 1e-6, "inside the square");
+                Assert.True(Math.Sqrt((m.X - 50) * (m.X - 50) + m.Y * m.Y) > 3 - 1e-6, "not in the hole");
+            }
+        }
+
+        public static void TestShxTextKeepsAutoCadsSpacing()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var shx = new ACadSharp.Tables.TextStyle("L80") { Filename = "romans.shx" };
+            var ttf = new ACadSharp.Tables.TextStyle("ARIAL") { Filename = "arial.ttf" };
+            doc.TextStyles.Add(shx); doc.TextStyles.Add(ttf);
+            doc.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "SHOWN HEREON ARE GROUND", Height = 2, Style = shx, InsertPoint = new CSMath.XYZ(0, 0, 0) });
+            doc.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "SHOWN HEREON ARE GROUND", Height = 2, Style = ttf, InsertPoint = new CSMath.XYZ(0, 10, 0) });
+            var scene = new FdDraft.View.SceneBuilder(doc).Model();
+            var t = scene.AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text).OrderBy(p => p.Center.Y).ToList();
+            Assert.True(t[0].WideSpaces && !t[1].WideSpaces, "SHX text gets wide spaces, TrueType doesn't");
+            Assert.Equal("SHOWN HEREON ARE GROUND", t[0].Text, "the text itself unchanged");
+            double drawn = FdDraft.View.PdfSceneWriter.MeasureText(t[0].Text, 2, true) * t[0].WidthFactor;
+            Assert.Near(FdDraft.View.ShxMetrics.Width("SHOWN HEREON ARE GROUND", 2), drawn, 1e-9, "drawn as long as AutoCAD draws it");
+            Assert.True(drawn > FdDraft.View.PdfSceneWriter.MeasureText(t[1].Text, 2) * 1.02, "and longer than plain Arial");
+            // MTEXT wraps where AutoCAD would: at SHX widths.
+            var box = FdDraft.View.ShxMetrics.Width("THE INTENDED PLOT SIZE", 2) + 0.5;
+            doc.Entities.Add(new ACadSharp.Entities.MText { Value = "THE INTENDED PLOT SIZE OF THIS", Height = 2, RectangleWidth = box, Style = shx, InsertPoint = new CSMath.XYZ(0, 50, 0) });
+            var lines = new FdDraft.View.SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == FdDraft.View.PrimKind.Text && p.Center.Y > 40).OrderByDescending(p => p.Center.Y).Select(p => p.Text).ToList();
+            Assert.Equal("THE INTENDED PLOT SIZE", lines[0], "first line breaks at the SHX width");
+        }
 }
 }

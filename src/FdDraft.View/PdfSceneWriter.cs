@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -34,9 +35,9 @@ namespace FdDraft.View
         /// <summary>How wide <paramref name="text"/> runs at a cap height of
         /// <paramref name="capHeight"/>, in the same units - the Helvetica metrics the PDF plots
         /// with, so text measured here (MTEXT word wrap) lines up with what plots.</summary>
-        public static double MeasureText(string text, double capHeight)
+        public static double MeasureText(string text, double capHeight, bool wideSpaces = false)
         {
-            double em = TextWidth(WinAnsi(text));
+            double em = TextWidth(WinAnsi(text)) + (wideSpaces ? Spaces(text) : 0) * WideSpaceExtra;
             return em * capHeight / CapHeight;
         }
 
@@ -91,9 +92,14 @@ namespace FdDraft.View
                         case PrimKind.Fill:
                             if (p.Points.Count < 3) break;
                             Fill(c, p.Rgb, ref lastFill);
-                            c.Append(F(X(p.Points[0].X))).Append(' ').Append(F(Y(p.Points[0].Y))).Append(" m\n");
-                            for (int i = 1; i < p.Points.Count; i++) c.Append(F(X(p.Points[i].X))).Append(' ').Append(F(Y(p.Points[i].Y))).Append(" l\n");
-                            c.Append("h f\n");
+                            foreach (var loop in p.Holes == null ? new[] { p.Points } : new[] { p.Points }.Concat(p.Holes))
+                            {
+                                if (loop.Count < 3) continue;
+                                c.Append(F(X(loop[0].X))).Append(' ').Append(F(Y(loop[0].Y))).Append(" m\n");
+                                for (int i = 1; i < loop.Count; i++) c.Append(F(X(loop[i].X))).Append(' ').Append(F(Y(loop[i].Y))).Append(" l\n");
+                                c.Append("h\n");
+                            }
+                            c.Append(p.Holes == null ? "f\n" : "f*\n");
                             break;
                         case PrimKind.Circle:
                         {
@@ -114,14 +120,17 @@ namespace FdDraft.View
                             if (p.Height * k < 0.5) break; // too small to plot
                             double size = p.Height * k / CapHeight;
                             var bytes = WinAnsi(p.Text);
-                            double w = TextWidth(bytes) * size * p.WidthFactor;
+                            int wide = p.WideSpaces ? Spaces(p.Text) : 0;
+                            double w = (TextWidth(bytes) + wide * WideSpaceExtra) * size * p.WidthFactor;
                             double dx = p.H == HAlign.Left ? 0 : p.H == HAlign.Center ? -w / 2 : -w;
                             double dy = p.V == VAlign.Bottom ? 0 : p.V == VAlign.Middle ? -p.Height * k / 2 : -p.Height * k;
                             double cos = Math.Cos(p.Rotation), sin = Math.Sin(p.Rotation);
                             double tx = X(p.Center.X) + dx * cos - dy * sin, ty = Y(p.Center.Y) + dx * sin + dy * cos;
                             Fill(c, p.Rgb, ref lastFill);
                             c.Append("BT /F1 ").Append(F(size)).Append(" Tf ");
-                            if (Math.Abs(p.WidthFactor - 1) > 1e-6) c.Append(F(p.WidthFactor * 100)).Append(" Tz ");
+                            c.Append(F(p.WidthFactor * 100)).Append(" Tz ");
+                            // Word spacing (unscaled text space) widens every space to an SHX-like one.
+                            c.Append(F(wide > 0 ? WideSpaceExtra * size : 0)).Append(" Tw ");
                             c.Append(F(cos)).Append(' ').Append(F(sin)).Append(' ').Append(F(-sin)).Append(' ').Append(F(cos)).Append(' ').Append(F(tx)).Append(' ').Append(F(ty))
                              .Append(" Tm (").Append(Escape(bytes)).Append(") Tj ET\n");
                             break;
@@ -195,6 +204,12 @@ namespace FdDraft.View
             string.Format(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###}", ((rgb >> 16) & 255) / 255.0, ((rgb >> 8) & 255) / 255.0, (rgb & 255) / 255.0);
 
         /// <summary>Text in Windows-1252 (the PDF's WinAnsiEncoding): °, ², ±, Ø map directly; anything else outside it becomes '?'.</summary>
+        /// <summary>A prim with wide (SHX-like) spaces: each space is written as a space plus this
+        /// much word spacing (em), making it Arial's en space (0.5 em).</summary>
+        private const double WideSpaceExtra = 0.5 - 0.278;
+
+        private static int Spaces(string s) { int n = 0; foreach (char ch in s) if (ch == ' ') n++; return n; }
+
         private static byte[] WinAnsi(string s)
         {
             var b = new byte[s.Length];

@@ -61,7 +61,7 @@ namespace FdDraft.View
                     ng.Prims.Add(new Prim
                     {
                         Kind = p.Kind, Handle = p.Handle, Closed = p.Closed, Radius = p.Radius, Center = T(p.Center),
-                        Points = p.Points.Select(T).ToList(), Text = p.Text, Height = p.Height, Rotation = p.Rotation + twist, H = p.H, V = p.V, WidthFactor = p.WidthFactor,
+                        Points = p.Points.Select(T).ToList(), Text = p.Text, Height = p.Height, Rotation = p.Rotation + twist, H = p.H, V = p.V, WidthFactor = p.WidthFactor, WideSpaces = p.WideSpaces,
                     });
                 }
                 turned.Groups.Add(ng);
