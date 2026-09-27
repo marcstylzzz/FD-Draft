@@ -461,6 +461,31 @@ def _():
 def _():
     return magnifier(10, 10, 7) + [("p", "M13 12.5 A3.5 3.5 0 0 0 10 6.5 L7 6.5", "ink", {"w": 1.4})] + arrowhead(6, 6.5, 180, "ink", 2.8)
 
+def north_arrow(cx, cy, ang, role="new", L=8.5):
+    import math as m
+    a = m.radians(ang)
+    u = (m.sin(a), -m.cos(a))           # pointing "up" on screen, turned clockwise by ang
+    n = (-u[1], u[0])
+    tip = (cx + u[0] * L, cy + u[1] * L); tail = (cx - u[0] * L * 0.8, cy - u[1] * L * 0.8)
+    f = lambda v: round(v, 2)
+    left = (cx - n[0] * 3.2 - u[0] * 1.5, cy - n[1] * 3.2 - u[1] * 1.5)
+    return [("p", f"M{f(tip[0])} {f(tip[1])} L{f(left[0])} {f(left[1])} L{f(cx)} {f(cy)} Z", role, {"fill": True, "w": 1.0}),
+            ("p", f"M{f(tip[0])} {f(tip[1])} L{f(cx + n[0] * 3.2 - u[0] * 1.5)} {f(cy + n[1] * 3.2 - u[1] * 1.5)} L{f(cx)} {f(cy)} Z", role, {"w": 1.0}),
+            ("l", f(cx), f(cy), f(tail[0]), f(tail[1]), role, {"w": 1.4})]
+
+@icon("View", "surveyor_view", "Surveyor View")
+def _():
+    return north_arrow(10, 12, 35, "new") + [("t", 0, 0, "N", "lbl", 6.5, "middle", {"rot": 35, "at": (17.2, 5.2)}),
+            ("p", "M4 21 A10 10 0 0 0 16 21.5", "snap", {"w": 1.4})] + arrowhead(16, 21.5, -20, "snap", 3)
+
+@icon("View", "world_view", "World View (North Up)")
+def _():
+    return north_arrow(12, 13, 0, "new") + [("t", 12, 5.5, "N", "lbl", 6.5, "middle"), ("l", 3, 21.5, 21, 21.5, "ghost", {"w": 1.1})]
+
+@icon("View", "return_sv", "Return to Surveyor View")
+def _():
+    return north_arrow(13, 11, 35, "ghost") + [("p", "M21 20 A9 9 0 0 1 6 18", "new", {"w": 1.6})] + arrowhead(6, 18, 200, "new", 3.4)
+
 @icon("View", "zoomout", "Zoom Out")
 def _():
     return magnifier(10, 10, 7) + [("l", 6.5, 10, 13.5, 10, "ink", {"w": 1.7})]

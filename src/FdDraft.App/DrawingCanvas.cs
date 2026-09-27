@@ -87,9 +87,32 @@ namespace FdDraft.App
             {
                 _scene = value;
                 _texts.Clear();
+                ApplyTwist();
                 InvalidateVisual();
             }
         }
+
+        private double _modelTwist;
+
+        /// <summary>
+        /// Surveyor View on screen: model space shown turned by this angle (radians,
+        /// counter-clockwise; 0 = north up). Sheets show their viewports' own twist, so the view
+        /// itself isn't turned there.
+        /// </summary>
+        public double ModelTwist
+        {
+            get => _modelTwist;
+            set
+            {
+                if (Math.Abs(value - _modelTwist) < 1e-15) return;
+                // Turn about the middle of the screen: the same scene point stays there.
+                _modelTwist = value;
+                ApplyTwist();
+                InvalidateVisual();
+            }
+        }
+
+        private void ApplyTwist() => View.Twist = _scene == null || _scene.IsPaper ? 0 : _modelTwist;
 
         // ---- zoom history (Zoom Previous) ----
         private readonly List<(Vec2 Center, double Zoom)> _views = new List<(Vec2, double)>();
@@ -125,6 +148,19 @@ namespace FdDraft.App
             PushView();
             UpdateSize();
             View.Fit(r, 0.02);
+            InvalidateVisual();
+        }
+
+        /// <summary>Zooms to a window picked by two opposite corners - on a turned view, the
+        /// window as it was boxed on screen.</summary>
+        public void ZoomWindow(Vec2 a, Vec2 b)
+        {
+            if (Vec2.Distance(a, b) < 1e-12) return;
+            PushView();
+            UpdateSize();
+            var sa = View.ToScreen(a); var sb = View.ToScreen(b);
+            var c1 = View.ToScene(sa.X, sb.Y); var c2 = View.ToScene(sb.X, sa.Y);
+            View.FitCorners(new[] { a, b, c1, c2 }, 0.02);
             InvalidateVisual();
         }
 
@@ -333,7 +369,7 @@ namespace FdDraft.App
                     var m = Matrix.Identity;
                     m.Translate(dx, dy);
                     m.Scale(k * p.WidthFactor, k);
-                    m.Rotate(-p.Rotation * 180 / Math.PI);
+                    m.Rotate(-(p.Rotation + View.Twist) * 180 / Math.PI);
                     m.Translate(at.X, at.Y);
                     dc.PushTransform(new MatrixTransform(m));
                     dc.DrawText(ft, new WPoint(0, 0));
@@ -626,7 +662,11 @@ namespace FdDraft.App
                     var a = View.ToScene(from.X, from.Y);
                     var b = View.ToScene(to.X, to.Y);
                     var box = new FdDraft.Core.Standards.Rect(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
-                    BoxSelected?.Invoke(BoxSelect.Handles(_scene, box, crossing: to.X < from.X), ctrl);
+                    // On a turned view the box on screen is a turned box in the drawing: test
+                    // in the view's own frame instead.
+                    var picked = View.Twist == 0 ? BoxSelect.Handles(_scene, box, crossing: to.X < from.X)
+                        : BoxSelect.Handles(_scene, View.Twist, a, b, crossing: to.X < from.X);
+                    BoxSelected?.Invoke(picked, ctrl);
                 }
                 else
                 {

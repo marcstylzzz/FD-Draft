@@ -8,7 +8,7 @@ session should be able to continue this project with no other context.
 - **Repo:** `github.com/marcstylzzz/FD-Draft` (clone with
   `git clone --recurse-submodules ...`, then `git pull --recurse-submodules`
   to update - ACadSharp is a git submodule).
-- **Current version:** 0.5.2 (`Directory.Build.props`).
+- **Current version:** 0.5.3 (`Directory.Build.props`).
 - **Owner:** Marc, Vaughan Land Surveyors (Colborne, Ontario). This is his
   standing instruction: *put in as many features as possible, he'll give the
   app a run once it's substantially built.* There is no fixed spec beyond
@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  90 tests as of v0.5.2, all passing.
+  94 tests as of v0.5.3, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -292,12 +292,28 @@ on Windows; that's still Marc's job when he runs a build.
   (`ToolbarLayout.Pack`): 5 thin rows, about half the old toolbar height.
   View > Toolbars > Icon size switches Small 12 / Medium 16 / Large 24.
   A layout saved at another size (or by 0.5.0) is re-packed on start.
-- **v0.5.2** (current): EXPLODE, typed X (Marc: "X for explode, J for join, on
+- **v0.5.2**: EXPLODE, typed X (Marc: "X for explode, J for join, on
   the right click menu"). Polylines -> lines and arcs (keeping their FD-Pro code
   tag), blocks -> their parts placed as shown (layer 0 / ByBlock take the
   insert's; attributes become text), dimensions -> their picture. `Exploder` in
   FdDraft.Cad. J already ran JOIN; both are now on the right-click menu, the
   Modify menu, and Explode is on the Modify toolbar.
+- **v0.5.3** (current): Surveyor View - Marc looked for it on the palette
+  (it had been left off in v0.4.29 for want of a command) and said it must turn
+  the paper layout and the north arrow too, as MSCAD's does. SV turns the plan
+  (pick a line to run level, or type a bearing to point up, or degrees): Model
+  on screen (`ViewTransform.Twist`, `DrawingCanvas.ModelTwist`), and every
+  sheet's plan viewport (`TwistAngle`, keeping the same model point centred)
+  with its north arrow turned by the same amount (`SurveyorView` in
+  FdDraft.Cad) - one undo step. WV = north up, RSV = back to the last one.
+  A drawing opened in surveyor view shows turned. Fixed on the way:
+  SceneBuilder took a twisted viewport's view centre as a world point;
+  AutoCAD (per ezdxf) keeps it in the twisted frame - now matches. Box
+  select and zoom window work on a turned Model view; MVIEW turns new
+  viewports to match. palette.ini gains Surveyor View / World View / Return,
+  Text to Multiline Text and Layers Off in Useful Tools (added once to an
+  existing file). Not done: labels keep their world-readable rotation, so on a
+  turned plan some read steeply - FLIP/ROTEXT/ROTOLINE fix individual ones.
 - **Open**: Marc's feedback on v0.5 in use; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
 

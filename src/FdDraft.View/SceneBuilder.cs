@@ -77,10 +77,13 @@ namespace FdDraft.View
                 }
                 if (IsHiddenLayer(vp.Layer)) { /* the viewport frame's layer does not hide its contents */ }
                 double s = vp.Height / vp.ViewHeight;
-                var toPaper = Affine.Translate(vp.Center.X, vp.Center.Y)
+                // AutoCAD's convention (as ezdxf reads it): the view centre is in the twisted
+                // display frame, so the model is turned about the target first, then the view
+                // centre is taken off. With no twist this is the plain scale-and-shift.
+                var toPaper = Affine.Translate(vp.Center.X - s * vp.ViewCenter.X, vp.Center.Y - s * vp.ViewCenter.Y)
                     .After(Affine.Rotate(vp.TwistAngle))
                     .After(Affine.Scale(s, s))
-                    .After(Affine.Translate(-vp.ViewCenter.X - vp.ViewTarget.X, -vp.ViewCenter.Y - vp.ViewTarget.Y));
+                    .After(Affine.Translate(-vp.ViewTarget.X, -vp.ViewTarget.Y));
                 _group = new SceneGroup
                 {
                     Clip = new Rect(vp.Center.X - vp.Width / 2, vp.Center.Y - vp.Height / 2, vp.Center.X + vp.Width / 2, vp.Center.Y + vp.Height / 2),

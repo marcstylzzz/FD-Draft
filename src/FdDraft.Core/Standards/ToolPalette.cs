@@ -93,6 +93,48 @@ namespace FdDraft.Core.Standards
             return tool;
         }
 
+        /// <summary>Useful Tools added after a firm's palette.ini was first written - put into an
+        /// existing file once (each is added only if its command isn't there yet).</summary>
+        public static readonly (string Line, string Command)[] AddedTools =
+        {
+            ("Surveyor View = SV | tip=turn the plan so north isn't up - sheets and north arrow too", "SV"),
+            ("World View (north up) = WV | tip=turn the plan back to north up", "WV"),
+            ("Return to Surveyor View = RSV | tip=back to the last surveyor view", "RSV"),
+            ("Text to Multiline Text = TXT2MTXT | tip=combine the selected texts into one", "TXT2MTXT"),
+            ("Layers Off = LAYOFF | tip=pick entities to turn their layers off", "LAYOFF"),
+        };
+
+        /// <summary>
+        /// An existing palette.ini with the newer Useful Tools added at the end of its
+        /// [Useful Tools] tab (or a new tab if it has none). Returns the text unchanged when
+        /// every one is already there - a firm's own edits are never touched.
+        /// </summary>
+        public static string WithAddedTools(string text)
+        {
+            var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
+            var existing = Parse(lines);
+            var commands = new HashSet<string>(existing.Tabs.SelectMany(t => t.Tools).Where(t => t.Kind == PaletteToolKind.Command)
+                .Select(t => t.Command.Split(' ')[0].ToUpperInvariant()));
+            var missing = AddedTools.Where(a => !commands.Contains(a.Command)).Select(a => a.Line).ToList();
+            if (missing.Count == 0) return text;
+            int header = lines.FindIndex(l => l.Trim().Equals("[Useful Tools]", StringComparison.OrdinalIgnoreCase));
+            if (header < 0)
+            {
+                lines.Add("");
+                lines.Add("[Useful Tools]");
+                lines.AddRange(missing);
+            }
+            else
+            {
+                // After the tab's last entry: before the next [section], skipping trailing blanks.
+                int next = lines.FindIndex(header + 1, l => l.TrimStart().StartsWith("["));
+                int at = next < 0 ? lines.Count : next;
+                while (at > header + 1 && lines[at - 1].Trim().Length == 0) at--;
+                lines.InsertRange(at, missing);
+            }
+            return string.Join("\n", lines);
+        }
+
         /// <summary>
         /// The palette FD-Draft starts with - the tabs and entries of Marc's MSCAD palette, pointed
         /// at the ProVision template's layers and styles where it has them. Every entry is only a
@@ -138,6 +180,11 @@ Extend = EXTEND
 Fillet = FILLET
 Add viewport to sheet = MVIEW
 Re-scale sheet = VPSCALE | tip=change the sheet's scale, title block and labels
+Surveyor View = SV | tip=turn the plan so north isn't up - sheets and north arrow too
+World View (north up) = WV | tip=turn the plan back to north up
+Return to Surveyor View = RSV | tip=back to the last surveyor view
+Text to Multiline Text = TXT2MTXT | tip=combine the selected texts into one
+Layers Off = LAYOFF | tip=pick entities to turn their layers off
 Print = PRINT
 
 [Line Styles]

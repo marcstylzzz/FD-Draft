@@ -9,6 +9,7 @@ using FdDraft.Cad.Editing;
 using FdDraft.Core.Drafting;
 using FdDraft.Core.Geometry;
 using FdDraft.Core.Standards;
+using FdDraft.View;
 using FdDraft.View.Toolbars;
 
 namespace FdDraft.Tests
@@ -290,6 +291,118 @@ namespace FdDraft.Tests
             undo.Undo();
             Assert.True(doc.ModelSpace.Entities.Contains(lot) && doc.ModelSpace.Entities.Contains(ins) && !doc.ModelSpace.Entities.OfType<Line>().Any(), "one undo puts both back");
             Assert.True(Exploder.Explode(new Entity[] { new Line() }, out _, out _) == null, "a line doesn't explode");
+        }
+    }
+}
+
+namespace FdDraft.Tests
+{
+    public static partial class Tests
+    {
+        public static void TestViewTwistRoundTripsAndFits()
+        {
+            var v = new ViewTransform { Center = new Vec2(1000, 2000), Zoom = 3, ScreenWidth = 800, ScreenHeight = 600, Twist = 0.4 };
+            var p = new Vec2(1012.5, 1994.25);
+            var s = v.ToScreen(p);
+            var back = v.ToScene(s.X, s.Y);
+            Assert.Near(p.X, back.X, 1e-9, "x round trip"); Assert.Near(p.Y, back.Y, 1e-9, "y round trip");
+            // A line along the twist-cancelling direction shows level on screen.
+            v.Twist = SurveyorView.TwistToLevel(new Vec2(0, 0), new Vec2(10, 7));
+            var a = v.ToScreen(new Vec2(1000, 2000)); var b = v.ToScreen(new Vec2(1010, 2007));
+            Assert.Near(a.Y, b.Y, 1e-9, "the picked line runs level");
+            Assert.True(b.X > a.X, "and reads left to right");
+            // Pointing a bearing up: N45°E straight up the screen.
+            v.Twist = SurveyorView.TwistToPointUp(Math.PI / 4);
+            var c = v.ToScreen(new Vec2(1000, 2000)); var d = v.ToScreen(new Vec2(1010, 2010));
+            Assert.Near(c.X, d.X, 1e-9, "N45E points straight up"); Assert.True(d.Y < c.Y, "up, not down");
+            // Pan moves the drawing with the mouse, turned or not.
+            var before = v.ToScreen(p);
+            v.PanPixels(30, -20);
+            var after = v.ToScreen(p);
+            Assert.Near(before.X + 30, after.X, 1e-9, "pan x"); Assert.Near(before.Y - 20, after.Y, 1e-9, "pan y");
+            // Fitting a turned rectangle keeps all of it on screen.
+            v.Fit(new FdDraft.Core.Standards.Rect(0, 0, 100, 40), 0);
+            foreach (var q in new[] { new Vec2(0, 0), new Vec2(100, 0), new Vec2(100, 40), new Vec2(0, 40) })
+            {
+                var sq = v.ToScreen(q);
+                Assert.True(sq.X >= -1e-6 && sq.X <= 800 + 1e-6 && sq.Y >= -1e-6 && sq.Y <= 600 + 1e-6, "corner on screen");
+            }
+        }
+
+        private static (ACadSharp.CadDocument Doc, ACadSharp.Objects.Layout Layout, ACadSharp.Entities.Viewport Vp, Insert Arrow) TwistSheet()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(new Line(new CSMath.XYZ(990, 2000, 0), new CSMath.XYZ(1010, 2000, 0)));
+            var layout = new ACadSharp.Objects.Layout("SHEET") { PaperWidth = 420, PaperHeight = 297 };
+            doc.Layouts.Add(layout);
+            var vp = SheetViewports.Create(new FdDraft.Core.Standards.Rect(20, 20, 400, 277), new Vec2(1000, 2000), 0.5, doc.Layers["0"]);
+            layout.AssociatedBlock.Entities.Add(vp);
+            var block = new ACadSharp.Tables.BlockRecord("Plan-NORTH ARROW");
+            block.Entities.Add(new Line(CSMath.XYZ.Zero, new CSMath.XYZ(0, 4, 0)));
+            doc.BlockRecords.Add(block);
+            var arrow = new Insert(block) { InsertPoint = new CSMath.XYZ(40, 250, 0) };
+            layout.AssociatedBlock.Entities.Add(arrow);
+            return (doc, layout, vp, arrow);
+        }
+
+        public static void TestSurveyorViewTurnsSheetsAndNorthArrow()
+        {
+            var (doc, layout, vp, arrow) = TwistSheet();
+            var undo = new UndoStack();
+            double twist = 30 * Math.PI / 180;
+            undo.Push(SurveyorView.Apply(doc, twist, "Plan-NORTH ARROW", out int sheets, out int arrows)!);
+            Assert.Equal(1, sheets, "the sheet's plan viewport turned"); Assert.Equal(1, arrows, "and its north arrow");
+            Assert.Near(twist, vp.TwistAngle, 1e-12, "viewport twist");
+            var mid = SurveyorView.ModelCenter(vp);
+            Assert.Near(1000, mid.X, 1e-9, "same model point in the middle"); Assert.Near(2000, mid.Y, 1e-9, "same model point in the middle");
+            Assert.Near(twist, arrow.Rotation, 1e-12, "north arrow turned by the same angle");
+            Assert.Near(twist, SurveyorView.CurrentTwist(doc), 1e-12, "the drawing knows its twist");
+
+            // The sheet shows the plan turned: the east-west line now rises at 30° on paper,
+            // centred in the viewport.
+            var scene = new SceneBuilder(doc).Layout("SHEET");
+            var line = scene.Groups.Where(g => g.ToModel.HasValue).SelectMany(g => g.Prims).Single(p => p.Kind == PrimKind.Polyline);
+            var p0 = line.Points[0]; var p1 = line.Points[1];
+            Assert.Near(twist, Math.Atan2(p1.Y - p0.Y, p1.X - p0.X), 1e-9, "turned on paper");
+            Assert.Near(210, (p0.X + p1.X) / 2, 1e-6, "still centred on the viewport (x)"); Assert.Near(148.5, (p0.Y + p1.Y) / 2, 1e-6, "(y)");
+            var g0 = scene.Groups.First(g => g.ToModel.HasValue);
+            var m = g0.ToModel!.Value.Apply(new Vec2(210, 148.5));
+            Assert.Near(1000, m.X, 1e-9, "picking on the sheet finds the right model point"); Assert.Near(2000, m.Y, 1e-9, "(y)");
+
+            undo.Undo();
+            Assert.Near(0, vp.TwistAngle, 1e-12, "undo: north up again"); Assert.Near(0, arrow.Rotation, 1e-12, "arrow back");
+            Assert.Near(1000, vp.ViewCenter.X, 1e-9, "view centre back");
+        }
+
+        public static void TestTurnedBoxSelect()
+        {
+            // A 10 m line running N45E, boxed on a view where that line runs level.
+            var doc = new ACadSharp.CadDocument();
+            var ln = new Line(new CSMath.XYZ(0, 0, 0), new CSMath.XYZ(7.0710678, 7.0710678, 0));
+            doc.ModelSpace.Entities.Add(ln);
+            var scene = new SceneBuilder(doc).Model();
+            double twist = SurveyorView.TwistToLevel(new Vec2(0, 0), new Vec2(1, 1));
+            var v = new ViewTransform { Center = new Vec2(3.5, 3.5), Zoom = 20, ScreenWidth = 800, ScreenHeight = 600, Twist = twist };
+            // A thin screen box round the level line: in the drawing it's a turned box.
+            var s0 = v.ToScreen(new Vec2(0, 0)); var s1 = v.ToScreen(new Vec2(7.0710678, 7.0710678));
+            var a = v.ToScene(s0.X - 5, s0.Y - 5); var b = v.ToScene(s1.X + 5, s1.Y + 5);
+            Assert.True(BoxSelect.Handles(scene, twist, a, b, crossing: false).Contains(ln.Handle), "the turned window takes the line");
+            var c = v.ToScene(s0.X - 5, s0.Y - 5); var d = v.ToScene((s0.X + s1.X) / 2, s1.Y + 5);
+            Assert.True(!BoxSelect.Handles(scene, twist, c, d, crossing: false).Contains(ln.Handle), "half a window doesn't");
+            Assert.True(BoxSelect.Handles(scene, twist, c, d, crossing: true).Contains(ln.Handle), "half a crossing does");
+        }
+
+        public static void TestPaletteGainsNewUsefulTools()
+        {
+            string old = "[Text Styles]\nA = text | layer=X\n\n[Useful Tools]\nInverse = INV\nMine = LABEL\n\n[Line Styles]\nB = line | layer=Y\n";
+            var updated = ToolPalette.WithAddedTools(old);
+            var p = ToolPalette.Parse(updated.Split('\n'));
+            var useful = p.Tabs.Single(t => t.Name == "Useful Tools").Tools.Select(t => t.Command).ToList();
+            Assert.True(useful.Take(2).SequenceEqual(new[] { "INV", "LABEL" }), "the firm's own entries stay first, untouched");
+            Assert.True(useful.Contains("SV") && useful.Contains("WV") && useful.Contains("RSV"), "surveyor view tools added");
+            Assert.Equal(1, p.Tabs.Single(t => t.Name == "Line Styles").Tools.Count, "other tabs untouched");
+            Assert.Equal(updated, ToolPalette.WithAddedTools(updated), "added only once");
+            Assert.True(ToolPalette.Parse(ToolPalette.DefaultText.Split('\n')).Tabs.Single(t => t.Name == "Useful Tools").Tools.Any(t => t.Command == "SV"), "and in the starting palette");
         }
     }
 }

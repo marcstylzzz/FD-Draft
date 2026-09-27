@@ -42,6 +42,34 @@ namespace FdDraft.View
             return new HashSet<ulong>(inside.Where(kv => kv.Value).Select(kv => kv.Key));
         }
 
+        /// <summary>
+        /// A box picked on a view turned by <paramref name="twist"/>: <paramref name="a"/> and
+        /// <paramref name="b"/> are its opposite corners in the drawing. The scene is looked at in
+        /// the view's own frame, where the box is square to the axes again.
+        /// </summary>
+        public static HashSet<ulong> Handles(Scene scene, double twist, Vec2 a, Vec2 b, bool crossing)
+        {
+            double c = Math.Cos(twist), s = Math.Sin(twist);
+            Vec2 T(Vec2 p) => new Vec2(p.X * c - p.Y * s, p.X * s + p.Y * c);
+            var turned = new Scene { Name = scene.Name, IsPaper = scene.IsPaper };
+            foreach (var g in scene.Groups)
+            {
+                var ng = new SceneGroup();
+                foreach (var p in g.Prims)
+                {
+                    if (p.Handle == 0) continue;
+                    ng.Prims.Add(new Prim
+                    {
+                        Kind = p.Kind, Handle = p.Handle, Closed = p.Closed, Radius = p.Radius, Center = T(p.Center),
+                        Points = p.Points.Select(T).ToList(), Text = p.Text, Height = p.Height, Rotation = p.Rotation + twist, H = p.H, V = p.V, WidthFactor = p.WidthFactor,
+                    });
+                }
+                turned.Groups.Add(ng);
+            }
+            var ta = T(a); var tb = T(b);
+            return Handles(turned, new Rect(Math.Min(ta.X, tb.X), Math.Min(ta.Y, tb.Y), Math.Max(ta.X, tb.X), Math.Max(ta.Y, tb.Y)), crossing);
+        }
+
         private static bool In(Vec2 p, Rect b) => p.X >= b.X1 && p.X <= b.X2 && p.Y >= b.Y1 && p.Y <= b.Y2;
 
         private static bool AllInside(Prim p, Rect b)

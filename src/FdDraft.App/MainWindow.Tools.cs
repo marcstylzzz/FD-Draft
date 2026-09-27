@@ -131,6 +131,9 @@ namespace FdDraft.App
                 case "SCALEP": case "SC": StartScaleSelection(); return true;
                 case "ZOOMP": ZoomPointCommand(arg); return true;
                 case "SNAPMODE": SnapModeCommand(arg); return true;
+                case "SV": case "SURVEYORVIEW": StartSurveyorView(arg); return true;
+                case "WV": case "WORLDVIEW": WorldView(); return true;
+                case "RSV": case "RETURNSV": case "RETURN_SURVEYORVIEW": ReturnToSurveyorView(); return true;
             }
             return false;
         }

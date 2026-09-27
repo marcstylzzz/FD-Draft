@@ -507,6 +507,20 @@ it on Windows is the real test.
   Layer Previous keeps its own stack of snapshots; locked layers are filtered
   out of every selection path (click, box, select all, select by layer, drag).
 
+### Surveyor View (v0.5.3)
+
+- One angle, three places: `ViewTransform.Twist` turns Model on screen (all
+  screen/scene conversions, pan, fit, zoom window and box select go through
+  it; text adds it to its rotation); each sheet's plan viewport gets it as
+  `TwistAngle`; each sheet's north arrow (the standards' block, or any block
+  named like NORTH) turns by the same change. `SurveyorView.Apply` does the DWG
+  part as one undo step; the screen twist is re-read from the drawing after
+  open/undo/redo.
+- Viewport convention (checked against ezdxf): paper = centre + s·(R(twist)·(P
+  − target) − viewCentre), i.e. the view centre is in the twisted frame. So
+  turning keeps the middle by recomputing the view centre from the model
+  point it showed (`SurveyorView.ModelCenter`).
+
 ### Next in the app
 
 - The dimmed buttons: arc-length and ordinate dimensions, jogged dimension

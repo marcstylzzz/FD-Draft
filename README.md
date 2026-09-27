@@ -77,6 +77,11 @@ FdDraft.App project in Visual Studio).
   remembered. Object snaps: End, Mid, Int, Cen, Quad, Perp, Near, Node on/off
   (blue = on), Snaps Off; F3 still switches all snapping off/on. Type HELP for
   every command by toolbar.
+- **Surveyor View** (SV, View toolbar, View menu, Useful Tools palette): turn
+  the plan so north isn't up - pick a line to run level, or type a bearing to
+  point up. Model turns on screen, and every sheet's plan viewport turns with
+  its north arrow, so the plot matches; coordinates and bearings are unchanged.
+  World View (WV) puts north back up; Return to Surveyor View (RSV) goes back.
 - **Right-click** an item for the edit menu (Undo, Redo, Erase, Select all,
   Select same layer, plus Move, Copy, Rotate, Mirror, Join (J), Explode (X), Change to current
   layer, Properties, zooms); while a command is waiting, right-click is

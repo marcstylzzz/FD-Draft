@@ -280,6 +280,11 @@ namespace FdDraft.App
             modify.Items.Add(Item("Set _layer of selection", "", SetSelectionLayer));
             var view = new MenuItem { Header = "_View" };
             view.Items.Add(Item("Zoom _extents", "ZE", () => _canvas.ZoomExtents()));
+            view.Items.Add(new Separator());
+            view.Items.Add(Item("S_urveyor view (turn the plan)…", "SV", () => RunCommand("SV")));
+            view.Items.Add(Item("_World view (north up)", "WV", () => RunCommand("WV")));
+            view.Items.Add(Item("Return to surveyor view", "RSV", () => RunCommand("RSV")));
+            view.Items.Add(new Separator());
             view.Items.Add(Item("_Snap on/off", "F3", ToggleSnap));
             view.Items.Add(new Separator());
             view.Items.Add(Item("Sheet s_cale…", "VPSCALE", () => StartSheetScale("")));
@@ -329,9 +334,9 @@ namespace FdDraft.App
             _awaitingPoint = p =>
             {
                 if (first == null) { first = p; _canvas.RubberFrom = p; _prompt.Text = "Zoom window - opposite corner:"; return; }
-                var r = new FdDraft.Core.Standards.Rect(first.Value.X, first.Value.Y, p.X, p.Y);
+                var corner = first.Value;
                 EndTool();
-                _canvas.ZoomWindow(r);
+                _canvas.ZoomWindow(corner, p);
                 if (wasTool)
                 {
                     // A transparent zoom: hand the running command back as it was.
@@ -685,7 +690,11 @@ namespace FdDraft.App
                     Directory.CreateDirectory(System.IO.Path.GetDirectoryName(PaletteFile)!);
                     File.WriteAllText(PaletteFile, ToolPalette.DefaultText);
                 }
-                _palette.Load(ToolPalette.Parse(File.ReadAllLines(PaletteFile)));
+                // Tools added since the file was written (Surveyor View...) go into its Useful Tools tab once.
+                var text = File.ReadAllText(PaletteFile);
+                var updated = ToolPalette.WithAddedTools(text);
+                if (updated != text) { File.WriteAllText(PaletteFile, updated); Log("  tool palette: new Useful Tools added (Surveyor View, World View, Return to Surveyor View...)"); }
+                _palette.Load(ToolPalette.Parse(updated.Replace("\r\n", "\n").Split('\n')));
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
@@ -806,6 +815,7 @@ namespace FdDraft.App
             _canvas.Selected.Clear();
             EndTool();
             FillLayers();
+            SyncTwistFromDrawing(announce: true);
             _sheets.Items.Clear();
             foreach (var n in SheetNames(doc)) _sheets.Items.Add(n);
             _sheet = "";
@@ -1265,6 +1275,7 @@ namespace FdDraft.App
         {
             var d = _undo.Undo();
             if (d == null) { Log("  nothing to undo"); return; }
+            SyncTwistFromDrawing(announce: false);
             _canvas.Selected.Clear();
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
@@ -1276,6 +1287,7 @@ namespace FdDraft.App
         {
             var d = _undo.Redo();
             if (d == null) { Log("  nothing to redo"); return; }
+            SyncTwistFromDrawing(announce: false);
             _canvas.Selected.Clear();
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
@@ -2310,6 +2322,13 @@ namespace FdDraft.App
                         mpp = den / (1000 * std.PaperUnitsPerMm);
                     }
                     var vp = SheetViewports.Create(area, center, mpp, GetOrCreateLayer(std.ViewportLayer));
+                    double twist = SurveyorView.CurrentTwist(_doc!);
+                    if (Math.Abs(twist) > 1e-12)
+                    {
+                        // In surveyor view: the new viewport turns with the rest (its centre is in the turned frame).
+                        vp.TwistAngle = twist;
+                        vp.ViewCenter = new CSMath.XY(center.X * Math.Cos(twist) - center.Y * Math.Sin(twist), center.X * Math.Sin(twist) + center.Y * Math.Cos(twist));
+                    }
                     _undo.Push(new AddEntitiesCommand(layout.AssociatedBlock, new Entity[] { vp }, "Viewport"));
                     _dirty = true; UpdateTitle();
                     EndTool();
