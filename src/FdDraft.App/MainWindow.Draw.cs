@@ -147,7 +147,7 @@ namespace FdDraft.App
                         case "L": arcMode = false; through = null; Prompt(); return;
                         case "U":
                             if (pts.Count > 0) { pts.RemoveAt(pts.Count - 1); bulges.RemoveAt(bulges.Count - 1); if (bulges.Count > 0) bulges[bulges.Count - 1] = 0; }
-                            through = null; Prompt(); return;
+                            through = null; _canvas.RubberFrom = null; Prompt(); return;
                         default: Log("  A arc, L line, C close, U undo, or blank to end"); return;
                     }
                 });
@@ -186,7 +186,7 @@ namespace FdDraft.App
                 case "A":
                     StartDrawTool("CIRCLE A", "pick an arc to close into a full circle", "Circle - pick the arc:", (m, p) =>
                     {
-                        var hit = LineworkAt(m);
+                        var hit = LineworkAt(RawModelPick() ?? m);
                         if (!(hit is Arc a)) { Log("  pick an arc"); return; }
                         var c = new Circle { Center = a.Center, Radius = a.Radius, Layer = a.Layer, Color = a.Color, LineType = a.LineType };
                         AfterPickEdit(new CompositeCommand(new IEditCommand[] { new RemoveEntitiesCommand(new Entity[] { a }, "Circle"), new AddEntitiesCommand(CurrentEntityOwner(), new Entity[] { c }, "Circle") }, "Arc to circle"));
@@ -200,7 +200,7 @@ namespace FdDraft.App
                     StartDrawTool(diameter ? "CIRCLE D" : "CIRCLE", "pick the center, then " + (diameter ? "type the diameter" : "pick a point on the circle or type the radius"), "Circle - center:", (m, p) =>
                     {
                         if (center == null) { center = m; _canvas.RubberFrom = p; _prompt.Text = diameter ? "Circle - diameter:" : "Circle - radius (pick or type):"; return; }
-                        double r = Vec2.Distance(center.Value, m);
+                        double r = Vec2.Distance(center.Value, m) / (diameter ? 2 : 1);
                         if (r > 1e-9) { AddDrawn("Circle", Make(center.Value, r)); Log("  circle R " + F(r)); }
                         EndTool();
                     }, s =>
@@ -432,7 +432,11 @@ namespace FdDraft.App
                 var parts = s.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length > 0 && Num(parts[0], out double sc) && sc != 0) scale = sc;
                 if (parts.Length > 1 && Num(parts[1], out double r)) rot = r * Math.PI / 180;
-                AddDrawn("Insert", new Insert(block) { InsertPoint = W(at.Value), XScale = scale, YScale = scale, ZScale = scale, Rotation = rot, Layer = GetOrCreateLayer(layer) });
+                // Built at the origin then transformed into place, so any attributes come along.
+                var ins = new Insert(block) { Layer = GetOrCreateLayer(layer) };
+                var m = Matrix4.CreateTranslation(W(at.Value)) * Matrix4.CreateRotationMatrix(new XYZ(0, 0, rot)) * Matrix4.CreateScale(scale);
+                EntityTransform.Apply(ins, new Transform(m));
+                AddDrawn("Insert", ins);
                 Log("  " + block.Name + " inserted at " + NE(at.Value));
                 EndTool();
             });

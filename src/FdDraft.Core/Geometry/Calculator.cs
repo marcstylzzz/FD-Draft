@@ -41,7 +41,8 @@ namespace FdDraft.Core.Geometry
                 int start = _i;
                 if (_i < _s.Length && (char.IsDigit(_s[_i]) || _s[_i] == '.'))
                 {
-                    while (_i < _s.Length && (char.IsDigit(_s[_i]) || _s[_i] == '.' || _s[_i] == 'e' || _s[_i] == 'E')) _i++;
+                    while (_i < _s.Length && (char.IsDigit(_s[_i]) || _s[_i] == '.' || _s[_i] == 'e' || _s[_i] == 'E'
+                            || (_s[_i] == '-' || _s[_i] == '+') && _i > start && (_s[_i - 1] == 'e' || _s[_i - 1] == 'E'))) _i++;
                     if (!double.TryParse(_s.Substring(start, _i - start), NumberStyles.Float, CultureInfo.InvariantCulture, out double n)) throw new FormatException("bad number");
                     return n;
                 }

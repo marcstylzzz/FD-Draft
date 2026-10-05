@@ -58,10 +58,10 @@ namespace FdDraft.Core.Geometry
             var pts = new List<Vec2>(); var bulges = new List<double>();
             int n = outline.Count;
             if (n < 2 || arcChord <= 0) return (pts, bulges);
-            // Outward is to the right of travel on a counter-clockwise outline.
+            // A positive bulge swings right of travel - outward on a counter-clockwise outline.
             double area = 0;
             for (int i = 0; i < n; i++) area += Vec2.Cross(outline[i], outline[(i + 1) % n]);
-            double bulge = area >= 0 ? -0.6 : 0.6;
+            double bulge = area >= 0 ? 0.6 : -0.6;
             for (int i = 0; i < n; i++)
             {
                 var a = outline[i]; var b = outline[(i + 1) % n];

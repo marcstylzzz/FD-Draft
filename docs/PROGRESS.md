@@ -302,7 +302,7 @@ on Windows; that's still Marc's job when he runs a build.
   TEXT, MTEXT. Not built from MSCAD's Draw toolbar: ray / infinite line,
   multiline, spline, freehand, helix, wipeout, traces, hatch/gradient,
   elliptical arcs and the rarer arc variants.
-- **v0.4.36** (current): the rest of Marc's workspace -
+- **v0.4.36**: the rest of Marc's workspace -
   *MS Main Control* (`MainWindow.Survey.cs`): Standards (EDITSTD opens the
   firm standards file - MSCAD's job/labeling defaults), INFO (line /
   curve / polyline / text / point / block information, picked span of a
@@ -322,6 +322,21 @@ on Windows; that's still Marc's job when he runs a build.
   editor, active traverse editor, SCALEZ, log viewer, config save/read,
   FieldGenius SyncWizard / upload / download / project export; snaps
   Temp Track, From, M2P, Extension, Parallel, Apparent.
+- **v0.4.37** (current): fixes from an independent review of v0.4.33-36 -
+  pick tools now identify the entity (and the side picked) from the raw
+  cursor, not the object-snapped point (`DrawingCanvas.LastRawPick`,
+  `RawModelPick()`), so ANGLE near a corner and ARROWS / annotate sides
+  work with snaps on; revision cloud scallops swing outward; INSERT and
+  LINEBLOCKS place blocks through a transform so attributes come along;
+  CIRCLE D by pick reads the pick as the diameter; HOUSETIE with no lot
+  lines picked takes only straight linework near the building (not
+  FD-Draft's own label/table layers, nor other closed figures unless they
+  surround it); ARCTEXT only reads a leading height that has a decimal
+  point and is at most 10 mm ("100 ACRES" stays text); CAL takes
+  negative exponents; transparent ZOOM W / ZOOM C give back the running
+  command's rubber band and pick state; HOUSETIE clears its highlight
+  however it ends; "Arrow size" and "Calc" end a running tool first. SCALE
+  now scales objects (as in MSCAD/AutoCAD); the sheet scale is VPSCALE only.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

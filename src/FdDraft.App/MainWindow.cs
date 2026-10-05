@@ -449,7 +449,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Tie ↔ ✋", "Manual house tie and place arrows (MTIEA) - pick a building corner, then the lot line", () => StartManualTie(true)));
             bar.Items.Add(B("Tie ✋", "Manual entry of house ties - no arrows (MTIE) - pick a building corner, then the lot line", () => StartManualTie(false)));
             bar.Items.Add(new Separator());
-            bar.Items.Add(B("Arrow size", "Set the arrow size for the straight and curvy leader and the ties (LEADERSCALE)", () => { BeginTool("LEADERSCALE"); AskLeaderScale(); }));
+            bar.Items.Add(B("Arrow size", "Set the arrow size for the straight and curvy leader and the ties (LEADERSCALE)", () => { if (_activeTool.Length > 0) EndTool(); BeginTool("LEADERSCALE"); AskLeaderScale(); }));
             bar.Items.Add(B("Ldr ⌒", "Draw curvy leader with arrowhead (CLEADER) - pick the arrow point, a point the curve passes through, then its end", () => StartArrowLeader(true)));
             bar.Items.Add(B("Ldr ↗", "Draw a straight leader with arrowhead (SLEADER) - pick the arrow point, then each bend (blank ends)", () => StartArrowLeader(false)));
             bar.Items.Add(new Separator());
@@ -488,9 +488,10 @@ namespace FdDraft.App
             _prompt.Text = "House ties - pick the building:";
             Entity? building = null;
             var lots = new List<Entity>();
+            _clearSelectionOnEnd = true;
             _awaitingPoint = p =>
             {
-                var model = ModelPick(p);
+                var model = RawModelPick();
                 if (model == null) return;
                 var hit = LineworkAt(model.Value);
                 if (hit == null) { Log("  nothing there"); return; }
@@ -510,7 +511,7 @@ namespace FdDraft.App
             _awaitingLine = s =>
             {
                 if (building == null) { EndTool(); return; }
-                var useLots = lots.Count > 0 ? lots : CurrentEntityOwner().Entities.Where(e => e != building && (e is Line || e is LwPolyline || e is Polyline2D)).ToList();
+                var useLots = lots.Count > 0 ? lots : NearbyLotLines(building, std);
                 var cmd = TieEditing.Automatic(building, useLots, arrows, _settings.LeaderArrowMm, _doc!, std, mpm, g2g, GetOrCreateLayer, out int count, out string why);
                 EndTool();
                 _canvas.Selected.Clear();
@@ -538,9 +539,10 @@ namespace FdDraft.App
                 var model = ModelPick(p);
                 if (model == null) return;
                 if (corner == null) { corner = model.Value; _canvas.RubberFrom = p; _prompt.Text = "House tie - pick the lot line:"; return; }
-                var lot = LineworkAt(model.Value);
+                var raw = RawModelPick() ?? model.Value;
+                var lot = LineworkAt(raw);
                 if (lot == null) { Log("  no line there"); return; }
-                var cmd = TieEditing.Manual(CurrentEntityOwner(), corner.Value, lot, model.Value, arrows, _settings.LeaderArrowMm, _doc!, std, mpm, g2g, GetOrCreateLayer, out double len, out string why);
+                var cmd = TieEditing.Manual(CurrentEntityOwner(), corner.Value, lot, raw, arrows, _settings.LeaderArrowMm, _doc!, std, mpm, g2g, GetOrCreateLayer, out double len, out string why);
                 corner = null; _canvas.RubberFrom = null;
                 _prompt.Text = "House tie - pick the building corner:";
                 if (cmd == null) { Log("  " + why); return; }
@@ -625,7 +627,7 @@ namespace FdDraft.App
                     _prompt.Text = "Line of blocks - pick the path:";
                     return;
                 }
-                path = LineworkAt(model.Value, circles: true);
+                path = LineworkAt(RawModelPick() ?? model.Value, circles: true);
                 if (path == null) { Log("  no line there"); return; }
                 _prompt.Text = "Line of blocks - spacing:";
                 _canvas.ToolActive = false;
@@ -719,7 +721,7 @@ namespace FdDraft.App
             int count = 0;
             _awaitingPoint = p =>
             {
-                var model = _canvas.Scene!.ModelAt(p);
+                var model = RawModelPick();
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 var best = LineworkAt(model.Value);
                 if (best == null) { Log("  no line there - pick on a line or polyline"); return; }
@@ -748,7 +750,7 @@ namespace FdDraft.App
             Entity? e1 = null, e2 = null; Vec2 p1 = default, p2 = default;
             _awaitingPoint = p =>
             {
-                var model = _canvas.Scene!.ModelAt(p);
+                var model = RawModelPick();
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 if (e1 == null || e2 == null)
                 {
@@ -779,7 +781,7 @@ namespace FdDraft.App
             _prompt.Text = "Arrows on line - pick a line on the arrows' side:";
             _awaitingPoint = p =>
             {
-                var model = _canvas.Scene!.ModelAt(p);
+                var model = RawModelPick();
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 var hit = LineworkAt(model.Value);
                 if (hit == null) { Log("  no line there"); return; }
@@ -806,7 +808,7 @@ namespace FdDraft.App
             Entity? arc = null; Vec2 onArc = default;
             _awaitingPoint = p =>
             {
-                var model = _canvas.Scene!.ModelAt(p);
+                var model = arc == null ? RawModelPick() : _canvas.Scene!.ModelAt(p);
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 if (arc == null)
                 {
@@ -832,12 +834,12 @@ namespace FdDraft.App
             var std = LabelStandards();
             double mpm = LabelModelPerMm(std, out string basis);
             BeginTool("ARCTEXT");
-            Log("ARCTEXT  pick an arc or circle where the text centres, then type the text (\"height text\" sets the paper height in mm, e.g. \"2.5 CREEK\")");
+            Log("ARCTEXT  pick an arc or circle where the text centres, then type the text (a leading height in paper mm with its decimal point sets the size, e.g. \"2.5 CREEK\")");
             _prompt.Text = "Text on arc - pick the arc or circle:";
             Entity? hit = null; Vec2 at = default;
             _awaitingPoint = p =>
             {
-                var model = _canvas.Scene!.ModelAt(p);
+                var model = RawModelPick();
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
                 hit = LineworkAt(model.Value, circles: true);
                 if (hit == null) { Log("  no arc there"); return; }
@@ -850,7 +852,8 @@ namespace FdDraft.App
                 if (s.Length == 0) { EndTool(); return; }
                 double h = std.ArcTextMm;
                 var parts = s.Split(' ', 2);
-                if (parts.Length == 2 && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double hh) && hh > 0) { h = hh; s = parts[1]; }
+                // "2.5 CREEK" sets the height; "100 ACRES" is text (a height needs its decimal point and is at most 10 mm).
+                if (parts.Length == 2 && parts[0].Contains('.') && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double hh) && hh > 0 && hh <= 10) { h = hh; s = parts[1]; }
                 var cmd = CourseLabelling.TextOnArc(hit, at, s, h, CurrentLayer(), _doc!, mpm, GetOrCreateLayer, std.TextStyle("arc"), out string why);
                 if (cmd == null) Log("  " + why); else { AfterPickEdit(cmd); Log("  text placed on the arc  (Ctrl+Z undoes it)"); }
                 hit = null;
@@ -883,6 +886,7 @@ namespace FdDraft.App
         {
             if (_canvas.Scene == null) return;
             var resume = (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text);
+            var resumeCanvas = (_canvas.ToolActive, _canvas.RubberFrom);
             bool wasTool = _activeTool.Length > 0;
             if (wasTool) { Log("  (zoom window - the " + _activeTool + " command carries on afterwards)"); }
             BeginTool("ZOOM W");
@@ -899,7 +903,7 @@ namespace FdDraft.App
                 {
                     // A transparent zoom: hand the running command back as it was.
                     (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text) = resume;
-                    _canvas.ToolActive = _awaitingPoint != null;
+                    (_canvas.ToolActive, _canvas.RubberFrom) = resumeCanvas;
                 }
             };
         }
@@ -1095,7 +1099,7 @@ namespace FdDraft.App
                 case "HOUSETIEA": StartHouseTies(true); break;
                 case "MTIE": StartManualTie(false); break;
                 case "MTIEA": StartManualTie(true); break;
-                case "LEADERSCALE": BeginTool("LEADERSCALE"); AskLeaderScale(); break;
+                case "LEADERSCALE": if (_activeTool.Length > 0) EndTool(); BeginTool("LEADERSCALE"); AskLeaderScale(); break;
                 case "CLEADER": StartArrowLeader(true); break;
                 case "SLEADER": StartArrowLeader(false); break;
                 case "LINEBLOCKS": StartLineOfBlocks(); break;
@@ -1106,7 +1110,8 @@ namespace FdDraft.App
                 case "AREA": case "AA": StartArea(); break;
                 case "JOIN": case "J": JoinSelection(); break;
                 case "ID": StartId(); break;
-                case "VPSCALE": case "SCALE": StartSheetScale(arg); break;
+                case "VPSCALE": StartSheetScale(arg); break;
+                case "SCALE": StartRescale(); break;
                 case "MVIEW": case "MV": case "VIEWPORT": StartMview(); break;
                 case "VPINFO": ViewportInfo(arg); break;
                 case "VXADD": StartVertexInsert(); break;
@@ -1614,7 +1619,46 @@ namespace FdDraft.App
             _inverseFrom = null;
             _canvas.RubberFrom = null;
             _prompt.Text = "Command:";
+            if (_clearSelectionOnEnd) { _clearSelectionOnEnd = false; _canvas.Selected.Clear(); }
             _canvas.InvalidateVisual();
+        }
+
+        /// <summary>A tool that highlights its picks through the selection clears it when it ends,
+        /// however it ends - so a Delete afterwards can't erase what was only being pointed at.</summary>
+        private bool _clearSelectionOnEnd;
+
+        /// <summary>The last pick before object snap, as a model point - for telling which entity
+        /// (and which side of it) was clicked, where a snap would jump to a corner.</summary>
+        private Vec2? RawModelPick()
+        {
+            var model = _canvas.Scene?.ModelAt(_canvas.LastRawPick);
+            if (model == null) Log("  pick inside a viewport (or on Model)");
+            return model;
+        }
+
+        /// <summary>
+        /// The lot lines a building can tie to when none were picked: straight linework near it
+        /// (within four times its size), not FD-Draft's own labels, ties and tables, and no other
+        /// closed figure unless it surrounds the building (its lot).
+        /// </summary>
+        private List<Entity> NearbyLotLines(Entity building, FirmStandards std)
+        {
+            var corners = TieEditing.Footprint(building) ?? new List<Vec2>();
+            var ext = new Extents();
+            foreach (var c in corners) ext.Add(c);
+            double reach = 4 * Math.Max(Math.Sqrt(ext.Width * ext.Width + ext.Height * ext.Height), 1e-6);
+            var mid = ext.Center;
+            var skip = new HashSet<string>(new[] { std.DistanceLayer, std.BearingLayer, std.ArcLayer, std.AreaLayer }, StringComparer.OrdinalIgnoreCase);
+            var result = new List<Entity>();
+            foreach (var e in CurrentEntityOwner().Entities)
+            {
+                if (e == building || !(e is Line || e is LwPolyline || e is Polyline2D)) continue;
+                if (skip.Contains(e.Layer?.Name ?? "")) continue;
+                var fp = TieEditing.Footprint(e);
+                if (fp != null && !FdDraft.Core.Geometry.Polygon.Contains(fp, mid)) continue;
+                if (EntityOps.SpansOf(e).Any(s => !s.IsArc && Construct.DistanceToSegment(mid, s.A, s.B, out _) <= reach)) result.Add(e);
+            }
+            return result;
         }
 
         private void OnPick(Vec2 scenePoint) => _awaitingPoint?.Invoke(scenePoint);

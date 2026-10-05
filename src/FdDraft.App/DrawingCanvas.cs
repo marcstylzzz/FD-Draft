@@ -62,6 +62,9 @@ namespace FdDraft.App
         public event Action<Vec2, SnapPoint?>? CursorMoved;
         /// <summary>A point picked while <see cref="ToolActive"/> is true.</summary>
         public event Action<Vec2>? Picked;
+        /// <summary>Where the cursor really was for the last pick (scene units), before any object
+        /// snap - what tools use to tell which entity, and which side of it, was clicked.</summary>
+        public Vec2 LastRawPick { get; private set; }
         /// <summary>The entity handle clicked while not tool-active (null on an empty click), and
         /// whether Ctrl was held (add/remove from the existing selection rather than replace it).</summary>
         public event Action<ulong?, bool>? EntityClicked;
@@ -491,7 +494,8 @@ namespace FdDraft.App
                 var p = e.GetPosition(this);
                 if (ToolActive)
                 {
-                    var world = _snap.HasValue ? _snap.Value.Point : View.ToScene(p.X, p.Y);
+                    LastRawPick = View.ToScene(p.X, p.Y);
+                    var world = _snap.HasValue ? _snap.Value.Point : LastRawPick;
                     Picked?.Invoke(world);
                 }
                 else

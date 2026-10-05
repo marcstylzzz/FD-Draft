@@ -2099,7 +2099,23 @@ namespace FdDraft.Tests
             undo.Push(TieEditing.LineOfBlocks(ins, front, 5, true, out int posts, out _)!);
             Assert.Equal(7, posts, "every 5 m along 30 m, both ends");
             Assert.Equal(8, doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Insert>().Count(), "added beside the original");
+            undo.Undo();
 
+            // With an attribute: the copies carry it along, turned with the path.
+            var tagged = new ACadSharp.Tables.BlockRecord("TAGPOST");
+            tagged.Entities.Add(new ACadSharp.Entities.AttributeDefinition { Tag = "ID", Value = "P", InsertPoint = new CSMath.XYZ(1, 0, 0), Height = 0.2 });
+            doc.BlockRecords.Add(tagged);
+            var tins = new ACadSharp.Entities.Insert(tagged) { InsertPoint = new CSMath.XYZ(0, 0, 0) };
+            doc.ModelSpace.Entities.Add(tins);
+            var up = Ln(50, 0, 50, 20);
+            doc.ModelSpace.Entities.Add(up);
+            undo.Push(TieEditing.LineOfBlocks(tins, up, 10, true, out int tposts, out _)!);
+            var copies = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Insert>().Where(i => i != tins && i.Block == tagged).ToList();
+            Assert.Equal(3, copies.Count, "0, 10, 20 up the line");
+            var att = copies.Single(c => Math.Abs(c.InsertPoint.Y - 10) < 1e-9).Attributes.Single();
+            Assert.True(Math.Abs(att.InsertPoint.X - 50) < 1e-6 && Math.Abs(att.InsertPoint.Y - 11) < 1e-6, "attribute moved and turned with its block: " + att.InsertPoint);
+
+            undo.Undo();
             undo.Push(TieEditing.Leader(doc.ModelSpace, new[] { new Vec2(0, 0), new Vec2(5, 3), new Vec2(10, 0) }, true, 2.5, 0.5, "0", L)!);
             Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Any(p => p.Vertices.Count == 3 && p.Vertices[0].EndWidth > 0), "a curvy leader with its head");
         }
@@ -2119,7 +2135,11 @@ namespace FdDraft.Tests
             Assert.True(tri[2].Y > 0 && Math.Abs(tri[2].X - 5) < 1e-9, "on an edge, built to its left");
             var (pts, bulges) = Shapes.RevisionCloud(Shapes.Rectangle(new Vec2(0, 0), new Vec2(10, 5)), 2.5);
             Assert.Equal(12, pts.Count, "4 + 2 + 4 + 2 arcs round a 10 x 5 box at 2.5");
-            Assert.True(bulges.All(b => b < 0), "bulging outward on a counter-clockwise outline");
+            Assert.True(bulges.All(b => b > 0), "positive bulges on a counter-clockwise outline");
+            var firstArc = Construct.Span.FromBulge(pts[0], pts[1], bulges[0]);
+            Assert.True(firstArc.Midpoint.Y < 0, "the scallops swing outward, below the bottom edge");
+            var (cwPts, cwB) = Shapes.RevisionCloud(Shapes.Rectangle(new Vec2(0, 0), new Vec2(10, 5)).AsEnumerable().Reverse().ToList(), 2.5);
+            Assert.True(Construct.Span.FromBulge(cwPts[0], cwPts[1], cwB[0]).Midpoint.X > 10 || Construct.Span.FromBulge(cwPts[0], cwPts[1], cwB[0]).Midpoint.Y > 5, "outward on a clockwise outline too");
             var c3 = Shapes.CircleThreePoints(new Vec2(1, 0), new Vec2(0, 1), new Vec2(-1, 0))!.Value;
             Assert.True(c3.Center.Length < 1e-9 && Math.Abs(c3.Radius - 1) < 1e-9, "circle through three points");
             Assert.True(Shapes.CircleThreePoints(new Vec2(0, 0), new Vec2(1, 1), new Vec2(2, 2)) == null, "none through three in line");
@@ -2173,6 +2193,7 @@ namespace FdDraft.Tests
             Assert.True(Calculator.Evaluate("dms(45.3015)").StartsWith("45.5041666"), "d.mmss to decimal degrees: " + Calculator.Evaluate("dms(45.3015)"));
             Assert.True(Calculator.Evaluate("2+").StartsWith("?") && Calculator.Evaluate("foo(1)").StartsWith("?"), "errors reported, not thrown");
             Assert.Equal("undefined", Calculator.Evaluate("1/0"), "division by zero");
+            Assert.Equal("0.003", Calculator.Evaluate("1.5e-3*2"), "negative exponents");
         }
 
         public static void TestInsertionAndTangentSnaps()

@@ -43,7 +43,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Points", "The coordinate database: the Points list (POINTS)", ShowPointsTab));
             bar.Items.Add(B("Re-scale", "Re-scale complete drawing, or the selection (RESCALE) - pick the base point, type the factor", StartRescale));
             bar.Items.Add(B("Auto pts", "Auto add points to objects (AUTOP) - a point at every vertex of the selected linework", AutoPointsOnObjects));
-            bar.Items.Add(B("Calc", "Calculator (CAL) - type an expression, e.g. CAL 125.5*0.3048", () => { BeginTool("CAL"); AskCalc(); }));
+            bar.Items.Add(B("Calc", "Calculator (CAL) - type an expression, e.g. CAL 125.5*0.3048", () => { if (_activeTool.Length > 0) EndTool(); BeginTool("CAL"); AskCalc(); }));
             bar.Items.Add(new Separator());
             _azimuthButton.Checked += (s, e) => SetAzimuths(true);
             _quadrantButton.Checked += (s, e) => SetAzimuths(false);
@@ -109,9 +109,10 @@ namespace FdDraft.App
             {
                 var model = ModelPick(p);
                 if (model == null) return;
-                var e = LineworkAt(model.Value, circles: true) ?? NearestOther(model.Value);
+                var raw = RawModelPick() ?? model.Value;
+                var e = LineworkAt(raw, circles: true) ?? NearestOther(raw);
                 if (e == null) { Log("  nothing there"); return; }
-                foreach (var line in Describe(e, model.Value)) Log("  " + line);
+                foreach (var line in Describe(e, raw)) Log("  " + line);
             };
             _awaitingLine = s => EndTool();
         }
@@ -309,6 +310,7 @@ namespace FdDraft.App
         {
             if (_canvas.Scene == null) return;
             var resume = (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text);
+            var resumeCanvas = (_canvas.ToolActive, _canvas.RubberFrom);
             bool wasTool = _activeTool.Length > 0;
             BeginTool("ZOOM C");
             _prompt.Text = "Zoom center - pick the new centre:";
@@ -316,7 +318,7 @@ namespace FdDraft.App
             void Done()
             {
                 EndTool();
-                if (wasTool) { (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text) = resume; _canvas.ToolActive = _awaitingPoint != null; }
+                if (wasTool) { (_activeTool, _awaitingPoint, _awaitingLine, _prompt.Text) = resume; (_canvas.ToolActive, _canvas.RubberFrom) = resumeCanvas; }
             }
             _awaitingPoint = p => { center = p; _prompt.Text = "Zoom center - magnification <1>:"; _canvas.ToolActive = false; };
             _awaitingLine = s =>

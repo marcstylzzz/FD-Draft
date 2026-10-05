@@ -92,11 +92,15 @@ namespace FdDraft.Cad.Editing
             var spots = Ties.AlongPath(spans, spacing);
             if (spots.Count == 0) { why = "nothing fits at that spacing"; return null; }
             var made = new List<Entity>();
+            var src = block.InsertPoint;
             foreach (var (at, rot) in spots)
             {
                 var ins = (Insert)EntityOps.Duplicate(block);
-                ins.InsertPoint = new XYZ(at.X, at.Y, block.InsertPoint.Z);
-                if (rotate) ins.Rotation = rot;
+                // Through a transform, not by setting the fields, so attributes travel with it.
+                var m = Matrix4.CreateTranslation(new XYZ(at.X - src.X, at.Y - src.Y, 0));
+                if (rotate)
+                    m = m * Matrix4.CreateTranslation(src) * Matrix4.CreateRotationMatrix(new XYZ(0, 0, rot - block.Rotation)) * Matrix4.CreateTranslation(new XYZ(-src.X, -src.Y, -src.Z));
+                EntityTransform.Apply(ins, new Transform(m));
                 made.Add(ins);
             }
             count = made.Count;
