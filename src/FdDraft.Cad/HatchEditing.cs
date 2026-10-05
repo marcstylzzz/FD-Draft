@@ -91,7 +91,8 @@ namespace FdDraft.Cad.Editing
         /// </summary>
         public static List<Loop>? BoundaryAt(Vec2 pick, IEnumerable<Entity> entities)
         {
-            var loops = Loops(entities);
+            // Largest first, so an island is always judged after the loop that might contain it.
+            var loops = Loops(entities).OrderByDescending(l => l.Area).ToList();
             var outer = loops.Where(l => l.Contains(pick)).OrderBy(l => l.Area).FirstOrDefault();
             if (outer == null) return null;
             var result = new List<Loop> { outer };

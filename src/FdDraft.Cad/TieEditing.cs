@@ -162,7 +162,7 @@ namespace FdDraft.Cad.Editing
                 var pt = new Point(new XYZ(p.Easting, p.Northing, p.Elevation)) { Layer = layer(layerName) };
                 var label = CourseLabelling.ToEntity(new DraftText
                 {
-                    Layer = layerName, Style = std.TextStyle("point_number"), Text = p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Layer = layerName, Style = std.TextStyle("point_number"), Text = p.Name.Length > 0 ? p.Name : p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     Position = new Vec2(p.Easting + off, p.Northing + off * 0.3), HeightMm = std.PointNumberTextMm, H = HAlign.Left, V = VAlign.Bottom, Kind = TextKind.PointNumber,
                 }, doc, mpm, layer);
                 made.Add(pt); made.Add(label);

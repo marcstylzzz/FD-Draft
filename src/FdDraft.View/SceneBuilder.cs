@@ -521,17 +521,46 @@ namespace FdDraft.View
             if (!solid)
             {
                 List<Line>? lines = null;
-                try { lines = h.ExplodePattern().Take(MaxHatchLines + 1).ToList(); }
-                catch (Exception e) when (e is ArgumentException || e is InvalidOperationException || e is NullReferenceException || e is OverflowException) { lines = null; }
+                // ExplodePattern builds every line before returning, so a pattern too dense to
+                // draw is caught by estimate first, not by counting what comes back.
+                if (EstimatedHatchLines(h, loops) <= MaxHatchLines)
+                {
+                    try { lines = h.ExplodePattern().ToList(); }
+                    catch (Exception e) when (e is ArgumentException || e is InvalidOperationException || e is NullReferenceException || e is OverflowException) { lines = null; }
+                }
                 if (lines != null && lines.Count <= MaxHatchLines)
                 {
                     foreach (var l in lines)
-                        _group.Prims.Add(new Prim { Kind = PrimKind.Polyline, Rgb = rgb, Layer = layer, Handle = handle, Points = new List<Vec2> { t.Apply(l.StartPoint.X, l.StartPoint.Y), t.Apply(l.EndPoint.X, l.EndPoint.Y) } });
+                        _group.Prims.Add(new Prim { Kind = PrimKind.Polyline, Rgb = rgb, Layer = layer, Handle = handle, Hatch = true, Points = new List<Vec2> { t.Apply(l.StartPoint.X, l.StartPoint.Y), t.Apply(l.EndPoint.X, l.EndPoint.Y) } });
                     return;
                 }
                 rgb = Tint(rgb);
             }
             _group.Prims.Add(new Prim { Kind = PrimKind.Fill, Rgb = rgb, Layer = layer, Handle = handle, Closed = true, Points = Keyhole(loops).Select(t.Apply).ToList() });
+        }
+
+        /// <summary>
+        /// About how many line pieces a pattern hatch explodes into: for each pattern line, the
+        /// boundary's diagonal over the line spacing, times the dash pieces along the diagonal.
+        /// Infinite for a spacing of (nearly) zero.
+        /// </summary>
+        public static double EstimatedHatchLines(Hatch h, List<List<Vec2>> loops)
+        {
+            double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+            foreach (var l in loops) foreach (var p in l) { minX = Math.Min(minX, p.X); minY = Math.Min(minY, p.Y); maxX = Math.Max(maxX, p.X); maxY = Math.Max(maxY, p.Y); }
+            double diag = Math.Sqrt((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY));
+            double total = 0;
+            foreach (var pl in h.Pattern.Lines)
+            {
+                double gap = Math.Abs(pl.LineOffset);
+                if (!(gap > diag * 1e-6) || double.IsNaN(gap)) return double.PositiveInfinity;
+                double rows = diag / gap + 2;
+                double period = pl.DashLengths.Sum(d => Math.Abs(d));
+                double pieces = pl.DashLengths.Count == 0 || period <= 0 ? 1 : Math.Max(1, diag / period * Math.Max(1, pl.DashLengths.Count(d => d >= 0)));
+                total += rows * pieces;
+                if (total > 1e9) return double.PositiveInfinity;
+            }
+            return total;
         }
 
         /// <summary>A colour washed three-quarters of the way to white (or to black on a dark model).</summary>

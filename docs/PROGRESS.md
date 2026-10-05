@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  100 tests as of v0.4.41, all passing.
+  105 tests as of v0.4.42, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -363,7 +363,7 @@ on Windows; that's still Marc's job when he runs a build.
   45° by default): pick inside an area - the smallest closed polyline or
   circle round the pick, with closed figures inside it left clear as
   islands (`Cad/HatchEditing.cs`). Round-trips through DWG.
-- **v0.4.41** (current): labels follow their course - the long-standing
+- **v0.4.41**: labels follow their course - the long-standing
   "relabel after STRETCH" item, done with a real persisted link, not a
   heuristic. `Cad/CourseLinks.cs`: each bearing/distance/curve label
   carries XData "COURSE" = course handle | span index | kind (B, D, BD, DB,
@@ -378,6 +378,26 @@ on Windows; that's still Marc's job when he runs a build.
   their course just get their link refreshed. A vertex added elsewhere
   renumbers spans - the span is found again by its ends. RELABEL brings
   every linked label in the drawing up to date. Links survive DWG save.
+- **v0.4.42** (current): fixes from a second independent review.
+  ACadSharp zeroes an entity's handle when it leaves a block and issues a
+  new one when it's re-added, which silently cut label links on every
+  undo/redo of an erase, JOIN, TRIM or polyline rebuild - `HandleKeeper`
+  (Editing.cs) now restores the old handle (internal setter, via
+  reflection) and all add/remove/replace commands go through it.
+  `CourseLinks.Rehome` moves links to replacement entities: Polyline2D
+  vertex edits, JOIN, and the polyline split round an on-line label (a
+  split Line's other labels are unlinked rather than mislabelled). Links
+  now store the span's bulge (an arc changed without its ends moving is
+  caught; a span found reversed toggles the direction flag); arc labels
+  are carried by angle round the centre and gap off the curve; CURVEOFF
+  blocks are rewritten in place, never moved. Relabel scans only the
+  edited blocks. FROM/M2P only at a live pick prompt (typing "from" as
+  TEXT content is text), exact in model space, and tools see the built
+  point. Extension snap never beats the endpoint and ignores hatch lines.
+  Pattern hatches are estimated before exploding (ExplodePattern builds
+  everything first; a near-zero spacing could hang) - over 20,000 lines
+  shows a tint. HATCH island detection no longer depends on drawing order.
+  IMPORTPTS shows non-numeric point names (CP1) instead of 900001.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

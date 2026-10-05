@@ -53,6 +53,8 @@ namespace FdDraft.View
         public bool Closed;
         public Vec2 Center;
         public double Radius;
+        /// <summary>A hatch pattern line: drawn and clickable, but not something to snap along.</summary>
+        public bool Hatch;
         public string Text = "";
         /// <summary>Cap height of text, in scene units.</summary>
         public double Height;
@@ -237,7 +239,7 @@ namespace FdDraft.View
             {
                 double d = Vec2.Distance(at, p);
                 if (d > tolerance) return;
-                double score = d - (kind == SnapKind.Node ? tolerance * 0.25 : 0) + (kind == SnapKind.Nearest ? tolerance * 2 : 0);
+                double score = d - (kind == SnapKind.Node ? tolerance * 0.25 : 0) + (kind == SnapKind.Nearest || kind == SnapKind.Extension ? tolerance * 2 : 0);
                 if (score < bestD) { bestD = score; best = new SnapPoint(p, kind); }
             }
             foreach (var s in Snaps)
@@ -325,12 +327,13 @@ namespace FdDraft.View
                     }
                     foreach (var p in g.Prims)
                     {
-                        if (p.Kind != PrimKind.Polyline || p.Closed || p.Points.Count < 2) continue;
+                        if (p.Kind != PrimKind.Polyline || p.Closed || p.Hatch || p.Points.Count < 2) continue;
                         if (!(p.Bounds.X1 <= near.X2 && near.X1 <= p.Bounds.X2 && p.Bounds.Y1 <= near.Y2 && near.Y1 <= p.Bounds.Y2)) continue;
                         int n = p.Points.Count;
                         foreach (var (end, prev) in new[] { (p.Points[0], p.Points[1]), (p.Points[n - 1], p.Points[n - 2]) })
                         {
-                            if (Vec2.Distance(at, end) > far) continue;
+                            double toEnd = Vec2.Distance(at, end);
+                            if (toEnd > far || toEnd <= tolerance) continue; // at the end itself, that's the endpoint
                             var d = end - prev;
                             double len2 = Vec2.Dot(d, d);
                             if (len2 < 1e-24) continue;

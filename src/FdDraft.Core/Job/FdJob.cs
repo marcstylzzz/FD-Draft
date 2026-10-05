@@ -9,6 +9,8 @@ namespace FdDraft.Core.Job
     public sealed class SurveyPoint
     {
         public int Id { get; set; }
+        /// <summary>The point's name as a coordinate file gave it ("CP1", "BM2") when it isn't a plain number; empty otherwise.</summary>
+        public string Name { get; set; } = "";
         public double Northing { get; set; }
         public double Easting { get; set; }
         public double Elevation { get; set; }

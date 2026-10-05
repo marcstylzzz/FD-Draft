@@ -41,7 +41,8 @@ namespace FdDraft.Core.Job
                     Easting = eastingFirst ? a : b,
                     Elevation = z,
                     Code = f.Count > 4 ? f[4] : "",
-                    Note = f.Count > 5 ? string.Join(" ", f.GetRange(5, f.Count - 5)) : (id > 900000 ? f[0] : ""),
+                    Name = n > 0 ? "" : f[0],
+                    Note = f.Count > 5 ? string.Join(" ", f.GetRange(5, f.Count - 5)) : "",
                 });
             }
             return result;

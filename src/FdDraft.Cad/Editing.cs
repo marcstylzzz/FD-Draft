@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ACadSharp;
 using ACadSharp.Entities;
 using ACadSharp.Tables;
 using CSMath;
@@ -15,6 +16,42 @@ namespace FdDraft.Cad.Editing
         void Undo();
         void Redo();
         string Description { get; }
+    }
+
+    /// <summary>
+    /// Takes entities out of a drawing and puts them back with the handles they had. ACadSharp
+    /// zeroes an entity's handle when it leaves a block and hands out a fresh one when it's
+    /// added again - which would cut the links labels keep to their course (CourseLinks) on
+    /// every undo/redo of an erase, JOIN, TRIM or polyline rebuild. The handle's setter is
+    /// internal to ACadSharp, so it's restored through reflection; if that ever fails the
+    /// entity simply gets a new handle, as before.
+    /// </summary>
+    public static class HandleKeeper
+    {
+        private static readonly System.Reflection.MethodInfo? Setter =
+            typeof(CadObject).GetProperty(nameof(CadObject.Handle))?.GetSetMethod(true);
+
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Entity, object> Remembered = new System.Runtime.CompilerServices.ConditionalWeakTable<Entity, object>();
+
+        /// <summary>The entity's handle, or the one it had before it was taken out of the drawing.</summary>
+        public static ulong HandleOf(Entity e) => e.Handle != 0 ? e.Handle : Remembered.TryGetValue(e, out var h) ? (ulong)h : 0;
+
+        public static void Remove(BlockRecord owner, Entity e)
+        {
+            if (e.Handle != 0) { Remembered.Remove(e); Remembered.Add(e, e.Handle); }
+            owner.Entities.Remove(e);
+        }
+
+        public static void Add(BlockRecord owner, Entity e)
+        {
+            if (e.Handle == 0 && e.Document == null && Remembered.TryGetValue(e, out var h) && Setter != null && owner.Document != null
+                && owner.Document.GetCadObject((ulong)h) == null)
+            {
+                try { Setter.Invoke(e, new object[] { (ulong)h }); }
+                catch (System.Reflection.TargetInvocationException) { }
+            }
+            owner.Entities.Add(e);
+        }
     }
 
     /// <summary>Adds already-built entities to a block (model space, or a layout's own block).</summary>
@@ -32,12 +69,12 @@ namespace FdDraft.Cad.Editing
             Redo();
         }
 
-        public void Undo() { foreach (var e in _entities) _owner.Entities.Remove(e); }
+        public void Undo() { foreach (var e in _entities) HandleKeeper.Remove(_owner, e); }
         public void Redo()
         {
             foreach (var e in _entities)
             {
-                _owner.Entities.Add(e);
+                HandleKeeper.Add(_owner, e);
                 // FD-Draft's aligned dimensions (re)draw their own picture once they're in the document.
                 if (DimensionBuilder.IsOurs(e)) DimensionBuilder.DrawPicture((Dimension)e);
             }
@@ -59,11 +96,11 @@ namespace FdDraft.Cad.Editing
                 .Where(t => t.Owner != null)
                 .Select(t => (t.Owner!, t.Entity))
                 .ToList();
-            foreach (var (owner, e) in _items) owner.Entities.Remove(e);
+            foreach (var (owner, e) in _items) HandleKeeper.Remove(owner, e);
         }
 
-        public void Undo() { foreach (var (owner, e) in _items) owner.Entities.Add(e); }
-        public void Redo() { foreach (var (owner, e) in _items) owner.Entities.Remove(e); }
+        public void Undo() { foreach (var (owner, e) in _items) HandleKeeper.Add(owner, e); }
+        public void Redo() { foreach (var (owner, e) in _items) HandleKeeper.Remove(owner, e); }
     }
 
     /// <summary>Moves, rotates, or otherwise transforms entities in place (MOVE, ROTATE).</summary>
@@ -507,8 +544,8 @@ namespace FdDraft.Cad.Editing
             Redo();
         }
 
-        public void Redo() { _owner.Entities.Remove(_old); _owner.Entities.Add(Replacement); }
-        public void Undo() { _owner.Entities.Remove(Replacement); _owner.Entities.Add(_old); }
+        public void Redo() { HandleKeeper.Remove(_owner, _old); HandleKeeper.Add(_owner, Replacement); }
+        public void Undo() { HandleKeeper.Remove(_owner, Replacement); HandleKeeper.Add(_owner, _old); }
     }
 
     /// <summary>Vertex insert/delete for either polyline kind: LwPolyline through

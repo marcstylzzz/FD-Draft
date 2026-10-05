@@ -1066,7 +1066,7 @@ namespace FdDraft.App
             {
                 Log("Command: " + t);
                 // At a point prompt, FROM / M2P build the point instead (AutoCAD's snap modifiers).
-                if (_awaitingPoint != null && TryPointModifier(t.ToUpperInvariant())) return;
+                if (_awaitingPoint != null && _canvas.ToolActive && TryPointModifier(t.ToUpperInvariant())) return;
                 _awaitingLine(t);
                 return;
             }
@@ -1710,6 +1710,7 @@ namespace FdDraft.App
             {
                 _awaitingPoint = target; _awaitingLine = line; _prompt.Text = prompt;
                 (_canvas.ToolActive, _canvas.RubberFrom) = canvasState;
+                _canvas.SetRawPick(scene); // tools that look at "what was clicked" use the built point
                 target(scene);
             }
             _canvas.ToolActive = true;
@@ -1743,6 +1744,7 @@ namespace FdDraft.App
         private Vec2? SceneOffset(Vec2 baseScene, double dx, double dy)
         {
             var sc = _canvas.Scene!;
+            if (!sc.IsPaper) return baseScene + new Vec2(dx, dy); // model space: scene units are drawing units
             var m0 = sc.ModelAt(baseScene);
             if (m0 == null) return null;
             double h = 1e-3;
@@ -1778,7 +1780,9 @@ namespace FdDraft.App
             var courses = all ? null : new HashSet<ulong>(touched.Where(e => e is Line || e is Arc || e is LwPolyline || e is Polyline2D).Select(e => e.Handle));
             if (courses != null && courses.Count == 0) return null;
             var moved = new HashSet<ulong>(touched.Select(e => e.Handle));
-            var labels = _doc.BlockRecords.SelectMany(b => b.Entities).OfType<TextEntity>().Where(t => CourseLinks.Read(t) != null).Cast<Entity>().ToList();
+            // Labels sit with their course: only the blocks the edit touched are searched (all of them for RELABEL).
+            var blocks = all ? _doc.BlockRecords.ToList() : touched.Select(e => e.Owner).OfType<BlockRecord>().Distinct().ToList();
+            var labels = blocks.SelectMany(b => b.Entities).OfType<TextEntity>().Cast<Entity>().ToList();
             if (labels.Count == 0) return null;
             var std = LabelStandards();
             double mpm = LabelModelPerMm(std, out _);
@@ -2254,7 +2258,14 @@ namespace FdDraft.App
         /// swaps in a rebuilt entity, so the selection moves to that.</summary>
         private void AfterVertexEdit(Entity poly, IEditCommand cmd, int showIndex)
         {
-            PushEdit(cmd, new[] { poly });
+            if (cmd is ReplacePolyline2DCommand rp && rp.Replacement.Owner is BlockRecord ob)
+            {
+                // The rebuilt polyline is a new entity: its labels move their link over first.
+                var relink = CourseLinks.Rehome(ob.Entities.OfType<TextEntity>().ToList(), new Dictionary<ulong, IList<Entity>> { [HandleKeeper.HandleOf(poly)] = new List<Entity> { rp.Replacement } });
+                if (relink != null) cmd = new CompositeCommand(new[] { cmd, relink }, cmd.Description);
+                PushEdit(cmd, new Entity[] { rp.Replacement });
+            }
+            else PushEdit(cmd, new[] { poly });
             if (cmd is ReplacePolyline2DCommand r && _canvas.Selected.Remove(poly.Handle)) _canvas.Selected.Add(r.Replacement.Handle);
             _propertiesVertexIndex = showIndex;
             _dirty = true; UpdateTitle();
@@ -3395,9 +3406,14 @@ namespace FdDraft.App
             var sel = SelectedEntities();
             if (sel.Count == 0) { Log("  select the lines/arcs/polylines to join first (a crossing box is quickest), then type JOIN"); return; }
             // Ends within a millimetre count as meeting - tighter than any plan shows, looser than rounding noise.
+            var handles = sel.Select(e => e.Handle).Distinct().ToList();
+            var owners = sel.Select(e => e.Owner).OfType<BlockRecord>().Distinct().ToList();
             var cmd = EntityOps.Join(sel, 0.001, out var made);
             if (cmd == null) { Log("  nothing to join - the selected pieces don't meet end to end"); return; }
-            _undo.Push(cmd);
+            // Labels on the joined pieces now belong to the polyline their span is in.
+            var map = handles.ToDictionary(h => h, h => (IList<Entity>)made.Cast<Entity>().ToList());
+            var relinked = CourseLinks.Rehome(owners.SelectMany(o => o.Entities).OfType<TextEntity>().ToList(), map);
+            _undo.Push(relinked == null ? cmd : new CompositeCommand(new[] { cmd, relinked }, cmd.Description));
             _canvas.Selected.Clear();
             foreach (var pl in made) _canvas.Selected.Add(pl.Handle);
             _dirty = true; UpdateTitle();

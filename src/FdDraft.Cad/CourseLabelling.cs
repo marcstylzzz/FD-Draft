@@ -102,8 +102,17 @@ namespace FdDraft.Cad.Editing
                 {
                     var g0 = span.A + (span.B - span.A) * r.GapFrom.Value;
                     var g1 = span.A + (span.B - span.A) * r.GapTo.Value;
+                    var before = new HashSet<Entity>(owner.Entities);
                     var split = Split(e, owner, si, g0, g1, out note);
-                    if (split != null) edits.Add(split);
+                    if (split != null)
+                    {
+                        edits.Add(split);
+                        // Other labels on this course follow the pieces their span ended up in.
+                        var pieces = owner.Entities.Where(x => !before.Contains(x)).ToList();
+                        if (e.Owner == owner) pieces.Insert(0, e);
+                        var relink = CourseLinks.Rehome(owner.Entities.OfType<TextEntity>().ToList(), new Dictionary<ulong, IList<Entity>> { [e.Handle] = pieces });
+                        if (relink != null) edits.Add(relink);
+                    }
                 }
             }
             var entities = texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList();
