@@ -2285,5 +2285,58 @@ namespace FdDraft.Tests
             Assert.Equal("FH", PointLinks.TaggedCode(points.Single(p => PointLinks.Tagged(p) == 102)), "tagged with number and code");
             Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "101" && PointLinks.Tagged(t) == 101), "numbered beside");
         }
+
+        // ---- v0.4.40: hatch -------------------------------------------------------------------
+
+        public static void TestHatchBoundaryIslandsAndRendering()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var lot = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (0.0, 0.0), (30.0, 0.0), (30.0, 40.0), (0.0, 40.0) }) lot.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            var house = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (10.0, 10.0), (20.0, 10.0), (20.0, 20.0), (10.0, 20.0) }) house.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            var well = new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(5, 35, 0), Radius = 1 };
+            foreach (var e in new ACadSharp.Entities.Entity[] { lot, house, well }) doc.ModelSpace.Entities.Add(e);
+
+            var inHouse = HatchEditing.BoundaryAt(new Vec2(15, 15), doc.ModelSpace.Entities)!;
+            Assert.True(inHouse.Count == 1 && inHouse[0].Source == house, "inside the house: just the house");
+            var inYard = HatchEditing.BoundaryAt(new Vec2(25, 30), doc.ModelSpace.Entities)!;
+            Assert.True(inYard.Count == 3 && inYard[0].Source == lot, "the yard: the lot, with the house and the well as islands");
+            Assert.True(HatchEditing.BoundaryAt(new Vec2(50, 50), doc.ModelSpace.Entities) == null, "outside everything: nothing");
+
+            var solid = HatchEditing.Create(inYard, 0, 0, false, new ACadSharp.Tables.Layer("HATCH"));
+            doc.ModelSpace.Entities.Add(solid);
+            var fills = new SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == PrimKind.Fill && p.Handle == solid.Handle).ToList();
+            Assert.Equal(1, fills.Count, "one fill for the yard");
+            Assert.True(!FdDraft.Core.Geometry.Polygon.Contains(fills[0].Points, new Vec2(15, 15)) && FdDraft.Core.Geometry.Polygon.Contains(fills[0].Points, new Vec2(25, 30)), "the house is left clear, the yard filled");
+            doc.ModelSpace.Entities.Remove(solid);
+
+            var lines = HatchEditing.Create(inHouse, 1.0, Math.PI / 4, false, new ACadSharp.Tables.Layer("HATCH"));
+            doc.ModelSpace.Entities.Add(lines);
+            var segs = new SceneBuilder(doc).Model().AllPrims().Where(p => p.Handle == lines.Handle).ToList();
+            Assert.True(segs.Count >= 12 && segs.Count <= 16 && segs.All(p => p.Kind == PrimKind.Polyline), "about 14 diagonals 1 m apart across a 10 m square: " + segs.Count);
+            Assert.True(segs.All(p => p.Points.All(q => q.X >= 10 - 1e-6 && q.X <= 20 + 1e-6 && q.Y >= 10 - 1e-6 && q.Y <= 20 + 1e-6)), "clipped to the house");
+            Assert.True(segs.All(p => Math.Abs(Math.Abs(p.Points[1].Y - p.Points[0].Y) - Math.Abs(p.Points[1].X - p.Points[0].X)) < 1e-6), "at 45 degrees");
+
+            var path = Path.Combine(Path.GetTempPath(), "fdd-hatch-" + Guid.NewGuid().ToString("N") + ".dwg");
+            try
+            {
+                ACadSharp.IO.DwgWriter.Write(path, doc);
+                var back = ACadSharp.IO.DwgReader.Read(path);
+                var h = back.ModelSpace.Entities.OfType<ACadSharp.Entities.Hatch>().Single();
+                Assert.True(!h.IsSolid && h.Paths.Count == 1 && h.Pattern.Lines.Count == 1, "hatch survives a DWG round trip");
+                Assert.Near(1.0, Math.Abs(h.Pattern.Lines[0].LineOffset), 1e-6, "with its spacing");
+            }
+            finally { File.Delete(path); }
+        }
+
+        public static void TestKeyholeJoinsHolesToTheOutline()
+        {
+            var outer = new List<Vec2> { new Vec2(0, 0), new Vec2(10, 0), new Vec2(10, 10), new Vec2(0, 10) };
+            var hole = new List<Vec2> { new Vec2(4, 4), new Vec2(6, 4), new Vec2(6, 6), new Vec2(4, 6) };
+            var k = SceneBuilder.Keyhole(new List<List<Vec2>> { hole, outer });
+            Assert.Equal(4 + 5 + 1, k.Count, "outline, the hole closed back on itself, and the return");
+            Assert.True(!FdDraft.Core.Geometry.Polygon.Contains(k, new Vec2(5, 5)) && FdDraft.Core.Geometry.Polygon.Contains(k, new Vec2(1, 1)), "the hole is out, the rest in");
+        }
     }
 }

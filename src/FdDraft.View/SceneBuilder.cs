@@ -294,6 +294,9 @@ namespace FdDraft.View
                 case Leader ld:
                     EmitLeader(ld, t, rgb, lname, handle);
                     break;
+                case Hatch h:
+                    EmitHatch(h, t, rgb, lname, handle);
+                    break;
                 case Viewport:
                     break;
                 default:
@@ -489,6 +492,85 @@ namespace FdDraft.View
                 left.AddRange(right);
                 _group.Prims.Add(new Prim { Kind = PrimKind.Fill, Rgb = rgb, Layer = layer, Handle = handle, Closed = true, Points = left });
             }
+        }
+
+        /// <summary>Most pattern lines one hatch is drawn with; past that it shows as a tint so a dense pattern can't stall the view.</summary>
+        public const int MaxHatchLines = 20000;
+
+        /// <summary>
+        /// A HATCH: a solid fill (holes cut out), or its pattern lines clipped to the boundary
+        /// (ACadSharp's ExplodePattern). A pattern too dense to draw line by line becomes a light
+        /// fill instead. Gradients draw as solids in their first colour's place.
+        /// </summary>
+        private void EmitHatch(Hatch h, Affine t, uint rgb, string layer, ulong handle)
+        {
+            var loops = new List<List<Vec2>>();
+            foreach (var path in h.Paths)
+            {
+                List<Vec2> pts;
+                try { pts = path.GetPoints(24).Select(p => new Vec2(p.X, p.Y)).ToList(); }
+                catch (Exception e) when (e is ArgumentException || e is InvalidOperationException || e is NullReferenceException) { continue; }
+                // Drop repeated points where edges meet.
+                var clean = new List<Vec2>();
+                foreach (var p in pts) if (clean.Count == 0 || Vec2.Distance(clean[clean.Count - 1], p) > 1e-9) clean.Add(p);
+                if (clean.Count > 1 && Vec2.Distance(clean[0], clean[clean.Count - 1]) < 1e-9) clean.RemoveAt(clean.Count - 1);
+                if (clean.Count >= 3) loops.Add(clean);
+            }
+            if (loops.Count == 0) { _skipped++; return; }
+            bool solid = h.IsSolid || h.Pattern == null || h.Pattern.Lines.Count == 0 || string.Equals(h.Pattern.Name, "SOLID", StringComparison.OrdinalIgnoreCase);
+            if (!solid)
+            {
+                List<Line>? lines = null;
+                try { lines = h.ExplodePattern().Take(MaxHatchLines + 1).ToList(); }
+                catch (Exception e) when (e is ArgumentException || e is InvalidOperationException || e is NullReferenceException || e is OverflowException) { lines = null; }
+                if (lines != null && lines.Count <= MaxHatchLines)
+                {
+                    foreach (var l in lines)
+                        _group.Prims.Add(new Prim { Kind = PrimKind.Polyline, Rgb = rgb, Layer = layer, Handle = handle, Points = new List<Vec2> { t.Apply(l.StartPoint.X, l.StartPoint.Y), t.Apply(l.EndPoint.X, l.EndPoint.Y) } });
+                    return;
+                }
+                rgb = Tint(rgb);
+            }
+            _group.Prims.Add(new Prim { Kind = PrimKind.Fill, Rgb = rgb, Layer = layer, Handle = handle, Closed = true, Points = Keyhole(loops).Select(t.Apply).ToList() });
+        }
+
+        /// <summary>A colour washed three-quarters of the way to white (or to black on a dark model).</summary>
+        private uint Tint(uint rgb)
+        {
+            uint target = _dark ? 0x000000u : 0xFFFFFFu;
+            uint Mix(int shift) => (uint)((((rgb >> shift) & 0xFF) + 3 * ((target >> shift) & 0xFF)) / 4) << shift;
+            return Mix(16) | Mix(8) | Mix(0);
+        }
+
+        /// <summary>
+        /// The loops of a hatch as one outline: the largest is the outside, and each hole is joined
+        /// to it by a there-and-back cut at their nearest vertices - so a single filled polygon
+        /// (even-odd or non-zero) leaves the holes empty.
+        /// </summary>
+        public static List<Vec2> Keyhole(List<List<Vec2>> loops)
+        {
+            double Area(List<Vec2> v) { double a = 0; for (int i = 0; i < v.Count; i++) a += Vec2.Cross(v[i], v[(i + 1) % v.Count]); return a / 2; }
+            var ordered = loops.OrderByDescending(l => Math.Abs(Area(l))).ToList();
+            var outline = new List<Vec2>(ordered[0]);
+            if (Area(outline) < 0) outline.Reverse();
+            foreach (var hole0 in ordered.Skip(1))
+            {
+                var hole = new List<Vec2>(hole0);
+                if (Area(hole) > 0) hole.Reverse(); // holes run the other way
+                int bi = 0, bj = 0; double best = double.MaxValue;
+                for (int i = 0; i < outline.Count; i++)
+                    for (int j = 0; j < hole.Count; j++)
+                    {
+                        double d = Vec2.Distance(outline[i], hole[j]);
+                        if (d < best) { best = d; bi = i; bj = j; }
+                    }
+                var spliced = new List<Vec2>(outline.Count + hole.Count + 2);
+                spliced.AddRange(outline.Take(bi + 1));
+                for (int k = 0; k <= hole.Count; k++) spliced.Add(hole[(bj + k) % hole.Count]);
+                spliced.AddRange(outline.Skip(bi));
+                outline = spliced;
+            }
+            return outline;
         }
 
         private void Bulged(List<(Vec2 p, double bulge)> v, bool closed, Affine t, uint rgb, string layer, ulong handle)

@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  95 tests as of v0.4.39, all passing.
+  97 tests as of v0.4.40, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -345,7 +345,7 @@ on Windows; that's still Marc's job when he runs a build.
   M2P/MTP typed at any point prompt (FROM: base point, then "dx,dy" or
   "bearing distance", converted through a viewport's scale/turn on a
   sheet; M2P: midpoint of two picks) - `MainWindow.TryPointModifier`.
-- **v0.4.39** (current): MULTITIES (MS Ties' "table of multities or radial
+- **v0.4.39**: MULTITIES (MS Ties' "table of multities or radial
   lines": pick a station, then points, blank, then the table corner -
   radial lines tagged T1, T2... and a TIE/BEARING/DISTANCE table titled
   with the station's N/E) and IMPORTPTS (MS FieldGenius download side:
@@ -353,6 +353,16 @@ on Windows; that's still Marc's job when he runs a build.
   in as numbered POINTs on the current layer, tagged with number and code
   so clicks find them; `Core/Job/PointFile.cs`). Imported points don't
   fill the Points list yet (that list is the drafted job's).
+- **v0.4.40** (current): hatches. The viewer, PDF and printing now draw
+  HATCH entities (they were skipped before - any MSCAD hatching in Marc's
+  drawings was invisible): solid fills with holes cut out (loops joined
+  into one "keyhole" outline, `SceneBuilder.Keyhole`), pattern hatches as
+  their clipped lines via ACadSharp's ExplodePattern (over 20,000 lines
+  shows as a light tint instead). HATCH command (Draw toolbar flyout: S
+  solid, L lines, X crossed; "spacing angle" in paper mm / degrees, 2 mm at
+  45° by default): pick inside an area - the smallest closed polyline or
+  circle round the pick, with closed figures inside it left clear as
+  islands (`Cad/HatchEditing.cs`). Round-trips through DWG.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

@@ -1150,6 +1150,7 @@ namespace FdDraft.App
                 case "ARCTEXT": case "TEXTONARC": StartTextOnArc(); break;
                 case "PLINE": case "PL": case "POLYLINE": StartPolyline(); break;
                 case "SPLINE": case "SPL": StartSpline(); break;
+                case "HATCH": case "H": case "BHATCH": StartHatch(arg); break;
                 case "CIRCLE": case "C": StartCircle(arg); break;
                 case "ELLIPSE": case "EL": StartEllipse(); break;
                 case "POINT": case "PO": StartPoint(); break;
@@ -1228,7 +1229,7 @@ namespace FdDraft.App
             Log("          CLEADER curvy leader · SLEADER straight leader · LINEBLOCKS block repeated along a line · LINETABLE / CURVETABLE tag + table the selection");
             Log("          MULTITIES radial ties from a station to picked points, with a table");
             Log("  Draw toolbar: PLINE (A arc span, C close) · SPLINE · CIRCLE [D|2P|3P|A] · ARC [C] · ELLIPSE · POINT · RECTANGLE · POLYGON [C|E]");
-            Log("          REVCLOUD · DONUT · SOLID filled plane · INSERT [block] · TEXT · MTEXT");
+            Log("          REVCLOUD · DONUT · SOLID filled plane · HATCH [S|L|X] solid / lines / crossed · INSERT [block] · TEXT · MTEXT");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");

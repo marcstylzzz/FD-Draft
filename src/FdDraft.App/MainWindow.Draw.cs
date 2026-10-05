@@ -64,6 +64,10 @@ namespace FdDraft.App
             bar.Items.Add(B("Cloud", "Draws a revision cloud (REVCLOUD) - pick its outline", StartRevCloud));
             bar.Items.Add(B("Donut", "Draws a donut (DONUT)", StartDonut));
             bar.Items.Add(B("Plane", "Draws a filled plane (SOLID) - 3 or 4 corners", StartSolid));
+            bar.Items.Add(Fly("Hatch", "Hatches the enclosed area around the selected point (HATCH)",
+                ("Solid", "Fills the area solid (HATCH S)", () => StartHatch("S")),
+                ("Lines", "Parallel lines - type spacing (paper mm) and angle (HATCH L)", () => StartHatch("L")),
+                ("Crossed lines", "Lines both ways - type spacing (paper mm) and angle (HATCH X)", () => StartHatch("X"))));
             bar.Items.Add(new Separator());
             bar.Items.Add(B("Insert", "Inserts a block already in the drawing (INSERT)", () => StartInsert("")));
             bar.Items.Add(B("Text", "Creates a single line of text (TEXT)", () => StartText()));
@@ -430,6 +434,44 @@ namespace FdDraft.App
                 if (pts.Count == 4) { Make(); return; }
                 _prompt.Text = pts.Count < 3 ? "Plane - next corner:" : "Plane - fourth corner (blank for a triangle):";
             }, s => { if (pts.Count >= 3) Make(); else EndTool(); });
+        }
+
+        /// <summary>
+        /// HATCH S|L|X: pick inside closed areas (polylines, circles) - each becomes a hatch of
+        /// the smallest area around the pick, its islands left clear. Lines are spaced in paper mm
+        /// at the sheet's scale; type "spacing angle" first to change them (2 mm, 45°).
+        /// </summary>
+        private void StartHatch(string mode)
+        {
+            mode = mode.Length == 0 ? "S" : mode.Substring(0, 1).ToUpperInvariant();
+            if (mode != "S" && mode != "L" && mode != "X") mode = "S";
+            string layer = CurrentLayer();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double spacingMm = 2, angleDeg = 45;
+            int n = 0;
+            string kind = mode == "S" ? "solid" : mode == "L" ? "lines" : "crossed lines";
+            StartDrawTool("HATCH", kind + " - pick inside each area (blank ends)" + (mode == "S" ? "" : "; type \"spacing angle\" to change from 2 mm at 45° (scale from " + basis + ")"), "Hatch - pick inside an area:", (m, p) =>
+            {
+                var raw = RawModelPick() ?? m;
+                var loops = HatchEditing.BoundaryAt(raw, CurrentEntityOwner().Entities);
+                if (loops == null) { Log("  no closed polyline or circle around that point"); return; }
+                var h = HatchEditing.Create(loops, mode == "S" ? 0 : spacingMm * mpm, angleDeg * Math.PI / 180, mode == "X", GetOrCreateLayer(layer));
+                AddDrawn("Hatch", h);
+                n++;
+                Log("  hatched (" + kind + (loops.Count > 1 ? ", " + Plural(loops.Count - 1, "island", "islands") + " left clear" : "") + ")  (Ctrl+Z undoes it)");
+            }, s =>
+            {
+                if (s.Length == 0) { EndTool(); if (n > 0) Log("  *" + Plural(n, "hatch", "hatches") + "*"); return; }
+                var parts = s.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (mode != "S" && parts.Length >= 1 && Num(parts[0], out double sp) && sp > 0)
+                {
+                    spacingMm = sp;
+                    if (parts.Length > 1 && Num(parts[1], out double an)) angleDeg = an;
+                    Log("  lines every " + F(spacingMm) + " mm at " + F(angleDeg) + "°");
+                }
+                else Log("  pick inside an area" + (mode == "S" ? "" : ", or type spacing (mm) and angle"));
+            });
         }
 
         // ---- INSERT and MTEXT ---------------------------------------------------------------------
