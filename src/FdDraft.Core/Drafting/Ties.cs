@@ -266,6 +266,7 @@ namespace FdDraft.Core.Drafting
         };
 
         public static readonly string[] LineHeadings = { "LINE", "BEARING", "DISTANCE" };
+        public static readonly string[] TieHeadings = { "TIE", "BEARING", "DISTANCE" };
         public static readonly string[] CurveHeadings = { "CURVE", "RADIUS", "ARC", "CHORD", "CHORD BEARING", "DELTA" };
 
         /// <summary>The curve table's row for an arc: tag, radius, arc, chord, chord bearing, delta.</summary>

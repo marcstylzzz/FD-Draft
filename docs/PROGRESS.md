@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  93 tests as of v0.4.38, all passing.
+  95 tests as of v0.4.39, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -337,7 +337,7 @@ on Windows; that's still Marc's job when he runs a build.
   command's rubber band and pick state; HOUSETIE clears its highlight
   however it ends; "Arrow size" and "Calc" end a running tool first. SCALE
   now scales objects (as in MSCAD/AutoCAD); the sheet scale is VPSCALE only.
-- **v0.4.38** (current): SPLINE (a degree-3 fit-point SPLINE through the
+- **v0.4.38**: SPLINE (a degree-3 fit-point SPLINE through the
   picks via ACadSharp's UpdateFromFitPoints; closed = round to the first
   point, a joint not a smooth seam; `Cad/SplineEditing.cs`); Extension
   object snap (Ext - the cursor near a line carried on past an open end,
@@ -345,6 +345,14 @@ on Windows; that's still Marc's job when he runs a build.
   M2P/MTP typed at any point prompt (FROM: base point, then "dx,dy" or
   "bearing distance", converted through a viewport's scale/turn on a
   sheet; M2P: midpoint of two picks) - `MainWindow.TryPointModifier`.
+- **v0.4.39** (current): MULTITIES (MS Ties' "table of multities or radial
+  lines": pick a station, then points, blank, then the table corner -
+  radial lines tagged T1, T2... and a TIE/BEARING/DISTANCE table titled
+  with the station's N/E) and IMPORTPTS (MS FieldGenius download side:
+  any P,N,E,Z,D - or IMPORTPTS ENZ for P,E,N,Z,D - comma/tab/space file
+  in as numbered POINTs on the current layer, tagged with number and code
+  so clicks find them; `Core/Job/PointFile.cs`). Imported points don't
+  fill the Points list yet (that list is the drafted job's).
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

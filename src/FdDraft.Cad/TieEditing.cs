@@ -108,6 +108,74 @@ namespace FdDraft.Cad.Editing
         }
 
         /// <summary>
+        /// "Create a table of multities or radial lines": a line from <paramref name="origin"/> to
+        /// each target, tagged T1, T2... (numbered on from the drawing's tags) at its far end, and
+        /// a table of their bearings and distances with its top-left corner at <paramref name="at"/>.
+        /// </summary>
+        public static IEditCommand? Multities(BlockRecord owner, Vec2 origin, IList<Vec2> targets, Vec2 at, CadDocument doc, FirmStandards std, double mpm, double g2g, Func<string, Layer> layer, out string why)
+        {
+            why = "";
+            var real = targets.Where(t => Vec2.Distance(t, origin) > 1e-9).ToList();
+            if (real.Count == 0) { why = "no points to tie to"; return null; }
+            int n = Ties.NextTag("T", owner.Entities.OfType<TextEntity>().Select(t => t.Value.Trim()));
+            var rows = new List<string[]>();
+            var made = new List<Entity>();
+            double h = std.DistanceTextMm, gap = h * std.LabelGapFactor * mpm;
+            foreach (var t in real)
+            {
+                string tag = "T" + n++;
+                rows.Add(Ties.LineRow(tag, origin, t, std, g2g));
+                var line = new DraftPolyline { Layer = std.DistanceLayer };
+                line.Add(origin); line.Add(t);
+                made.Add(CourseLabelling.ToPolyline(line, layer));
+                // The tag just past the far end, along the line.
+                var u = (t - origin).Normalized();
+                double r = Angles.ReadableRotation(origin, t);
+                bool forward = Math.Abs(Math.Atan2(u.Y, u.X) - r) < 1e-6;
+                made.Add(CourseLabelling.ToEntity(new DraftText
+                {
+                    Layer = std.DistanceLayer, Style = std.TextStyle("distance"), Text = tag, Position = t + u * gap, HeightMm = h, Rotation = r,
+                    H = forward ? HAlign.Left : HAlign.Right, V = VAlign.Middle, Kind = TextKind.Other,
+                }, doc, mpm, layer));
+            }
+            var (texts, rules) = Ties.Table("TIES FROM " + FormatNE(origin), Ties.TieHeadings, rows, at, h, mpm, std.AreaLayer, std.TextStyle("distance"));
+            made.AddRange(rules.Select(r => (Entity)CourseLabelling.ToPolyline(r, layer)));
+            made.AddRange(texts.Select(t => (Entity)CourseLabelling.ToEntity(t, doc, mpm, layer)));
+            return new AddEntitiesCommand(owner, made, "Multities");
+        }
+
+        private static string FormatNE(Vec2 p) =>
+            "N " + p.Y.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + " E " + p.X.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// Survey points from a coordinate file into the drawing: a POINT for each and its number
+        /// beside it, tagged with the number and code (so clicking finds the point, as for drafted
+        /// jobs), all on <paramref name="layerName"/>.
+        /// </summary>
+        public static IEditCommand? ImportPoints(BlockRecord owner, IEnumerable<FdDraft.Core.Job.SurveyPoint> points, string layerName, CadDocument doc, FirmStandards std, double mpm, Func<string, Layer> layer)
+        {
+            var made = new List<Entity>();
+            var tags = new List<(Entity, int, string)>();
+            double off = std.SymbolSizeMm * 0.7 * mpm;
+            foreach (var p in points)
+            {
+                var pt = new Point(new XYZ(p.Easting, p.Northing, p.Elevation)) { Layer = layer(layerName) };
+                var label = CourseLabelling.ToEntity(new DraftText
+                {
+                    Layer = layerName, Style = std.TextStyle("point_number"), Text = p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Position = new Vec2(p.Easting + off, p.Northing + off * 0.3), HeightMm = std.PointNumberTextMm, H = HAlign.Left, V = VAlign.Bottom, Kind = TextKind.PointNumber,
+                }, doc, mpm, layer);
+                made.Add(pt); made.Add(label);
+                tags.Add((pt, p.Id, p.Code)); tags.Add((label, p.Id, ""));
+            }
+            if (made.Count == 0) return null;
+            var cmd = new AddEntitiesCommand(owner, made, "Import points");
+            // Tagged once they're in the drawing (the tags' application name is registered there).
+            foreach (var (e, id, code) in tags) { PointLinks.Tag(e, id); if (code.Length > 0) PointLinks.TagCode(e, code); }
+            return cmd;
+        }
+
+        /// <summary>
         /// "Generate or Add to a Line Table" / "a Curve Table": tags (L1, L2... / C1, C2...,
         /// numbered on from the drawing's existing tags) on each straight course / arc of the
         /// selection, and a table of them with its top-left corner at <paramref name="at"/>.

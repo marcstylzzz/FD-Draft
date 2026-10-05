@@ -457,6 +457,7 @@ namespace FdDraft.App
             bar.Items.Add(B("Blocks ⋯", "Draw line of blocks (LINEBLOCKS) - a block repeated along a line, arc or polyline", StartLineOfBlocks));
             bar.Items.Add(B("Line tbl", "Generate or add to a line table (LINETABLE) - select lines first, then pick the table's top-left corner", () => StartTable(false)));
             bar.Items.Add(B("Curve tbl", "Generate or add to a curve table (CURVETABLE) - select arcs first, then pick the table's top-left corner", () => StartTable(true)));
+            bar.Items.Add(B("Multities", "Create a table of multities or radial lines (MULTITIES) - pick the station, then each point, blank, then the table's corner", StartMultities));
             return bar;
         }
 
@@ -645,6 +646,66 @@ namespace FdDraft.App
                 AfterPickEdit(cmd);
                 Log("  " + Plural(count, "block", "blocks") + " placed  (Ctrl+Z undoes them)");
             };
+        }
+
+        /// <summary>MULTITIES: pick the station, then the points tied to (blank ends), then the table's corner.</summary>
+        private void StartMultities()
+        {
+            if (!NeedDrawing()) return;
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = GridToGround(std);
+            BeginTool("MULTITIES");
+            Log("MULTITIES  pick the station, then each point to tie to (snaps help), blank when done, then the table's top-left corner (scale from " + basis + ")");
+            _prompt.Text = "Multities - pick the station:";
+            Vec2? origin = null; bool placing = false;
+            var targets = new List<Vec2>();
+            _awaitingPoint = p =>
+            {
+                var m = ModelPick(p);
+                if (m == null) return;
+                if (origin == null) { origin = m; _canvas.RubberFrom = p; _prompt.Text = "Multities - pick a point to tie to (blank when done):"; return; }
+                if (!placing)
+                {
+                    targets.Add(m.Value);
+                    Log("  T" + targets.Count + "  " + Direction(origin.Value, m.Value) + "   " + (Vec2.Distance(origin.Value, m.Value) * g2g).ToString("F" + Math.Max(0, std.DistanceDecimals), CultureInfo.InvariantCulture));
+                    return;
+                }
+                var cmd = TieEditing.Multities(CurrentEntityOwner(), origin.Value, targets, m.Value, _doc!, std, mpm, g2g, GetOrCreateLayer, out string why);
+                EndTool();
+                if (cmd == null) { Log("  " + why); return; }
+                AfterPickEdit(cmd);
+                Log("  " + Plural(targets.Count, "tie", "ties") + " drawn and tabled  (Ctrl+Z undoes it)");
+            };
+            _awaitingLine = s =>
+            {
+                if (origin == null || targets.Count == 0 || placing) { EndTool(); return; }
+                placing = true; _canvas.RubberFrom = null;
+                _prompt.Text = "Multities - pick the table's top-left corner:";
+            };
+        }
+
+        /// <summary>IMPORTPTS: a P,N,E,Z,D (or P,E,N,Z,D) coordinate file in as numbered POINTs on the current layer.</summary>
+        private void ImportPoints(bool eastingFirst)
+        {
+            if (!NeedDrawing()) return;
+            var dlg = new OpenFileDialog { Filter = "Coordinate files (*.csv;*.txt;*.pnt)|*.csv;*.txt;*.pnt|All files (*.*)|*.*", Title = "Import points (" + (eastingFirst ? "P,E,N,Z,D" : "P,N,E,Z,D") + ")" };
+            if (dlg.ShowDialog(this) != true) return;
+            List<SurveyPoint> pts; int skipped;
+            try { pts = PointFile.Parse(File.ReadAllLines(dlg.FileName), eastingFirst, out skipped); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { Log("  couldn't read it: " + e.Message); return; }
+            if (pts.Count == 0) { Log("IMPORTPTS  no points in " + System.IO.Path.GetFileName(dlg.FileName) + (skipped > 0 ? " (" + skipped + " lines didn't read as P,N,E,Z,D)" : "")); return; }
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out _);
+            string layer = CurrentLayer();
+            var owner = _doc!.ModelSpace;
+            var cmd = TieEditing.ImportPoints(owner, pts, layer, _doc, std, mpm, GetOrCreateLayer);
+            if (cmd == null) return;
+            _undo.Push(cmd);
+            _dirty = true; UpdateTitle();
+            Rebuild(fit: true);
+            Log("IMPORTPTS  " + Plural(pts.Count, "point", "points") + " from " + System.IO.Path.GetFileName(dlg.FileName) + " into model space on " + layer + (skipped > 0 ? "; " + skipped + " lines skipped" : "") + "  (Ctrl+Z undoes it)");
         }
 
         /// <summary>LINETABLE / CURVETABLE: tag the selected courses / arcs and table them where picked.</summary>
@@ -1108,6 +1169,8 @@ namespace FdDraft.App
                 case "SLEADER": StartArrowLeader(false); break;
                 case "LINEBLOCKS": StartLineOfBlocks(); break;
                 case "LINETABLE": StartTable(false); break;
+                case "MULTITIES": case "RADIAL": StartMultities(); break;
+                case "IMPORTPTS": ImportPoints(arg.Equals("ENZ", StringComparison.OrdinalIgnoreCase) || arg.Equals("PENZD", StringComparison.OrdinalIgnoreCase)); break;
                 case "CURVETABLE": StartTable(true); break;
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
@@ -1163,6 +1226,7 @@ namespace FdDraft.App
             Log("          CURVEON curve data along an arc · CURVEOFF curve data placed anywhere · ARCTEXT text following an arc or circle");
             Log("  MS Ties toolbar: HOUSETIE / HOUSETIEA automatic house ties (A = with arrows) · MTIE / MTIEA manual tie · LEADERSCALE arrow size");
             Log("          CLEADER curvy leader · SLEADER straight leader · LINEBLOCKS block repeated along a line · LINETABLE / CURVETABLE tag + table the selection");
+            Log("          MULTITIES radial ties from a station to picked points, with a table");
             Log("  Draw toolbar: PLINE (A arc span, C close) · SPLINE · CIRCLE [D|2P|3P|A] · ARC [C] · ELLIPSE · POINT · RECTANGLE · POLYGON [C|E]");
             Log("          REVCLOUD · DONUT · SOLID filled plane · INSERT [block] · TEXT · MTEXT");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
@@ -1192,7 +1256,7 @@ namespace FdDraft.App
             Log("  Zoom: ZA all · ZC centre · ZOB selected objects · ZW window · ZP previous · ZI / ZO · REDRAW");
             Log("  MS Main Control / Defaults: INFO line/curve/text info · RESCALE scale the selection or everything · AUTOP points at vertices");
             Log("          CAL expression (sqrt sin cos tan, dms(45.3015)) · AZ / QUAD azimuths or quadrant bearings · EDITSTD firm standards · POINTS");
-            Log("  MS FieldGenius: EXPORTPTS writes P,N,E,Z,D for FieldGenius / FD-Pro");
+            Log("  MS FieldGenius: EXPORTPTS writes P,N,E,Z,D for FieldGenius / FD-Pro · IMPORTPTS reads one in (IMPORTPTS ENZ for P,E,N,Z,D files)");
             Log("  Right-click: the edit menu for what's under the cursor; while a command is waiting it's Enter");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
             Log("  VPINFO [sheet|ALL]   list each viewport on the sheet (all sheets from Model) and whether it shows model space");

@@ -2243,5 +2243,47 @@ namespace FdDraft.Tests
             Assert.True(!scene.Snap(new Vec2(5, 0.3), 1, SnapModes.Extension, null).HasValue, "not on the line itself");
             Assert.True(!scene.Snap(new Vec2(13, 3), 1, SnapModes.Extension, null).HasValue, "not when off the extension");
         }
+
+        // ---- v0.4.39: multities, point import ----------------------------------------------------
+
+        public static void TestPointFileParsing()
+        {
+            var pts = PointFile.Parse(new[]
+            {
+                "P,N,E,Z,D",
+                "1,5000.000,1000.000,100.5,IB",
+                "2, 5010.5 , 1002.25, 99.9 ,\"BLDG, NE COR\"",
+                "",
+                "garbage line",
+                "CP1,5020,1010,101,CONTROL",
+            }, false, out int skipped);
+            Assert.Equal(3, pts.Count, "three points, header and blank passed over");
+            Assert.Equal(1, skipped, "the garbage line counted");
+            Assert.True(pts[0].Id == 1 && pts[0].Northing == 5000 && pts[0].Easting == 1000 && pts[0].Elevation == 100.5 && pts[0].Code == "IB", "P,N,E,Z,D");
+            Assert.Equal("BLDG, NE COR", pts[1].Code, "a quoted description with a comma");
+            Assert.True(pts[2].Id > 900000 && pts[2].Note == "CP1", "a named point keeps its name");
+            var spaced = PointFile.Parse(new[] { "7  1000.0   5000.0  12.0  FH" }, true, out _);
+            Assert.True(spaced[0].Easting == 1000 && spaced[0].Northing == 5000 && spaced[0].Code == "FH", "space-delimited P,E,N,Z,D");
+        }
+
+        public static void TestMultitiesAndImportOnDrawing()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var undo = new UndoStack();
+            undo.Push(TieEditing.Multities(doc.ModelSpace, new Vec2(0, 0), new[] { new Vec2(0, 10), new Vec2(-5, 0), new Vec2(0, 0) }, new Vec2(30, 30), doc, std, 0.5, 1.0, L, out _)!);
+            var texts = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Select(t => t.Value).ToList();
+            Assert.True(texts.Count(t => t == "T1") == 2 && texts.Count(t => t == "T2") == 2 && !texts.Contains("T3"), "two ties (the station itself skipped), tagged on the plan and in the table");
+            Assert.True(texts.Any(t => t.StartsWith("N90") || t.StartsWith("S90")) && texts.Contains("10.00") && texts.Contains("5.00"), "bearings and distances in the table");
+            undo.Undo();
+            var pts = PointFile.Parse(new[] { "101,5000,1000,100,IB", "102,5005,1003,100,FH" }, false, out _);
+            undo.Push(TieEditing.ImportPoints(doc.ModelSpace, pts, "IMPORTED", doc, std, 0.5, L)!);
+            var points = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Point>().ToList();
+            var p101 = points.Single(p => PointLinks.Tagged(p) == 101);
+            Assert.True(points.Count == 2 && Math.Abs(p101.Location.Y - 5000) < 1e-9 && Math.Abs(p101.Location.X - 1000) < 1e-9, "points at N,E");
+            Assert.Equal("FH", PointLinks.TaggedCode(points.Single(p => PointLinks.Tagged(p) == 102)), "tagged with number and code");
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "101" && PointLinks.Tagged(t) == 101), "numbered beside");
+        }
     }
 }

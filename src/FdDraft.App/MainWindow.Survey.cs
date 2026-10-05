@@ -61,6 +61,9 @@ namespace FdDraft.App
             var b = new Button { Content = "Export pts", ToolTip = "Export coordinates for FieldGenius / FD-Pro (EXPORTPTS): P,N,E,Z,D comma-delimited", Padding = new Thickness(6, 2, 6, 2) };
             b.Click += (s, e) => ExportPoints();
             bar.Items.Add(b);
+            var imp = new Button { Content = "Import pts", ToolTip = "Import coordinates from FieldGenius / FD-Pro / any P,N,E,Z,D file as numbered points (IMPORTPTS; IMPORTPTS ENZ for P,E,N,Z,D)", Padding = new Thickness(6, 2, 6, 2) };
+            imp.Click += (s, e) => ImportPoints(false);
+            bar.Items.Add(imp);
             return bar;
         }
 
