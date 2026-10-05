@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  91 tests as of v0.4.36, all passing.
+  93 tests as of v0.4.38, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -322,7 +322,7 @@ on Windows; that's still Marc's job when he runs a build.
   editor, active traverse editor, SCALEZ, log viewer, config save/read,
   FieldGenius SyncWizard / upload / download / project export; snaps
   Temp Track, From, M2P, Extension, Parallel, Apparent.
-- **v0.4.37** (current): fixes from an independent review of v0.4.33-36 -
+- **v0.4.37**: fixes from an independent review of v0.4.33-36 -
   pick tools now identify the entity (and the side picked) from the raw
   cursor, not the object-snapped point (`DrawingCanvas.LastRawPick`,
   `RawModelPick()`), so ANGLE near a corner and ARROWS / annotate sides
@@ -337,6 +337,14 @@ on Windows; that's still Marc's job when he runs a build.
   command's rubber band and pick state; HOUSETIE clears its highlight
   however it ends; "Arrow size" and "Calc" end a running tool first. SCALE
   now scales objects (as in MSCAD/AutoCAD); the sheet scale is VPSCALE only.
+- **v0.4.38** (current): SPLINE (a degree-3 fit-point SPLINE through the
+  picks via ACadSharp's UpdateFromFitPoints; closed = round to the first
+  point, a joint not a smooth seam; `Cad/SplineEditing.cs`); Extension
+  object snap (Ext - the cursor near a line carried on past an open end,
+  within 40x the pick tolerance of that end; no hover needed); FROM and
+  M2P/MTP typed at any point prompt (FROM: base point, then "dx,dy" or
+  "bearing distance", converted through a viewport's scale/turn on a
+  sheet; M2P: midpoint of two picks) - `MainWindow.TryPointModifier`.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

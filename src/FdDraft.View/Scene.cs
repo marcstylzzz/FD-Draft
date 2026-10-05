@@ -118,7 +118,7 @@ namespace FdDraft.View
         public List<Prim> Prims { get; } = new List<Prim>();
     }
 
-    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant, Insertion, Tangent }
+    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant, Insertion, Tangent, Extension }
 
     /// <summary>Which object snaps are on - the Object Snap toolbar's toggles.</summary>
     [Flags]
@@ -131,6 +131,8 @@ namespace FdDraft.View
         Insertion = 256,
         /// <summary>Tangent to a circle or arc, from the tool's last point.</summary>
         Tangent = 512,
+        /// <summary>On the extension of a line past its end, near the end.</summary>
+        Extension = 1024,
         /// <summary>What FD-Draft snapped to before the modes could be chosen.</summary>
         Default = Endpoint | Midpoint | Center | Node | Intersection,
     }
@@ -250,7 +252,7 @@ namespace FdDraft.View
                 };
                 if ((modes & need) != 0) Consider(s.Point, s.Kind);
             }
-            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant | SnapModes.Tangent)) == 0) return best;
+            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant | SnapModes.Tangent | SnapModes.Extension)) == 0) return best;
 
             // Linework within reach of the cursor: straight segments and circles.
             var segs = new List<(Vec2 A, Vec2 B)>();
@@ -308,6 +310,38 @@ namespace FdDraft.View
                     double t = Vec2.Dot(from.Value - a, d) / len2;
                     if (t >= -1e-9 && t <= 1 + 1e-9) Consider(a + d * t, SnapKind.Perpendicular);
                 }
+            if ((modes & SnapModes.Extension) != 0)
+            {
+                // The open ends of straight runs within a modest reach: the cursor near the line
+                // carried on past the end snaps onto it (AutoCAD's extension, without the hover).
+                double far = tolerance * 40;
+                var near = new Rect(at.X - far, at.Y - far, at.X + far, at.Y + far);
+                foreach (var g in Groups)
+                {
+                    if (g.Clip.HasValue)
+                    {
+                        var c = g.Clip.Value;
+                        if (at.X < c.X1 || at.X > c.X2 || at.Y < c.Y1 || at.Y > c.Y2) continue;
+                    }
+                    foreach (var p in g.Prims)
+                    {
+                        if (p.Kind != PrimKind.Polyline || p.Closed || p.Points.Count < 2) continue;
+                        if (!(p.Bounds.X1 <= near.X2 && near.X1 <= p.Bounds.X2 && p.Bounds.Y1 <= near.Y2 && near.Y1 <= p.Bounds.Y2)) continue;
+                        int n = p.Points.Count;
+                        foreach (var (end, prev) in new[] { (p.Points[0], p.Points[1]), (p.Points[n - 1], p.Points[n - 2]) })
+                        {
+                            if (Vec2.Distance(at, end) > far) continue;
+                            var d = end - prev;
+                            double len2 = Vec2.Dot(d, d);
+                            if (len2 < 1e-24) continue;
+                            double t = Vec2.Dot(at - end, d) / len2;
+                            if (t <= 0) continue; // behind the end: that's the line itself
+                            var foot = end + d * t;
+                            Consider(foot, SnapKind.Extension);
+                        }
+                    }
+                }
+            }
             if ((modes & SnapModes.Tangent) != 0 && from.HasValue)
             {
                 // Exact for circles: the two points where a line from "from" just touches.

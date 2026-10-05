@@ -407,6 +407,9 @@ namespace FdDraft.App
                     dc.DrawRectangle(null, pen, new WRect(c.X - r, c.Y - r, r * 1.2, r * 1.2));
                     dc.DrawRectangle(null, pen, new WRect(c.X - r * 0.2, c.Y - r * 0.2, r * 1.2, r * 1.2));
                     break;
+                case SnapKind.Extension:
+                    for (int k = -2; k <= 2; k++) dc.DrawEllipse(pen.Brush, null, new WPoint(c.X + k * r * 0.6, c.Y), 1.2, 1.2);
+                    break;
                 case SnapKind.Tangent:
                     dc.DrawEllipse(null, pen, c, r * 0.8, r * 0.8);
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y - r * 0.8), new WPoint(c.X + r, c.Y - r * 0.8));

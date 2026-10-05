@@ -385,6 +385,7 @@ namespace FdDraft.App
                 (SnapModes.Node, "Node", "Node: survey points and point objects"),
                 (SnapModes.Insertion, "Ins", "Insertion point of a block, text or multiline text"),
                 (SnapModes.Tangent, "Tan", "Tangent to a circle or arc, from the last point"),
+                (SnapModes.Extension, "Ext", "Extension: a line carried on past its end"),
             })
             {
                 var t = new ToggleButton { Content = label, ToolTip = tip, Padding = new Thickness(6, 2, 6, 2), IsChecked = (_canvas.SnapModes & mode) != 0 };
@@ -1003,6 +1004,8 @@ namespace FdDraft.App
             if (_awaitingLine != null)
             {
                 Log("Command: " + t);
+                // At a point prompt, FROM / M2P build the point instead (AutoCAD's snap modifiers).
+                if (_awaitingPoint != null && TryPointModifier(t.ToUpperInvariant())) return;
                 _awaitingLine(t);
                 return;
             }
@@ -1085,6 +1088,7 @@ namespace FdDraft.App
                 case "CURVEOFF": StartCurveLabel(true); break;
                 case "ARCTEXT": case "TEXTONARC": StartTextOnArc(); break;
                 case "PLINE": case "PL": case "POLYLINE": StartPolyline(); break;
+                case "SPLINE": case "SPL": StartSpline(); break;
                 case "CIRCLE": case "C": StartCircle(arg); break;
                 case "ELLIPSE": case "EL": StartEllipse(); break;
                 case "POINT": case "PO": StartPoint(); break;
@@ -1159,7 +1163,7 @@ namespace FdDraft.App
             Log("          CURVEON curve data along an arc · CURVEOFF curve data placed anywhere · ARCTEXT text following an arc or circle");
             Log("  MS Ties toolbar: HOUSETIE / HOUSETIEA automatic house ties (A = with arrows) · MTIE / MTIEA manual tie · LEADERSCALE arrow size");
             Log("          CLEADER curvy leader · SLEADER straight leader · LINEBLOCKS block repeated along a line · LINETABLE / CURVETABLE tag + table the selection");
-            Log("  Draw toolbar: PLINE (A arc span, C close) · CIRCLE [D|2P|3P|A] · ARC [C] · ELLIPSE · POINT · RECTANGLE · POLYGON [C|E]");
+            Log("  Draw toolbar: PLINE (A arc span, C close) · SPLINE · CIRCLE [D|2P|3P|A] · ARC [C] · ELLIPSE · POINT · RECTANGLE · POLYGON [C|E]");
             Log("          REVCLOUD · DONUT · SOLID filled plane · INSERT [block] · TEXT · MTEXT");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
@@ -1183,7 +1187,8 @@ namespace FdDraft.App
             Log("  DIMANG  angle dimension: pick the vertex, a point on each leg, then the arc location (it picks which angle)");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  REGEN · PAN · ZW zoom window · ZP zoom previous · ZI / ZO zoom in/out (also ZOOM W/P/I/O)");
-            Log("  Object snap toolbar: End Mid Int Cen Quad Perp Near Node Ins Tan - each on/off; F3 turns snapping off/on; OSNAP lists them");
+            Log("  Object snap toolbar: End Mid Int Cen Quad Perp Near Node Ins Tan Ext - each on/off; F3 turns snapping off/on; OSNAP lists them");
+            Log("  At any point prompt: FROM (base point, then dx,dy or bearing distance) · M2P (midpoint of two picks)");
             Log("  Zoom: ZA all · ZC centre · ZOB selected objects · ZW window · ZP previous · ZI / ZO · REDRAW");
             Log("  MS Main Control / Defaults: INFO line/curve/text info · RESCALE scale the selection or everything · AUTOP points at vertices");
             Log("          CAL expression (sqrt sin cos tan, dms(45.3015)) · AZ / QUAD azimuths or quadrant bearings · EDITSTD firm standards · POINTS");
@@ -1621,6 +1626,69 @@ namespace FdDraft.App
             _prompt.Text = "Command:";
             if (_clearSelectionOnEnd) { _clearSelectionOnEnd = false; _canvas.Selected.Clear(); }
             _canvas.InvalidateVisual();
+        }
+
+        /// <summary>
+        /// FROM (pick a base point, then type an offset "dx,dy" or "bearing distance") and M2P /
+        /// MTP (the midpoint of two picks), typed while a tool waits for a point: the point they
+        /// make goes to the tool as if it had been picked. True when <paramref name="verb"/> was one.
+        /// </summary>
+        private bool TryPointModifier(string verb)
+        {
+            if (verb != "FROM" && verb != "M2P" && verb != "MTP" && verb != "'FROM") return false;
+            var target = _awaitingPoint!; var line = _awaitingLine; var prompt = _prompt.Text;
+            var canvasState = (_canvas.ToolActive, _canvas.RubberFrom);
+            void Deliver(Vec2 scene)
+            {
+                _awaitingPoint = target; _awaitingLine = line; _prompt.Text = prompt;
+                (_canvas.ToolActive, _canvas.RubberFrom) = canvasState;
+                target(scene);
+            }
+            _canvas.ToolActive = true;
+            if (verb == "M2P" || verb == "MTP")
+            {
+                Vec2? first = null;
+                _prompt.Text = "Mid between 2 points - first point:";
+                _awaitingPoint = p => { if (first == null) { first = p; _prompt.Text = "Mid between 2 points - second point:"; } else Deliver((first.Value + p) * 0.5); };
+                _awaitingLine = s => { _awaitingPoint = target; _awaitingLine = line; _prompt.Text = prompt; (_canvas.ToolActive, _canvas.RubberFrom) = canvasState; };
+                return true;
+            }
+            Vec2? basePt = null;
+            _prompt.Text = "From - base point:";
+            _awaitingPoint = p => { basePt = p; _canvas.ToolActive = false; _prompt.Text = "From - offset (dx,dy or bearing distance):"; };
+            _awaitingLine = s =>
+            {
+                if (basePt == null || s.Length == 0) { _awaitingPoint = target; _awaitingLine = line; _prompt.Text = prompt; (_canvas.ToolActive, _canvas.RubberFrom) = canvasState; return; }
+                double dx, dy;
+                var xy = s.TrimStart('@').Split(',');
+                if (xy.Length == 2 && Num(xy[0], out dx) && Num(xy[1], out dy)) { }
+                else if (Cogo.TryParseLeg(s, out double az, out double dist)) { dx = dist * Math.Sin(az); dy = dist * Math.Cos(az); }
+                else { Log("  type dx,dy (east, north) or a bearing and distance, e.g. N45-30-00E 12.5"); return; }
+                var at = SceneOffset(basePt.Value, dx, dy);
+                if (at == null) { Log("  that offset lands outside the viewport"); return; }
+                Deliver(at.Value);
+            };
+            return true;
+        }
+
+        /// <summary>The scene point <paramref name="dx"/>, <paramref name="dy"/> drawing units (east, north) from a scene point - through a viewport's scale and turn when on a sheet.</summary>
+        private Vec2? SceneOffset(Vec2 baseScene, double dx, double dy)
+        {
+            var sc = _canvas.Scene!;
+            var m0 = sc.ModelAt(baseScene);
+            if (m0 == null) return null;
+            double h = 1e-3;
+            var mx = sc.ModelAt(baseScene + new Vec2(h, 0)) ?? sc.ModelAt(baseScene - new Vec2(h, 0));
+            var my = sc.ModelAt(baseScene + new Vec2(0, h)) ?? sc.ModelAt(baseScene - new Vec2(0, h));
+            if (mx == null || my == null) return null;
+            bool bx = sc.ModelAt(baseScene + new Vec2(h, 0)) == null, by = sc.ModelAt(baseScene + new Vec2(0, h)) == null;
+            var a = (mx.Value - m0.Value) * ((bx ? -1 : 1) / h); var b = (my.Value - m0.Value) * ((by ? -1 : 1) / h);
+            double det = Vec2.Cross(a, b);
+            if (Math.Abs(det) < 1e-18) return null;
+            // Solve a*u + b*v = (dx, dy) for the scene step (u, v).
+            var d = new Vec2(dx, dy);
+            double u = Vec2.Cross(d, b) / det, v = Vec2.Cross(a, d) / det;
+            return baseScene + new Vec2(u, v);
         }
 
         /// <summary>A tool that highlights its picks through the selection clears it when it ends,

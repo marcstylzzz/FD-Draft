@@ -14,7 +14,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Company>Vaughan Land Surveyors</Company>
     <Product>FD-Draft</Product>
-    <Version>0.4.37</Version>
+    <Version>0.4.38</Version>
     <Deterministic>true</Deterministic>
     <!-- Run on the newest .NET installed (e.g. only the .NET 10 SDK) instead of demanding .NET 8. -->
     <RollForward>Major</RollForward>

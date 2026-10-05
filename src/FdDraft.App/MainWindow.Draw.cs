@@ -43,6 +43,7 @@ namespace FdDraft.App
             }
             bar.Items.Add(B("Line", "Draws a line (LINE) - picks, or bearing and distance", StartLine));
             bar.Items.Add(B("PLine", "Draws a polyline, including straight and arc segments (PLINE)", StartPolyline));
+            bar.Items.Add(B("Spline", "Creates a new spline through the points you pick (SPLINE) - C closes it, blank ends", StartSpline));
             bar.Items.Add(new Separator());
             bar.Items.Add(Fly("Circle", "Circles (CIRCLE)",
                 ("Center-Radius", "Draws a circle given a center point and radius (CIRCLE)", () => StartCircle("")),
@@ -151,6 +152,38 @@ namespace FdDraft.App
                         default: Log("  A arc, L line, C close, U undo, or blank to end"); return;
                     }
                 });
+        }
+
+        /// <summary>SPLINE: a smooth curve through the picks (a fit-point SPLINE, as AutoCAD/MSCAD draw it); C closes, U undoes, blank ends.</summary>
+        private void StartSpline()
+        {
+            string layer = CurrentLayer();
+            var pts = new List<Vec2>();
+            void Finish(bool closed)
+            {
+                if (pts.Count >= 2)
+                {
+                    var sp = SplineEditing.Through(pts, closed);
+                    sp.Layer = GetOrCreateLayer(layer);
+                    AddDrawn("Spline", sp);
+                    Log("  spline through " + Plural(pts.Count, "point", "points") + (closed ? ", closed" : ""));
+                }
+                EndTool();
+            }
+            StartDrawTool("SPLINE", "pick the points it passes through; C closes, U undoes the last, blank ends", "Spline - first point:", (m, p) =>
+            {
+                pts.Add(m); _canvas.RubberFrom = p;
+                _prompt.Text = "Spline - next point (C close, U undo, blank ends):";
+            }, s =>
+            {
+                switch (s.Trim().ToUpperInvariant())
+                {
+                    case "": Finish(false); return;
+                    case "C": if (pts.Count >= 3) Finish(true); else Log("  needs three points to close"); return;
+                    case "U": if (pts.Count > 0) pts.RemoveAt(pts.Count - 1); _canvas.RubberFrom = null; return;
+                    default: Log("  C close, U undo, or blank to end"); return;
+                }
+            });
         }
 
         // ---- circles, arcs, ellipse, point --------------------------------------------------------

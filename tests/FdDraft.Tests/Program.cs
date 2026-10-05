@@ -2214,5 +2214,34 @@ namespace FdDraft.Tests
             var arcTan = scene.Snap(new Vec2(104.3, 2.5), 1, SnapModes.Tangent, new Vec2(100, 10));
             Assert.True(arcTan.HasValue && Vec2.Distance(arcTan.Value.Point, new Vec2(104.330, 2.5)) < 0.2, "close on an arc's chords: " + (arcTan.HasValue ? arcTan.Value.Point.ToString() : "none"));
         }
+
+        // ---- v0.4.38: spline, extension snap ----------------------------------------------------
+
+        public static void TestSplineThroughPicks()
+        {
+            var pts = new List<Vec2> { new Vec2(0, 0), new Vec2(10, 5), new Vec2(20, 0), new Vec2(30, 6) };
+            foreach (bool closed in new[] { false, true })
+            {
+                var sp = SplineEditing.Through(pts, closed);
+                Assert.True(sp.TryPolygonalVertexes(200, out var v) && v.Count > 10, "it tessellates (closed=" + closed + ")");
+                foreach (var p in pts)
+                    Assert.True(v.Min(q => Vec2.Distance(p, new Vec2(q.X, q.Y))) < 0.2, "passes through " + p + " (closed=" + closed + ")");
+                var doc = new ACadSharp.CadDocument();
+                doc.ModelSpace.Entities.Add(sp);
+                var prims = new SceneBuilder(doc).Model().AllPrims().ToList();
+                Assert.True(prims.Count == 1 && prims[0].Points.Count > 10, "the viewer draws it");
+            }
+        }
+
+        public static void TestExtensionSnap()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(Ln(0, 0, 10, 0));
+            var scene = new SceneBuilder(doc).Model();
+            var s = scene.Snap(new Vec2(13, 0.3), 1, SnapModes.Extension, null);
+            Assert.True(s.HasValue && s.Value.Kind == SnapKind.Extension && Math.Abs(s.Value.Point.X - 13) < 1e-9 && Math.Abs(s.Value.Point.Y) < 1e-9, "on the line carried past its end");
+            Assert.True(!scene.Snap(new Vec2(5, 0.3), 1, SnapModes.Extension, null).HasValue, "not on the line itself");
+            Assert.True(!scene.Snap(new Vec2(13, 3), 1, SnapModes.Extension, null).HasValue, "not when off the extension");
+        }
     }
 }
