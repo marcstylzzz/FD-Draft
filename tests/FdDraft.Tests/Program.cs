@@ -2138,5 +2138,60 @@ namespace FdDraft.Tests
             Assert.Near(0.5, maxR, 1e-6, "outside diameter 1");
             Assert.Near(0.25, minR, 1e-6, "inside diameter 0.5");
         }
+
+        // ---- Main Control (v0.4.36) -----------------------------------------------------------
+
+        public static void TestScaleEntitiesAboutABasePoint()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var line = Ln(10, 10, 20, 10);
+            var circle = new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(10, 20, 0), Radius = 2 };
+            var text = new ACadSharp.Entities.TextEntity { Value = "LOT 1", InsertPoint = new CSMath.XYZ(12, 12, 0), AlignmentPoint = new CSMath.XYZ(12, 12, 0), Height = 1, HorizontalAlignment = ACadSharp.Entities.TextHorizontalAlignment.Center };
+            var pl = new ACadSharp.Entities.LwPolyline { ConstantWidth = 0.5 };
+            pl.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(10, 10)));
+            pl.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(14, 10)));
+            foreach (var e in new ACadSharp.Entities.Entity[] { line, circle, text, pl }) doc.ModelSpace.Entities.Add(e);
+            var undo = new UndoStack();
+            undo.Push(TransformEntitiesCommand.Scale(new ACadSharp.Entities.Entity[] { line, circle, text, pl }, new CSMath.XYZ(10, 10, 0), 2, "Scale"));
+            Assert.Near(30, line.EndPoint.X, 1e-9, "line end twice as far from the base");
+            Assert.Near(4, circle.Radius, 1e-9, "radius doubled");
+            Assert.Near(30, circle.Center.Y, 1e-9, "centre moved");
+            Assert.Near(2, text.Height, 1e-9, "text height doubled");
+            Assert.Near(14, text.AlignmentPoint.X, 1e-9, "text's alignment point scaled too");
+            Assert.Near(18, pl.Vertices[1].Location.X, 1e-9, "polyline vertex scaled");
+            undo.Undo();
+            Assert.True(Math.Abs(line.EndPoint.X - 20) < 1e-9 && Math.Abs(circle.Radius - 2) < 1e-9 && Math.Abs(text.Height - 1) < 1e-9, "undo puts it all back");
+        }
+
+        public static void TestCalculator()
+        {
+            Assert.Equal("38.2524", Calculator.Evaluate("125.5*0.3048"), "feet to metres");
+            Assert.Equal("14", Calculator.Evaluate("2+3*4"), "precedence");
+            Assert.Equal("20", Calculator.Evaluate("(2+3)*4"), "brackets");
+            Assert.Equal("5", Calculator.Evaluate("sqrt(3^2+4^2)"), "sqrt and powers");
+            Assert.Equal("0.5", Calculator.Evaluate("sin(30)"), "trig in degrees");
+            Assert.True(Calculator.Evaluate("dms(45.3015)").StartsWith("45.5041666"), "d.mmss to decimal degrees: " + Calculator.Evaluate("dms(45.3015)"));
+            Assert.True(Calculator.Evaluate("2+").StartsWith("?") && Calculator.Evaluate("foo(1)").StartsWith("?"), "errors reported, not thrown");
+            Assert.Equal("undefined", Calculator.Evaluate("1/0"), "division by zero");
+        }
+
+        public static void TestInsertionAndTangentSnaps()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "LOT 1", InsertPoint = new CSMath.XYZ(50, 50, 0), Height = 1 });
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(0, 0, 0), Radius = 5 });
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(100, 0, 0), Radius = 5, StartAngle = 0, EndAngle = Math.PI });
+            var scene = new SceneBuilder(doc).Model();
+            var ins = scene.Snap(new Vec2(50.3, 50.2), 1, SnapModes.Insertion, null);
+            Assert.True(ins.HasValue && ins.Value.Kind == SnapKind.Insertion && Vec2.Distance(ins.Value.Point, new Vec2(50, 50)) < 1e-9, "text insertion point");
+            Assert.True(!scene.Snap(new Vec2(50.3, 50.2), 1, SnapModes.Endpoint, null).HasValue, "only when Ins is on");
+            // From (0, 10) the tangents to a radius-5 circle at the origin touch at 30° above horizontal.
+            var tan = scene.Snap(new Vec2(4.3, 2.5), 1, SnapModes.Tangent, new Vec2(0, 10));
+            Assert.True(tan.HasValue && tan.Value.Kind == SnapKind.Tangent, "a tangent point on the circle");
+            Assert.Near(4.330, tan.Value.Point.X, 0.001, "exact on a circle (x)");
+            Assert.Near(2.5, tan.Value.Point.Y, 0.001, "exact on a circle (y)");
+            var arcTan = scene.Snap(new Vec2(104.3, 2.5), 1, SnapModes.Tangent, new Vec2(100, 10));
+            Assert.True(arcTan.HasValue && Vec2.Distance(arcTan.Value.Point, new Vec2(104.330, 2.5)) < 0.2, "close on an arc's chords: " + (arcTan.HasValue ? arcTan.Value.Point.ToString() : "none"));
+        }
     }
 }

@@ -104,6 +104,13 @@ namespace FdDraft.Cad.Editing
                 Transform.CreateTranslation(new XYZ(-dx, -dy, 0)),
                 description);
 
+        /// <summary>A uniform scale by <paramref name="factor"/> about <paramref name="basePoint"/> (MSCAD's "re-scale complete drawing", AutoCAD's SCALE).</summary>
+        public static TransformEntitiesCommand Scale(IEnumerable<Entity> entities, XYZ basePoint, double factor, string description) =>
+            new TransformEntitiesCommand(entities,
+                new Transform(Matrix4.CreateScale(factor, basePoint)),
+                new Transform(Matrix4.CreateScale(1 / factor, basePoint)),
+                description);
+
         /// <summary>A rotation by <paramref name="angleRadians"/> about <paramref name="pivot"/>.</summary>
         public static TransformEntitiesCommand Rotate(IEnumerable<Entity> entities, XYZ pivot, double angleRadians, string description)
         {

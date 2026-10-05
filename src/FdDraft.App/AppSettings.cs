@@ -24,6 +24,8 @@ namespace FdDraft.App
         public bool WindowMaximized = true;
         /// <summary>Arrowhead length for house ties and leaders, paper mm (MSCAD's "set leader scale").</summary>
         public double LeaderArrowMm = 2.5;
+        /// <summary>MSCAD's Defaults toolbar: directions read as azimuths (true) or quadrant bearings.</summary>
+        public bool Azimuths;
 
         public static string FilePath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FD-Draft", "app.ini");
@@ -50,6 +52,7 @@ namespace FdDraft.App
                 s.WindowMaximized = ini.GetBool("", "window_maximized", true);
                 s.LeaderArrowMm = ini.GetDouble("", "leader_arrow_mm", 2.5);
                 if (!(s.LeaderArrowMm > 0)) s.LeaderArrowMm = 2.5;
+                s.Azimuths = ini.GetBool("", "azimuths", false);
             }
             catch (IOException) { /* defaults */ }
             return s;
@@ -84,6 +87,7 @@ namespace FdDraft.App
                     "window_height=" + Num(WindowHeight),
                     "window_maximized=" + (WindowMaximized ? "true" : "false"),
                     "leader_arrow_mm=" + Num(LeaderArrowMm),
+                    "azimuths=" + (Azimuths ? "true" : "false"),
                 });
             }
             catch (IOException) { /* settings are a convenience */ }

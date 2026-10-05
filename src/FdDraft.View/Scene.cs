@@ -118,7 +118,7 @@ namespace FdDraft.View
         public List<Prim> Prims { get; } = new List<Prim>();
     }
 
-    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant }
+    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant, Insertion, Tangent }
 
     /// <summary>Which object snaps are on - the Object Snap toolbar's toggles.</summary>
     [Flags]
@@ -127,6 +127,10 @@ namespace FdDraft.View
         None = 0,
         Endpoint = 1, Midpoint = 2, Center = 4, Node = 8,
         Intersection = 16, Perpendicular = 32, Nearest = 64, Quadrant = 128,
+        /// <summary>Insertion point of a block, text or multiline text.</summary>
+        Insertion = 256,
+        /// <summary>Tangent to a circle or arc, from the tool's last point.</summary>
+        Tangent = 512,
         /// <summary>What FD-Draft snapped to before the modes could be chosen.</summary>
         Default = Endpoint | Midpoint | Center | Node | Intersection,
     }
@@ -241,11 +245,12 @@ namespace FdDraft.View
                     SnapKind.Endpoint => SnapModes.Endpoint,
                     SnapKind.Midpoint => SnapModes.Midpoint,
                     SnapKind.Center => SnapModes.Center,
+                    SnapKind.Insertion => SnapModes.Insertion,
                     _ => SnapModes.Node,
                 };
                 if ((modes & need) != 0) Consider(s.Point, s.Kind);
             }
-            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant)) == 0) return best;
+            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant | SnapModes.Tangent)) == 0) return best;
 
             // Linework within reach of the cursor: straight segments and circles.
             var segs = new List<(Vec2 A, Vec2 B)>();
@@ -303,6 +308,32 @@ namespace FdDraft.View
                     double t = Vec2.Dot(from.Value - a, d) / len2;
                     if (t >= -1e-9 && t <= 1 + 1e-9) Consider(a + d * t, SnapKind.Perpendicular);
                 }
+            if ((modes & SnapModes.Tangent) != 0 && from.HasValue)
+            {
+                // Exact for circles: the two points where a line from "from" just touches.
+                foreach (var (c, r) in circles)
+                {
+                    double d = Vec2.Distance(from.Value, c);
+                    if (d <= r + 1e-12) continue;
+                    double ang = Math.Atan2(from.Value.Y - c.Y, from.Value.X - c.X), half = Math.Acos(r / d);
+                    Consider(new Vec2(c.X + r * Math.Cos(ang + half), c.Y + r * Math.Sin(ang + half)), SnapKind.Tangent);
+                    Consider(new Vec2(c.X + r * Math.Cos(ang - half), c.Y + r * Math.Sin(ang - half)), SnapKind.Tangent);
+                }
+                // Arcs are drawn as short chords: the tangent point is the vertex where the
+                // sight line from "from" stops crossing in to the curve and starts crossing out.
+                for (int i = 0; i < segs.Count; i++)
+                    for (int j = 0; j < segs.Count; j++)
+                    {
+                        if (i == j || Vec2.Distance(segs[i].B, segs[j].A) > 1e-12) continue;
+                        var v = segs[i].B;
+                        var d1 = segs[i].B - segs[i].A; var d2 = segs[j].B - segs[j].A;
+                        // A corner of straight lines isn't a curve.
+                        double turn = Math.Abs(Vec2.Cross(d1.Normalized(), d2.Normalized()));
+                        if (turn < 1e-6 || turn > 0.5) continue;
+                        double c1 = Vec2.Cross(d1, v - from.Value), c2 = Vec2.Cross(d2, v - from.Value);
+                        if (Math.Sign(c1) != Math.Sign(c2)) Consider(v, SnapKind.Tangent);
+                    }
+            }
             if ((modes & SnapModes.Nearest) != 0)
             {
                 foreach (var (a, b) in segs) { Construct.DistanceToSegment(at, a, b, out var q); Consider(q, SnapKind.Nearest); }

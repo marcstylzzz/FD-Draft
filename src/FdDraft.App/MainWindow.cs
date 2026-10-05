@@ -339,6 +339,8 @@ namespace FdDraft.App
             tray.ToolBars.Add(BuildSnapBar());
             tray.ToolBars.Add(BuildAnnotateBar());
             tray.ToolBars.Add(BuildTiesBar());
+            tray.ToolBars.Add(BuildFieldGeniusBar());
+            tray.ToolBars.Add(BuildMainControlBar());
             tray.ToolBars.Add(BuildDrawBar());
             return tray;
         }
@@ -355,8 +357,11 @@ namespace FdDraft.App
             _panButton.Checked += (s, e) => { _canvas.PanMode = true; _canvas.Cursor = Cursors.Hand; };
             _panButton.Unchecked += (s, e) => { _canvas.PanMode = false; _canvas.Cursor = Cursors.Cross; };
             bar.Items.Add(_panButton);
-            bar.Items.Add(B("Zoom Window", "Zoom to a box: pick two corners (ZW)", StartZoomWindow));
-            bar.Items.Add(B("Zoom Prev", "Back to the previous view (ZP)", ZoomPrevious));
+            bar.Items.Add(B("Zoom Prev", "Zooms to the previous view (ZP)", ZoomPrevious));
+            bar.Items.Add(B("Zoom All", "Zooms all (ZA) - the whole sheet or drawing", () => _canvas.ZoomExtents()));
+            bar.Items.Add(B("Zoom Center", "Zooms in, centered on a point you specify (ZC) - then type a magnification", StartZoomCenter));
+            bar.Items.Add(B("Zoom Object", "Zooms to the extents of the selected objects (ZOB)", ZoomObject));
+            bar.Items.Add(B("Zoom Window", "Zooms to a window that you specify (ZW)", StartZoomWindow));
             bar.Items.Add(B("Zoom In", "Zoom in (ZI) - the wheel zooms at the cursor", () => _canvas.ZoomBy(1.6)));
             bar.Items.Add(B("Zoom Out", "Zoom out (ZO)", () => _canvas.ZoomBy(1 / 1.6)));
             bar.Items.Add(B("Extents", "Zoom to everything (ZE, or double-click the wheel)", () => _canvas.ZoomExtents()));
@@ -378,6 +383,8 @@ namespace FdDraft.App
                 (SnapModes.Perpendicular, "Perp", "Perpendicular: the foot of the perpendicular from the last point"),
                 (SnapModes.Nearest, "Near", "Nearest point on a line or circle"),
                 (SnapModes.Node, "Node", "Node: survey points and point objects"),
+                (SnapModes.Insertion, "Ins", "Insertion point of a block, text or multiline text"),
+                (SnapModes.Tangent, "Tan", "Tangent to a circle or arc, from the last point"),
             })
             {
                 var t = new ToggleButton { Content = label, ToolTip = tip, Padding = new Thickness(6, 2, 6, 2), IsChecked = (_canvas.SnapModes & mode) != 0 };
@@ -1013,6 +1020,8 @@ namespace FdDraft.App
                     switch (arg.ToUpperInvariant())
                     {
                         case "W": case "WINDOW": StartZoomWindow(); break;
+                        case "C": case "CENTER": case "CENTRE": StartZoomCenter(); break;
+                        case "OB": case "OBJECT": ZoomObject(); break;
                         case "P": case "PREVIOUS": ZoomPrevious(); break;
                         case "I": case "IN": _canvas.ZoomBy(1.6); break;
                         case "O": case "OUT": _canvas.ZoomBy(1 / 1.6); break;
@@ -1020,6 +1029,21 @@ namespace FdDraft.App
                     }
                     break;
                 case "ZW": StartZoomWindow(); break;
+                case "ZA": _canvas.ZoomExtents(); break;
+                case "ZC": StartZoomCenter(); break;
+                case "ZOB": ZoomObject(); break;
+                case "REDRAW": case "R": Regen(); break;
+                case "INFO": case "LI": case "LIST": StartInfo(); break;
+                case "RESCALE": case "SCALEOBJ": case "SC": StartRescale(); break;
+                case "AUTOP": AutoPointsOnObjects(); break;
+                case "CAL": case "CALC":
+                    if (arg.Length > 0) Log("  = " + Calculate(arg)); else { BeginTool("CAL"); AskCalc(); }
+                    break;
+                case "AZ": case "AZIMUTH": _azimuthButton.IsChecked = true; break;
+                case "QUAD": case "QUADRANT": _quadrantButton.IsChecked = true; break;
+                case "EDITSTD": case "STANDARDS": EditStandards(); break;
+                case "POINTS": ShowPointsTab(); break;
+                case "EXPORTPTS": ExportPoints(); break;
                 case "ZP": ZoomPrevious(); break;
                 case "ZI": _canvas.ZoomBy(1.6); break;
                 case "ZO": _canvas.ZoomBy(1 / 1.6); break;
@@ -1154,7 +1178,11 @@ namespace FdDraft.App
             Log("  DIMANG  angle dimension: pick the vertex, a point on each leg, then the arc location (it picks which angle)");
             Log("  CLAYER <name>   set the layer new drawing picks up   · type the name into the toolbar's Layer box");
             Log("  REGEN · PAN · ZW zoom window · ZP zoom previous · ZI / ZO zoom in/out (also ZOOM W/P/I/O)");
-            Log("  Object snap toolbar: End Mid Int Cen Quad Perp Near Node - each on/off; F3 turns snapping off/on; OSNAP lists them");
+            Log("  Object snap toolbar: End Mid Int Cen Quad Perp Near Node Ins Tan - each on/off; F3 turns snapping off/on; OSNAP lists them");
+            Log("  Zoom: ZA all · ZC centre · ZOB selected objects · ZW window · ZP previous · ZI / ZO · REDRAW");
+            Log("  MS Main Control / Defaults: INFO line/curve/text info · RESCALE scale the selection or everything · AUTOP points at vertices");
+            Log("          CAL expression (sqrt sin cos tan, dms(45.3015)) · AZ / QUAD azimuths or quadrant bearings · EDITSTD firm standards · POINTS");
+            Log("  MS FieldGenius: EXPORTPTS writes P,N,E,Z,D for FieldGenius / FD-Pro");
             Log("  Right-click: the edit menu for what's under the cursor; while a command is waiting it's Enter");
             Log("  ZE      zoom extents · wheel zooms · middle-drag or Shift-drag pans");
             Log("  VPINFO [sheet|ALL]   list each viewport on the sheet (all sheets from Model) and whether it shows model space");
@@ -1611,7 +1639,7 @@ namespace FdDraft.App
                     return;
                 }
                 var inv = InverseResult.Between(_inverseFrom.Value, model.Value, _std?.BearingRotationDeg ?? 0);
-                Log("  to   " + NE(model.Value) + "   " + inv);
+                Log("  to   " + NE(model.Value) + "   " + inv + (_settings.Azimuths ? "   (" + Direction(_inverseFrom.Value, model.Value) + ")" : ""));
                 // Chain like a data collector: the "to" point becomes the next "from".
                 _inverseFrom = model;
                 _canvas.RubberFrom = p;

@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  88 tests as of v0.4.35, all passing.
+  91 tests as of v0.4.36, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -292,7 +292,7 @@ on Windows; that's still Marc's job when he runs a build.
   existing tags, and a ruled table). Skipped from that toolbar: MSCAD's
   "Custom Posts Icons" (they insert MSCAD's own block library) and
   "multities" (radial tie table) - not built yet.
-- **v0.4.35** (current): the Draw toolbar (row 3; new partial file
+- **v0.4.35**: the Draw toolbar (row 3; new partial file
   `MainWindow.Draw.cs` - MainWindow is now `partial`): PLINE (A arc span,
   L straight, C close, U undo), CIRCLE flyout (centre-radius, centre-
   diameter, 2P, 3P, convert arc to circle), ARC flyout (3-point,
@@ -302,6 +302,26 @@ on Windows; that's still Marc's job when he runs a build.
   TEXT, MTEXT. Not built from MSCAD's Draw toolbar: ray / infinite line,
   multiline, spline, freehand, helix, wipeout, traces, hatch/gradient,
   elliptical arcs and the rarer arc variants.
+- **v0.4.36** (current): the rest of Marc's workspace -
+  *MS Main Control* (`MainWindow.Survey.cs`): Standards (EDITSTD opens the
+  firm standards file - MSCAD's job/labeling defaults), INFO (line /
+  curve / polyline / text / point / block information, picked span of a
+  polyline too), COGO (= LINE), POINTS (the Points list), RESCALE (the
+  selection, or everything on the sheet, about a base point -
+  `TransformEntitiesCommand.Scale`), AUTOP (a POINT at every vertex of
+  the selection), CAL (`Core/Geometry/Calculator.cs`: + - * / ^, brackets,
+  sqrt/sin/cos/tan in degrees, dms(d.mmss)). *MS Defaults*: Azimuth /
+  Quadrant toggle (AZ / QUAD, saved in app.ini) - INV and INFO read
+  directions that way; plan labels stay quadrant bearings. *MS
+  FieldGenius*: EXPORTPTS writes P,N,E,Z,D (job points, or a drawing's
+  POINT entities). *Zoom*: Zoom All (ZA), Zoom Center (ZC, with a
+  magnification), Zoom Object (ZOB), REDRAW. *Entity Snaps*: Insertion
+  (block/text/mtext insertion points) and Tangent (exact on circles, to a
+  chord vertex on arcs) toggles. Not built from those toolbars: MSCAD's
+  Assistant, project manager, system/hot toggles, grips toggle, AutoMap
+  editor, active traverse editor, SCALEZ, log viewer, config save/read,
+  FieldGenius SyncWizard / upload / download / project export; snaps
+  Temp Track, From, M2P, Extension, Parallel, Apparent.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

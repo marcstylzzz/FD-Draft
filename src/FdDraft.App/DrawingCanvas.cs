@@ -149,6 +149,15 @@ namespace FdDraft.App
             InvalidateVisual();
         }
 
+        /// <summary>Zoom Center: the view re-centred on a scene point, magnified by <paramref name="factor"/>.</summary>
+        public void ZoomCenter(Vec2 center, double factor)
+        {
+            PushView();
+            View.Center = center;
+            View.Zoom *= factor;
+            InvalidateVisual();
+        }
+
         public void ZoomTo(Vec2 center, double pixelsPerUnit)
         {
             View.Center = center;
@@ -390,6 +399,15 @@ namespace FdDraft.App
                     dc.DrawGeometry(null, pen, g);
                     break;
                 }
+                case SnapKind.Insertion:
+                    // AutoCAD's insertion marker: two squares overlapping.
+                    dc.DrawRectangle(null, pen, new WRect(c.X - r, c.Y - r, r * 1.2, r * 1.2));
+                    dc.DrawRectangle(null, pen, new WRect(c.X - r * 0.2, c.Y - r * 0.2, r * 1.2, r * 1.2));
+                    break;
+                case SnapKind.Tangent:
+                    dc.DrawEllipse(null, pen, c, r * 0.8, r * 0.8);
+                    dc.DrawLine(pen, new WPoint(c.X - r, c.Y - r * 0.8), new WPoint(c.X + r, c.Y - r * 0.8));
+                    break;
                 default:
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y - r), new WPoint(c.X + r, c.Y + r));
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y + r), new WPoint(c.X + r, c.Y - r));

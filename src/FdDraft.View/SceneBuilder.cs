@@ -272,12 +272,20 @@ namespace FdDraft.View
                     break;
                 case TextEntity te:
                     Text(te, t, rgb, lname, handle);
+                    if (depth == 0)
+                    {
+                        bool aligned = te.HorizontalAlignment != TextHorizontalAlignment.Left || te.VerticalAlignment != TextVerticalAlignmentType.Baseline;
+                        var ip = aligned ? te.AlignmentPoint : te.InsertPoint;
+                        AddSnap(t.Apply(ip.X, ip.Y), SnapKind.Insertion);
+                    }
                     break;
                 case MText mt:
                     MTextLines(mt, t, rgb, lname, handle);
+                    if (depth == 0) AddSnap(t.Apply(mt.InsertPoint.X, mt.InsertPoint.Y), SnapKind.Insertion);
                     break;
                 case Insert ins:
                     InsertBlock(ins, t, layer, rgb, handle, depth);
+                    if (depth == 0) AddSnap(t.Apply(ins.InsertPoint.X, ins.InsertPoint.Y), SnapKind.Insertion);
                     break;
                 case Dimension dim:
                     if (dim.Block != null && depth < 8)
