@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ACadSharp;
 using ACadSharp.Entities;
@@ -25,45 +26,37 @@ namespace FdDraft.Cad.Editing
         /// standards' paper millimetres times <paramref name="modelPerMm"/>. Layers are created
         /// on the fly through <paramref name="layer"/> when the drawing lacks them.
         /// </summary>
-        public static List<Entity> For(Entity e, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, double gridToGround = 1.0)
-        {
-            var texts = new List<DraftText>();
-            switch (e)
-            {
-                case Line l:
-                    texts.AddRange(Annotator.StraightCourseLabels(new Vec2(l.StartPoint.X, l.StartPoint.Y), new Vec2(l.EndPoint.X, l.EndPoint.Y), 0.5, std, modelPerMm, gridToGround, std.BearingLayer, std.DistanceLayer));
-                    break;
-                case ACadSharp.Entities.Arc a:
-                {
-                    double sweep = a.EndAngle - a.StartAngle;
-                    while (sweep <= 0) sweep += Angles.TwoPi;
-                    texts.AddRange(Annotator.ArcCourseLabels(ToCore(new Vec2(a.Center.X, a.Center.Y), a.Radius, a.StartAngle, sweep), 0.5, std, modelPerMm, gridToGround, std.ArcLayer));
-                    break;
-                }
-                case LwPolyline lp when lp.Vertices.Count >= 2:
-                    texts.AddRange(ForSpans(Construct.Spans(lp.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), lp.Vertices.Select(v => v.Bulge).ToList(), lp.IsClosed), std, modelPerMm, gridToGround));
-                    break;
-                case Polyline2D p2 when p2.Vertices.Count >= 2:
-                    texts.AddRange(ForSpans(Construct.Spans(p2.Vertices.Select(v => new Vec2(v.Location.X, v.Location.Y)).ToList(), p2.Vertices.Select(v => v.Bulge).ToList(), p2.IsClosed), std, modelPerMm, gridToGround));
-                    break;
-            }
-            return texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList();
-        }
+        public static List<Entity> For(Entity e, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, double gridToGround = 1.0) =>
+            ForLinked(e, doc, std, modelPerMm, layer, gridToGround).Select(x => x.Label).ToList();
 
-        private static IEnumerable<DraftText> ForSpans(IEnumerable<Construct.Span> spans, FirmStandards std, double modelPerMm, double gridToGround)
+        /// <summary>
+        /// <see cref="For"/>, with each label's span index and what it says, for
+        /// <see cref="CourseLinks.Tag"/> once the labels are in the drawing.
+        /// </summary>
+        public static List<(Entity Label, int Span, string Kind)> ForLinked(Entity e, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, double gridToGround = 1.0)
         {
-            foreach (var s in spans)
+            var result = new List<(Entity, int, string)>();
+            if (!(e is Line || e is ACadSharp.Entities.Arc || e is LwPolyline || e is Polyline2D)) return result;
+            int i = 0;
+            foreach (var s in EntityOps.SpansOf(e))
             {
+                int span = i++;
                 if (Vec2.Distance(s.A, s.B) < 1e-9) continue;
                 if (!s.IsArc)
-                    foreach (var t in Annotator.StraightCourseLabels(s.A, s.B, 0.5, std, modelPerMm, gridToGround, std.BearingLayer, std.DistanceLayer)) yield return t;
+                {
+                    var t = Annotator.StraightCourseLabels(s.A, s.B, 0.5, std, modelPerMm, gridToGround, std.BearingLayer, std.DistanceLayer);
+                    result.Add((ToEntity(t[0], doc, modelPerMm, layer), span, CourseLinks.Kinds.Bearing));
+                    result.Add((ToEntity(t[1], doc, modelPerMm, layer), span, CourseLinks.Kinds.Distance));
+                }
                 else
                 {
                     // Core arcs carry a signed sweep, so the chord bearing runs the polyline's way.
-                    double start = Math.Atan2(s.A.Y - s.Center.Y, s.A.X - s.Center.X);
-                    foreach (var t in Annotator.ArcCourseLabels(ToCore(s.Center, s.Radius, start, s.Sweep), 0.5, std, modelPerMm, gridToGround, std.ArcLayer)) yield return t;
+                    var t = Annotator.ArcCourseLabels(ToCore(s), 0.5, std, modelPerMm, gridToGround, std.ArcLayer);
+                    result.Add((ToEntity(t[0], doc, modelPerMm, layer), span, CourseLinks.Kinds.ArcOuter));
+                    result.Add((ToEntity(t[1], doc, modelPerMm, layer), span, CourseLinks.Kinds.ArcInner));
                 }
             }
+            return result;
         }
 
         private static CoreArc ToCore(Vec2 c, double r, double start, double sweep) => new CoreArc
@@ -115,6 +108,17 @@ namespace FdDraft.Cad.Editing
             }
             var entities = texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList();
             edits.Insert(0, new AddEntitiesCommand(owner, entities, "Label"));
+            // Labels beside an unbroken course are linked to it, so RELABEL can follow it.
+            if (edits.Count == 1)
+                for (int k = 0; k < entities.Count; k++)
+                {
+                    string kind = span.IsArc ? (k == 0 ? CourseLinks.Kinds.ArcOuter : CourseLinks.Kinds.ArcInner)
+                        : style == CourseLabelStyle.BearingDashDistance ? CourseLinks.Kinds.BearingDistance
+                        : style == CourseLabelStyle.DistanceBeforeBearing ? CourseLinks.Kinds.DistanceBearing
+                        : style == CourseLabelStyle.SplitBearing ? (k == 0 ? CourseLinks.Kinds.SplitTop : CourseLinks.Kinds.SplitBottom)
+                        : texts[k].Kind == TextKind.Distance ? CourseLinks.Kinds.Distance : CourseLinks.Kinds.Bearing;
+                    CourseLinks.Tag(entities[k], e, si, kind);
+                }
             return edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Label");
         }
 
@@ -239,7 +243,12 @@ namespace FdDraft.Cad.Editing
             var texts = at.HasValue
                 ? SurveyLabels.CurveDataBlock(arc, at.Value, std, modelPerMm, gridToGround, std.ArcLayer)
                 : Annotator.ArcCourseLabels(arc, SurveyLabels.ParamOn(arc, pick), std, modelPerMm, gridToGround, std.ArcLayer).ToList();
-            return new AddEntitiesCommand(owner, texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList(), "Curve label");
+            var made = texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList();
+            var cmd = new AddEntitiesCommand(owner, made, "Curve label");
+            int si = EntityOps.SpansOf(e).TakeWhile(x => !(Vec2.Distance(x.A, s.Value.A) < 1e-9 && Vec2.Distance(x.B, s.Value.B) < 1e-9)).Count();
+            for (int k = 0; k < made.Count; k++)
+                CourseLinks.Tag(made[k], e, si, at.HasValue ? CourseLinks.Kinds.CurveLine + k.ToString(CultureInfo.InvariantCulture) : k == 0 ? CourseLinks.Kinds.ArcOuter : CourseLinks.Kinds.ArcInner);
+            return cmd;
         }
 
         /// <summary>"Manually place any text to follow the curve": <paramref name="text"/> along the arc or circle of <paramref name="e"/>, centred where it was picked.</summary>

@@ -88,6 +88,7 @@ namespace FdDraft.Cad
         {
             foreach (var layer in d.Layers.Values) Layer(layer.Name, layer.Aci, layer.LineType);
             var ms = _doc.ModelSpace;
+            var courseLabels = new List<(Entity Text, DraftText Source)>();
 
             foreach (var e in d.Entities)
             {
@@ -115,6 +116,30 @@ namespace FdDraft.Cad
                         var te = Text(t, modelPerMm);
                         ms.Entities.Add(te);
                         if (t.PointId.HasValue) PointLinks.Tag(te, t.PointId.Value);
+                        if (t.CourseKind.Length > 0) courseLabels.Add((te, t));
+                        break;
+                    }
+                }
+            }
+
+            // Course labels are linked to the linework they describe, so they follow it when it's edited.
+            if (courseLabels.Count > 0)
+            {
+                var spans = new List<(Entity Course, int Span, Vec2 A, Vec2 B)>();
+                foreach (var e in ms.Entities)
+                {
+                    if (!(e is Line || e is ACadSharp.Entities.Arc || e is LwPolyline || e is Polyline2D)) continue;
+                    int i = 0;
+                    foreach (var sp in FdDraft.Cad.Editing.EntityOps.SpansOf(e)) spans.Add((e, i++, sp.A, sp.B));
+                }
+                foreach (var (te, t) in courseLabels)
+                {
+                    foreach (var (course, span, a, b) in spans)
+                    {
+                        bool same = Vec2.Distance(a, t.CourseA) < 1e-6 && Vec2.Distance(b, t.CourseB) < 1e-6;
+                        bool reversed = Vec2.Distance(a, t.CourseB) < 1e-6 && Vec2.Distance(b, t.CourseA) < 1e-6;
+                        if (!same && !reversed) continue;
+                        CourseLinks.Tag(te, course, span, t.CourseKind, reversed);
                         break;
                     }
                 }

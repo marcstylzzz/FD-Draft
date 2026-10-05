@@ -235,7 +235,9 @@ namespace FdDraft.App
                 if (s.Length == 0) { EndTool(); return; }
                 if (!Num(s, out double k) || k <= 0) { Log("  type a factor greater than 0"); return; }
                 EndTool();
-                AfterPickEdit(TransformEntitiesCommand.Scale(targets, new XYZ(basePt.Value.X, basePt.Value.Y, 0), k, "Re-scale " + targets.Count));
+                var scaled = TransformEntitiesCommand.Scale(targets, new XYZ(basePt.Value.X, basePt.Value.Y, 0), k, "Re-scale " + targets.Count);
+                var rel = RelabelFor(targets, out _);
+                AfterPickEdit(rel == null ? scaled : new CompositeCommand(new IEditCommand[] { scaled, rel }, scaled.Description));
                 Log("  " + Plural(targets.Count, "entity", "entities") + " scaled by " + k.ToString(CultureInfo.InvariantCulture) + "  (Ctrl+Z undoes it)");
             };
         }

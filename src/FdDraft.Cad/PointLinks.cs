@@ -36,6 +36,9 @@ namespace FdDraft.Cad
         /// <summary>The figure code linework was tagged with, if any.</summary>
         public static string? TaggedCode(Entity e) => Get(e, CodeKey) is ExtendedDataString s ? s.Value : null;
 
+        internal static void SetValue(Entity e, string key, ExtendedDataRecord value) => Set(e, key, value);
+        internal static ExtendedDataRecord? GetValue(Entity e, string key) => Get(e, key);
+
         /// <summary>Sets one "KEY, value" pair in FD-Draft's extended data, leaving any others.</summary>
         private static void Set(Entity e, string key, ExtendedDataRecord value)
         {

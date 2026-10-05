@@ -40,13 +40,19 @@ namespace FdDraft.Core.Drafting
                     var a = course.A;
                     var b = course.B;
                     double t = ClearSpot(u => a + (b - a) * u, u => b - a, occupied, halfLen, halfHt);
-                    doc.Entities.AddRange(StraightCourseLabels(a, b, t, std, modelPerMm, gridToGround, doc.Layer(std.BearingLayer).Name, doc.Layer(std.DistanceLayer).Name));
+                    var labels = StraightCourseLabels(a, b, t, std, modelPerMm, gridToGround, doc.Layer(std.BearingLayer).Name, doc.Layer(std.DistanceLayer).Name);
+                    labels[0].CourseKind = "B"; labels[1].CourseKind = "D";
+                    foreach (var l in labels) { l.CourseA = a; l.CourseB = b; }
+                    doc.Entities.AddRange(labels);
                 }
                 else
                 {
                     var arc = course.Arc;
                     double t = ClearSpot(arc.PointAt, u => (arc.PointAt(u) - arc.Center).Left(), occupied, arcHalfLen, arcHalfHt);
-                    doc.Entities.AddRange(ArcCourseLabels(arc, t, std, modelPerMm, gridToGround, doc.Layer(std.ArcLayer).Name));
+                    var labels = ArcCourseLabels(arc, t, std, modelPerMm, gridToGround, doc.Layer(std.ArcLayer).Name);
+                    labels[0].CourseKind = "A0"; labels[1].CourseKind = "A1";
+                    foreach (var l in labels) { l.CourseA = arc.Start; l.CourseB = arc.End; }
+                    doc.Entities.AddRange(labels);
                 }
             }
             if (skippedShort > 0)

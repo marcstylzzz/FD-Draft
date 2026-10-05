@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  97 tests as of v0.4.40, all passing.
+  100 tests as of v0.4.41, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -353,7 +353,7 @@ on Windows; that's still Marc's job when he runs a build.
   in as numbered POINTs on the current layer, tagged with number and code
   so clicks find them; `Core/Job/PointFile.cs`). Imported points don't
   fill the Points list yet (that list is the drafted job's).
-- **v0.4.40** (current): hatches. The viewer, PDF and printing now draw
+- **v0.4.40**: hatches. The viewer, PDF and printing now draw
   HATCH entities (they were skipped before - any MSCAD hatching in Marc's
   drawings was invisible): solid fills with holes cut out (loops joined
   into one "keyhole" outline, `SceneBuilder.Keyhole`), pattern hatches as
@@ -363,6 +363,21 @@ on Windows; that's still Marc's job when he runs a build.
   45° by default): pick inside an area - the smallest closed polyline or
   circle round the pick, with closed figures inside it left clear as
   islands (`Cad/HatchEditing.cs`). Round-trips through DWG.
+- **v0.4.41** (current): labels follow their course - the long-standing
+  "relabel after STRETCH" item, done with a real persisted link, not a
+  heuristic. `Cad/CourseLinks.cs`: each bearing/distance/curve label
+  carries XData "COURSE" = course handle | span index | kind (B, D, BD, DB,
+  SB1/SB2, A0/A1, C0-C4) | span ends when labelled | R if it reads the span
+  backwards. Linked: Draft's own labels (TemplateDrafter matches each
+  DraftText's CourseA/B to a drawn span), LABEL, the MS Labels off-line
+  styles, CURVEON/CURVEOFF. `MainWindow.PushEdit` wraps STRETCH, MOVE,
+  ROTATE, drag-move, Properties edits, VXADD/VXDEL, TRIM/EXTEND, FILLET and
+  RESCALE: linked labels of reshaped courses get new text and are carried
+  to the same place relative to the span (so a flipped or dragged label
+  stays where it was put), in the same undo step; labels moved along with
+  their course just get their link refreshed. A vertex added elsewhere
+  renumbers spans - the span is found again by its ends. RELABEL brings
+  every linked label in the drawing up to date. Links survive DWG save.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -393,8 +408,8 @@ on Windows; that's still Marc's job when he runs a build.
    plan to a different sheet size/layout without re-drafting.
 4. ~~A real DIMENSION entity~~ - aligned (v0.4.13), linear and radius
    (v0.4.18). Angular and diameter in v0.4.19 - done.
-5. The course-relabeling-after-STRETCH problem - but only once a real
-   course<->label link is designed; don't guess at this with heuristics.
+5. ~~The course-relabeling-after-STRETCH problem~~ - done in v0.4.41 with a
+   persisted course<->label link (CourseLinks).
 6. **Phase 2**: the in-app document assistant (reads R-plans, registered
    plans, PIN/parcel-register pages, deeds; matches record courses to
    surveyed ones; fills the R-plan schedule and title block). Not started.

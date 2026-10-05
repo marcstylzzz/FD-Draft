@@ -462,9 +462,14 @@ it on Windows is the real test.
 
 ### Next in the app
 
-- Relabel courses after a STRETCH (the vertex moves and connected lines stay
-  joined, but their bearing/distance/area labels are not yet re-derived -
-  there is still no persisted link between a course and its label text).
+- ~~Relabel courses after a STRETCH~~ - done in v0.4.41: course labels carry a
+  persisted link (FD-Draft XData "COURSE": course handle, span index, what the
+  label says, the span's ends when labelled, and whether it reads the span
+  backwards) - `FdDraft.Cad.CourseLinks`. Drafted labels (TemplateDrafter),
+  LABEL, the MS Labels tools and curve labels are linked; edits that reshape
+  linework rewrite and carry their labels in the same undo step; RELABEL does
+  the whole drawing. Labels on "on-line" styles (the line is broken around
+  them) and older/foreign drawings' labels aren't linked.
 - A sheet setup panel for page size/layout changes (VPSCALE now covers
   scale-only changes in place).
 - LEADER's annotation is still a separate, unassociated TEXT entity next to

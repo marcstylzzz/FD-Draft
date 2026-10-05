@@ -2338,5 +2338,93 @@ namespace FdDraft.Tests
             Assert.Equal(4 + 5 + 1, k.Count, "outline, the hole closed back on itself, and the return");
             Assert.True(!FdDraft.Core.Geometry.Polygon.Contains(k, new Vec2(5, 5)) && FdDraft.Core.Geometry.Polygon.Contains(k, new Vec2(1, 1)), "the hole is out, the rest in");
         }
+
+        // ---- v0.4.41: labels follow their course -----------------------------------------------
+
+        public static void TestLabelsFollowTheirCourse()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var undo = new UndoStack();
+            var lot = new ACadSharp.Entities.LwPolyline();
+            foreach (var (x, y) in new[] { (0.0, 0.0), (40.0, 0.0), (40.0, 30.0) }) lot.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            doc.ModelSpace.Entities.Add(lot);
+            var made = CourseLabelling.ForLinked(lot, doc, std, 0.5, L);
+            undo.Push(new AddEntitiesCommand(doc.ModelSpace, made.Select(m => m.Label), "Label"));
+            foreach (var (t, span, kind) in made) CourseLinks.Tag(t, lot, span, kind);
+            var dist0 = (ACadSharp.Entities.TextEntity)made.Single(m => m.Span == 0 && m.Kind == CourseLinks.Kinds.Distance).Label;
+            var brg1 = (ACadSharp.Entities.TextEntity)made.Single(m => m.Span == 1 && m.Kind == CourseLinks.Kinds.Bearing).Label;
+            Assert.Equal("40.00", dist0.Value, "first course 40 m");
+            var link = CourseLinks.Read(dist0)!.Value;
+            Assert.True(link.Course == lot.Handle && link.Span == 0, "linked to its span");
+
+            // Stretch the shared corner from (40,0) to (50,0): both courses change.
+            var verts = VertexEditing.FindCoincident(new[] { lot }, new CSMath.XYZ(40, 0, 0), 1e-6);
+            undo.Push(new StretchVertexCommand(verts, new CSMath.XYZ(50, 0, 0), "Stretch"));
+            var rel = CourseLinks.Relabel(doc, doc.ModelSpace.Entities, new HashSet<ulong> { lot.Handle }, std, 0.5, 1.0, out int n)!;
+            undo.Push(rel);
+            Assert.Equal(4, n, "all four labels rewritten");
+            Assert.Equal("50.00", dist0.Value, "the distance follows");
+            Assert.Near(25, dist0.AlignmentPoint.X, 1e-9, "and sits at the new middle");
+            Assert.True(dist0.AlignmentPoint.Y < 0, "still below the line");
+            Assert.True(brg1.Value != "N00%%d00'00\"E" && brg1.Value.StartsWith("N"), "the second course's bearing changes: " + brg1.Value);
+            Assert.True(CourseLinks.Relabel(doc, doc.ModelSpace.Entities, null, std, 0.5, 1.0, out _) == null, "then everything matches");
+
+            undo.Undo();
+            Assert.Equal("40.00", dist0.Value, "undoing the relabel restores the text");
+            undo.Undo();
+            Assert.Near(40, lot.Vertices[1].Location.X, 1e-9, "and the stretch");
+
+            // Dragged or flipped to the other side, a label stays on that side.
+            dist0.AlignmentPoint = new CSMath.XYZ(dist0.AlignmentPoint.X, 1.5, 0); dist0.InsertPoint = dist0.AlignmentPoint;
+            undo.Push(new StretchVertexCommand(VertexEditing.FindCoincident(new[] { lot }, new CSMath.XYZ(0, 0, 0), 1e-6), new CSMath.XYZ(-20, 0, 0), "Stretch"));
+            undo.Push(CourseLinks.Relabel(doc, doc.ModelSpace.Entities, new HashSet<ulong> { lot.Handle }, std, 0.5, 1.0, out _)!);
+            Assert.True(dist0.Value == "60.00" && Math.Abs(dist0.AlignmentPoint.Y - 1.5) < 1e-9 && Math.Abs(dist0.AlignmentPoint.X - 10) < 1e-9, "60 m, still above, at the middle");
+
+            // A vertex added on the other course renumbers nothing it labels wrongly.
+            undo.Push(PolylineVertices.Insert(lot, 1, new Vec2(40, 15), "Insert", out _));
+            var relink = CourseLinks.Relabel(doc, doc.ModelSpace.Entities, null, std, 0.5, 1.0, out _);
+            Assert.Equal("60.00", dist0.Value, "the first course's label is untouched");
+            Assert.True(CourseLinks.Read(dist0)!.Value.Span == 0, "and keeps its span");
+        }
+
+        public static void TestLinkedLabelSurvivesDwg()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var line = Ln(0, 0, 0, 25);
+            doc.ModelSpace.Entities.Add(line);
+            var undo = new UndoStack();
+            undo.Push(CourseLabelling.Annotate(line, new Vec2(1, 12), CourseLabelStyle.BearingDashDistance, doc, std, 0.5, L, out _)!);
+            var t = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Single();
+            Assert.Equal(CourseLinks.Kinds.BearingDistance, CourseLinks.Read(t)!.Value.Kind, "annotate tools link their labels");
+            var path = Path.Combine(Path.GetTempPath(), "fdd-links-" + Guid.NewGuid().ToString("N") + ".dwg");
+            try
+            {
+                ACadSharp.IO.DwgWriter.Write(path, doc);
+                var back = ACadSharp.IO.DwgReader.Read(path);
+                var bt = back.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Single();
+                var bl = back.ModelSpace.Entities.OfType<ACadSharp.Entities.Line>().Single();
+                var link = CourseLinks.Read(bt);
+                Assert.True(link.HasValue && link.Value.Course == bl.Handle, "the link survives the DWG, pointing at the same line");
+                bl.EndPoint = new CSMath.XYZ(0, 30, 0);
+                CourseLinks.Relabel(back, back.ModelSpace.Entities, null, std, 0.5, 1.0, out int n);
+                Assert.True(n == 1 && bt.Value.EndsWith("30.00"), "and relabels after reopening: " + bt.Value);
+            }
+            finally { File.Delete(path); }
+        }
+
+        public static void TestDraftedCourseLabelsKnowTheirCourse()
+        {
+            var result = DraftPipeline.Run(FdJobReader.Read(Demo), ProVision);
+            var doc = result.Document;
+            var labels = doc.Entities.OfType<DraftText>().Where(t => t.Kind == TextKind.Bearing || t.Kind == TextKind.Distance || t.Kind == TextKind.ArcData).ToList();
+            Assert.True(labels.Count > 0 && labels.All(t => t.CourseKind.Length > 0), "every course label says what it is");
+            var spans = doc.Entities.OfType<DraftPolyline>().SelectMany(p => Construct.Spans(p.Vertices, p.Bulges, p.Closed)).ToList();
+            int found = labels.Count(t => spans.Any(sp => Vec2.Distance(sp.A, t.CourseA) < 1e-6 && Vec2.Distance(sp.B, t.CourseB) < 1e-6 || Vec2.Distance(sp.A, t.CourseB) < 1e-6 && Vec2.Distance(sp.B, t.CourseA) < 1e-6));
+            Assert.Equal(labels.Count, found, "and its course is a span of the drawn linework, so the drafter can link it");
+        }
     }
 }

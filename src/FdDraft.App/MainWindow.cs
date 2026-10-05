@@ -1142,6 +1142,7 @@ namespace FdDraft.App
                 case "COPY": case "CO": case "CP": StartCopy(); break;
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
+                case "RELABEL": RelabelAll(); break;
                 case "LABEL": case "LB": LabelSelection(); break;
                 case "ANGLE": case "AUTOANGLE": StartAutoAngle(); break;
                 case "ARROWS": StartArrowsOnLine(); break;
@@ -1232,6 +1233,8 @@ namespace FdDraft.App
             Log("          REVCLOUD · DONUT · SOLID filled plane · HATCH [S|L|X] solid / lines / crossed · INSERT [block] · TEXT · MTEXT");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
+            Log("  Labels made by LABEL and the MS Labels tools follow their course: STRETCH, MOVE, ROTATE, vertex and property edits,");
+            Log("          TRIM/EXTEND and FILLET rewrite them in the same undo step · RELABEL brings every linked label up to date");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
             Log("  MIRROR  select entities, MIRROR, pick two points on the mirror line, then Y/N to erase the originals");
             Log("  OFFSET  select lines/arcs/circles/polylines, OFFSET, type the distance, pick the side");
@@ -1756,6 +1759,46 @@ namespace FdDraft.App
             return baseScene + new Vec2(u, v);
         }
 
+        /// <summary>
+        /// Records an edit that changed <paramref name="touched"/>: any bearing/distance/curve
+        /// label linked to a reshaped course is rewritten and carried with it, in the same undo
+        /// step (labels that were themselves in the edit just get their text brought up to date).
+        /// </summary>
+        private void PushEdit(IEditCommand cmd, IEnumerable<Entity> touched)
+        {
+            var rel = RelabelFor(touched.ToList(), out int n);
+            _undo.Push(rel == null ? cmd : new CompositeCommand(new[] { cmd, rel }, cmd.Description));
+            if (n > 0) Log("  " + Plural(n, "label follows", "labels follow") + " the change");
+        }
+
+        private IEditCommand? RelabelFor(List<Entity> touched, out int count, bool all = false)
+        {
+            count = 0;
+            if (_doc == null || touched.Count == 0 && !all) return null;
+            var courses = all ? null : new HashSet<ulong>(touched.Where(e => e is Line || e is Arc || e is LwPolyline || e is Polyline2D).Select(e => e.Handle));
+            if (courses != null && courses.Count == 0) return null;
+            var moved = new HashSet<ulong>(touched.Select(e => e.Handle));
+            var labels = _doc.BlockRecords.SelectMany(b => b.Entities).OfType<TextEntity>().Where(t => CourseLinks.Read(t) != null).Cast<Entity>().ToList();
+            if (labels.Count == 0) return null;
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out _);
+            return CourseLinks.Relabel(_doc, labels, courses, std, mpm, GridToGround(std), out count, moved);
+        }
+
+        /// <summary>RELABEL: brings every linked label in the drawing up to date with its course.</summary>
+        private void RelabelAll()
+        {
+            if (!NeedDrawing()) return;
+            var cmd = RelabelFor(new List<Entity>(), out int n, all: true);
+            if (cmd == null) { Log("RELABEL  every linked label already matches its course (labels made by LABEL and the MS Labels tools are linked; drafted and older ones aren't)"); return; }
+            _undo.Push(cmd);
+            _dirty = true; UpdateTitle();
+            var c = _canvas.View.Center; var z = _canvas.View.Zoom;
+            Rebuild(fit: false);
+            _canvas.ZoomTo(c, z);
+            Log("RELABEL  " + Plural(n, "label", "labels") + " rewritten from their courses  (Ctrl+Z undoes it)");
+        }
+
         /// <summary>A tool that highlights its picks through the selection clears it when it ends,
         /// however it ends - so a Delete afterwards can't erase what was only being pointed at.</summary>
         private bool _clearSelectionOnEnd;
@@ -1860,7 +1903,7 @@ namespace FdDraft.App
             var cmds = new List<IEditCommand>();
             if (inModel.Count > 0) cmds.Add(TransformEntitiesCommand.Move(inModel, modelDelta.X, modelDelta.Y, "Move"));
             if (onPaper.Count > 0) cmds.Add(TransformEntitiesCommand.Move(onPaper, paperDelta.X, paperDelta.Y, "Move"));
-            _undo.Push(cmds.Count == 1 ? cmds[0] : new CompositeCommand(cmds, "Move"));
+            PushEdit(cmds.Count == 1 ? cmds[0] : new CompositeCommand(cmds, "Move"), entities);
             // The moved entities stay selected, so they can be nudged again.
             _canvas.Selected.Clear();
             foreach (var h in handles) _canvas.Selected.Add(h);
@@ -2126,7 +2169,7 @@ namespace FdDraft.App
                 edits.Add(new SetPropertyCommand<double>(row.Current, value, row.Set, row.Description));
             }
             if (edits.Count == 0) return;
-            _undo.Push(edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Edit properties"));
+            PushEdit(edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Edit properties"), SelectedEntities());
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
             UpdateProperties();
@@ -2211,7 +2254,7 @@ namespace FdDraft.App
         /// swaps in a rebuilt entity, so the selection moves to that.</summary>
         private void AfterVertexEdit(Entity poly, IEditCommand cmd, int showIndex)
         {
-            _undo.Push(cmd);
+            PushEdit(cmd, new[] { poly });
             if (cmd is ReplacePolyline2DCommand r && _canvas.Selected.Remove(poly.Handle)) _canvas.Selected.Add(r.Replacement.Handle);
             _propertiesVertexIndex = showIndex;
             _dirty = true; UpdateTitle();
@@ -2774,7 +2817,7 @@ namespace FdDraft.App
                     return;
                 }
                 double dx = model.Value.X - basePt.Value.X, dy = model.Value.Y - basePt.Value.Y;
-                _undo.Push(TransformEntitiesCommand.Move(entities, dx, dy, "Move " + entities.Count));
+                PushEdit(TransformEntitiesCommand.Move(entities, dx, dy, "Move " + entities.Count), entities);
                 _dirty = true; UpdateTitle();
                 EndTool();
                 _canvas.Selected.Clear();
@@ -2808,7 +2851,7 @@ namespace FdDraft.App
                     }
                     // Survey angles turn clockwise from north; the drawing's X/Y (East/North) plane
                     // rotates counter-clockwise for a positive angle, so clockwise input is negated.
-                    _undo.Push(TransformEntitiesCommand.Rotate(entities, pivot, -deg * Math.PI / 180.0, "Rotate " + entities.Count));
+                    PushEdit(TransformEntitiesCommand.Rotate(entities, pivot, -deg * Math.PI / 180.0, "Rotate " + entities.Count), entities);
                     _dirty = true; UpdateTitle();
                     EndTool();
                     _canvas.Selected.Clear();
@@ -2843,7 +2886,7 @@ namespace FdDraft.App
                     Log("  vertex " + NE(model.Value) + " (" + verts.Count + " endpoint" + (verts.Count == 1 ? "" : "s") + ") - pick its new position");
                     return;
                 }
-                _undo.Push(new StretchVertexCommand(verts, pt, "Stretch"));
+                PushEdit(new StretchVertexCommand(verts, pt, "Stretch"), verts.Select(v => v.Entity).Distinct().ToList());
                 _dirty = true; UpdateTitle();
                 EndTool();
                 _canvas.Selected.Clear();
@@ -3219,10 +3262,13 @@ namespace FdDraft.App
             double mpm = LabelModelPerMm(std, out string basis);
             double g2g = std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
             var pairs = new List<(Entity Source, Entity Copy)>();
+            var links = new List<(Entity Label, Entity Course, int Span, string Kind)>();
             foreach (var c in courses)
-                foreach (var t in CourseLabelling.For(c, _doc, std, mpm, GetOrCreateLayer, g2g)) pairs.Add((c, t));
+                foreach (var (t, span, kind) in CourseLabelling.ForLinked(c, _doc, std, mpm, GetOrCreateLayer, g2g)) { pairs.Add((c, t)); links.Add((t, c, span, kind)); }
             var cmd = EntityOps.AddBesideSources(pairs, "Label " + courses.Count);
             if (cmd == null) { Log("  nothing to label"); return; }
+            // Linked once they're in the drawing, so they follow their course from now on.
+            foreach (var (t, c, span, kind) in links) CourseLinks.Tag(t, c, span, kind);
             _undo.Push(cmd);
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
@@ -3285,7 +3331,7 @@ namespace FdDraft.App
                 var edges = all ? CurrentEntityOwner().Entities.ToList() : chosen;
                 var cmd = cut ? EntityOps.Trim(line, model.Value, edges) : EntityOps.Extend(line, model.Value, edges);
                 if (cmd == null) { Log(cut ? "  nothing crosses that line to trim it at" : "  nothing lies ahead of that end to extend to"); return; }
-                _undo.Push(cmd);
+                PushEdit(cmd, new Entity[] { line });
                 _dirty = true; UpdateTitle();
                 Rebuild(fit: false);
                 Log("  " + (cut ? "trimmed" : "extended") + " - " + (line.Owner != null
@@ -3331,7 +3377,7 @@ namespace FdDraft.App
                 var cmd = EntityOps.Fillet(first, firstPick, line, model.Value, radius, out var arc);
                 EndTool();
                 if (cmd == null) { Log("  can't fillet those - they're parallel, or too short for that radius"); return; }
-                _undo.Push(cmd);
+                PushEdit(cmd, new Entity[] { first, line });
                 _dirty = true; UpdateTitle();
                 Rebuild(fit: false);
                 Log(arc != null
