@@ -22,6 +22,8 @@ namespace FdDraft.App
         public double WindowLeft = double.NaN, WindowTop = double.NaN, WindowWidth = double.NaN, WindowHeight = double.NaN;
         /// <summary>Opens maximized the first time, then however it was left.</summary>
         public bool WindowMaximized = true;
+        /// <summary>Arrowhead length for house ties and leaders, paper mm (MSCAD's "set leader scale").</summary>
+        public double LeaderArrowMm = 2.5;
 
         public static string FilePath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FD-Draft", "app.ini");
@@ -46,6 +48,8 @@ namespace FdDraft.App
                 s.WindowWidth = ini.GetDouble("", "window_width", double.NaN);
                 s.WindowHeight = ini.GetDouble("", "window_height", double.NaN);
                 s.WindowMaximized = ini.GetBool("", "window_maximized", true);
+                s.LeaderArrowMm = ini.GetDouble("", "leader_arrow_mm", 2.5);
+                if (!(s.LeaderArrowMm > 0)) s.LeaderArrowMm = 2.5;
             }
             catch (IOException) { /* defaults */ }
             return s;
@@ -79,6 +83,7 @@ namespace FdDraft.App
                     "window_width=" + Num(WindowWidth),
                     "window_height=" + Num(WindowHeight),
                     "window_maximized=" + (WindowMaximized ? "true" : "false"),
+                    "leader_arrow_mm=" + Num(LeaderArrowMm),
                 });
             }
             catch (IOException) { /* settings are a convenience */ }

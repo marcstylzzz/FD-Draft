@@ -338,6 +338,7 @@ namespace FdDraft.App
             tray.ToolBars.Add(BuildViewBar());
             tray.ToolBars.Add(BuildSnapBar());
             tray.ToolBars.Add(BuildAnnotateBar());
+            tray.ToolBars.Add(BuildTiesBar());
             return tray;
         }
 
@@ -428,6 +429,239 @@ namespace FdDraft.App
             bar.Items.Add(B("Crv ↗", "Curve information placed anywhere in drawing (CURVEOFF) - pick the arc, then where the label goes", () => StartCurveLabel(true)));
             bar.Items.Add(B("Txt ⌒", "Manually place any text to follow the curve (ARCTEXT) - pick an arc or circle where the text goes, then type it", StartTextOnArc));
             return bar;
+        }
+
+        /// <summary>MSCAD's MS Ties toolbar, in its order (MSCAD's help text as the tooltips).</summary>
+        private ToolBar BuildTiesBar()
+        {
+            var bar = new ToolBar { Band = 1 };
+            Button B(string text, string tip, Action a) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(6, 2, 6, 2) }; b.Click += (s, e) => a(); return b; }
+            bar.Items.Add(B("Tie ↔", "Draw house ties to lot boundaries with arrows (HOUSETIEA) - pick the building, then the lot lines", () => StartHouseTies(true)));
+            bar.Items.Add(B("Tie", "Automatic house ties - no arrows (HOUSETIE) - pick the building, then the lot lines", () => StartHouseTies(false)));
+            bar.Items.Add(B("Tie ↔ ✋", "Manual house tie and place arrows (MTIEA) - pick a building corner, then the lot line", () => StartManualTie(true)));
+            bar.Items.Add(B("Tie ✋", "Manual entry of house ties - no arrows (MTIE) - pick a building corner, then the lot line", () => StartManualTie(false)));
+            bar.Items.Add(new Separator());
+            bar.Items.Add(B("Arrow size", "Set the arrow size for the straight and curvy leader and the ties (LEADERSCALE)", () => { BeginTool("LEADERSCALE"); AskLeaderScale(); }));
+            bar.Items.Add(B("Ldr ⌒", "Draw curvy leader with arrowhead (CLEADER) - pick the arrow point, a point the curve passes through, then its end", () => StartArrowLeader(true)));
+            bar.Items.Add(B("Ldr ↗", "Draw a straight leader with arrowhead (SLEADER) - pick the arrow point, then each bend (blank ends)", () => StartArrowLeader(false)));
+            bar.Items.Add(new Separator());
+            bar.Items.Add(B("Blocks ⋯", "Draw line of blocks (LINEBLOCKS) - a block repeated along a line, arc or polyline", StartLineOfBlocks));
+            bar.Items.Add(B("Line tbl", "Generate or add to a line table (LINETABLE) - select lines first, then pick the table's top-left corner", () => StartTable(false)));
+            bar.Items.Add(B("Curve tbl", "Generate or add to a curve table (CURVETABLE) - select arcs first, then pick the table's top-left corner", () => StartTable(true)));
+            return bar;
+        }
+
+        private bool NeedDrawing()
+        {
+            if (_doc != null && _canvas.Scene != null) return true;
+            Log("  open or draft a drawing first");
+            return false;
+        }
+
+        /// <summary>A pick turned into a model point, or null (and a note) when it's off the plan.</summary>
+        private Vec2? ModelPick(Vec2 p)
+        {
+            var model = _canvas.Scene!.ModelAt(p);
+            if (model == null) Log("  pick inside a viewport (or on Model)");
+            return model;
+        }
+
+        /// <summary>HOUSETIE / HOUSETIEA: pick the building, then lot lines (blank = every line in view), ties drawn square to each.</summary>
+        private void StartHouseTies(bool arrows)
+        {
+            if (!NeedDrawing()) return;
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = GridToGround(std);
+            string name = arrows ? "HOUSETIEA" : "HOUSETIE";
+            BeginTool(name);
+            Log(name + "  pick the building (a closed polyline), then the lot lines - blank uses every line in view (scale from " + basis + ")");
+            _prompt.Text = "House ties - pick the building:";
+            Entity? building = null;
+            var lots = new List<Entity>();
+            _awaitingPoint = p =>
+            {
+                var model = ModelPick(p);
+                if (model == null) return;
+                var hit = LineworkAt(model.Value);
+                if (hit == null) { Log("  nothing there"); return; }
+                if (building == null)
+                {
+                    if (TieEditing.Footprint(hit) == null) { Log("  the building must be a closed polyline"); return; }
+                    building = hit;
+                    _canvas.Selected.Clear(); _canvas.Selected.Add(hit.Handle); _canvas.InvalidateVisual();
+                    _prompt.Text = "House ties - pick lot lines (blank when done, or blank now for all):";
+                    return;
+                }
+                if (hit == building || lots.Contains(hit)) return;
+                lots.Add(hit);
+                _canvas.Selected.Add(hit.Handle); _canvas.InvalidateVisual();
+                Log("  lot line " + lots.Count + " picked");
+            };
+            _awaitingLine = s =>
+            {
+                if (building == null) { EndTool(); return; }
+                var useLots = lots.Count > 0 ? lots : CurrentEntityOwner().Entities.Where(e => e != building && (e is Line || e is LwPolyline || e is Polyline2D)).ToList();
+                var cmd = TieEditing.Automatic(building, useLots, arrows, _settings.LeaderArrowMm, _doc!, std, mpm, g2g, GetOrCreateLayer, out int count, out string why);
+                EndTool();
+                _canvas.Selected.Clear();
+                if (cmd == null) { Log("  " + why); _canvas.InvalidateVisual(); return; }
+                AfterPickEdit(cmd);
+                Log("  " + Plural(count, "house tie", "house ties") + " drawn  (Ctrl+Z undoes them)");
+            };
+        }
+
+        /// <summary>MTIE / MTIEA: pick a corner (snaps help), then the lot line; repeats.</summary>
+        private void StartManualTie(bool arrows)
+        {
+            if (!NeedDrawing()) return;
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = GridToGround(std);
+            string name = arrows ? "MTIEA" : "MTIE";
+            BeginTool(name);
+            Log(name + "  pick a building corner, then the lot line it ties to (Esc or right-click ends)");
+            _prompt.Text = "House tie - pick the building corner:";
+            Vec2? corner = null;
+            _awaitingPoint = p =>
+            {
+                var model = ModelPick(p);
+                if (model == null) return;
+                if (corner == null) { corner = model.Value; _canvas.RubberFrom = p; _prompt.Text = "House tie - pick the lot line:"; return; }
+                var lot = LineworkAt(model.Value);
+                if (lot == null) { Log("  no line there"); return; }
+                var cmd = TieEditing.Manual(CurrentEntityOwner(), corner.Value, lot, model.Value, arrows, _settings.LeaderArrowMm, _doc!, std, mpm, g2g, GetOrCreateLayer, out double len, out string why);
+                corner = null; _canvas.RubberFrom = null;
+                _prompt.Text = "House tie - pick the building corner:";
+                if (cmd == null) { Log("  " + why); return; }
+                AfterPickEdit(cmd);
+                Log("  tie " + len.ToString("F" + Math.Max(0, std.DistanceDecimals), CultureInfo.InvariantCulture) + "  (Ctrl+Z undoes it)");
+            };
+            _awaitingLine = s => EndTool();
+        }
+
+        /// <summary>LEADERSCALE: asks for the arrowhead length (paper mm).</summary>
+        private void AskLeaderScale()
+        {
+            _prompt.Text = "Arrow size in paper mm <" + _settings.LeaderArrowMm.ToString("0.##", CultureInfo.InvariantCulture) + ">:";
+            Log("LEADERSCALE  arrowhead length for leaders and house ties, in paper mm (now " + _settings.LeaderArrowMm.ToString("0.##", CultureInfo.InvariantCulture) + ")");
+            _awaitingPoint = null;
+            _awaitingLine = s =>
+            {
+                if (s.Length > 0)
+                {
+                    if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v > 0 && v < 100) { _settings.LeaderArrowMm = v; _settings.Save(); Log("  arrow size " + v.ToString("0.##", CultureInfo.InvariantCulture) + " mm"); }
+                    else { Log("  type a size in mm, e.g. 2.5"); return; }
+                }
+                EndTool();
+            };
+        }
+
+        /// <summary>CLEADER / SLEADER: an arrow-headed leader (no text - MSCAD's own leaders are bare too).</summary>
+        private void StartArrowLeader(bool curvy)
+        {
+            if (!NeedDrawing()) return;
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out _);
+            string layer = CurrentLayer();
+            string name = curvy ? "CLEADER" : "SLEADER";
+            BeginTool(name);
+            Log(name + "  on layer " + layer + (curvy ? " - pick the arrow point, a point on the curve, then its end" : " - pick the arrow point, then each bend; blank ends"));
+            _prompt.Text = "Leader - the arrow point:";
+            var picks = new List<Vec2>();
+            void Finish()
+            {
+                var cmd = TieEditing.Leader(CurrentEntityOwner(), picks, curvy, _settings.LeaderArrowMm, mpm, layer, GetOrCreateLayer);
+                EndTool();
+                if (cmd == null) { Log("  *cancelled*"); return; }
+                AfterPickEdit(cmd);
+                Log("  leader drawn  (Ctrl+Z undoes it)");
+            }
+            _awaitingPoint = p =>
+            {
+                var model = ModelPick(p);
+                if (model == null) return;
+                picks.Add(model.Value);
+                _canvas.RubberFrom = p;
+                if (curvy && picks.Count == 3) { Finish(); return; }
+                _prompt.Text = curvy ? (picks.Count == 1 ? "Leader - a point the curve passes through:" : "Leader - its end:") : "Leader - next point (blank ends):";
+            };
+            _awaitingLine = s => { if (picks.Count >= 2) Finish(); else { EndTool(); Log("  *cancelled*"); } };
+        }
+
+        /// <summary>LINEBLOCKS: the selected (or picked) block, repeated along a picked path at a typed spacing.</summary>
+        private void StartLineOfBlocks()
+        {
+            if (!NeedDrawing()) return;
+            if (_activeTool.Length > 0) EndTool();
+            var block = SelectedEntities().OfType<Insert>().FirstOrDefault();
+            BeginTool("LINEBLOCKS");
+            Log("LINEBLOCKS  " + (block == null ? "pick the block to repeat, then " : "repeating " + block.Block.Name + " - pick ") + "the line, arc or polyline to follow, then type the spacing (add R to keep the block's own rotation, e.g. \"5 R\")");
+            _prompt.Text = block == null ? "Line of blocks - pick the block (near its insertion point):" : "Line of blocks - pick the path:";
+            Entity? path = null;
+            _awaitingPoint = p =>
+            {
+                var model = ModelPick(p);
+                if (model == null) return;
+                if (block == null)
+                {
+                    double tol = Math.Max(15 / _canvas.View.Zoom, 1e-6);
+                    block = CurrentEntityOwner().Entities.OfType<Insert>()
+                        .OrderBy(i => Vec2.Distance(new Vec2(i.InsertPoint.X, i.InsertPoint.Y), model.Value))
+                        .FirstOrDefault(i => Vec2.Distance(new Vec2(i.InsertPoint.X, i.InsertPoint.Y), model.Value) < tol);
+                    if (block == null) { Log("  no block there - pick at a block's insertion point (or select it first)"); return; }
+                    Log("  block " + block.Block.Name);
+                    _prompt.Text = "Line of blocks - pick the path:";
+                    return;
+                }
+                path = LineworkAt(model.Value, circles: true);
+                if (path == null) { Log("  no line there"); return; }
+                _prompt.Text = "Line of blocks - spacing:";
+                _canvas.ToolActive = false;
+            };
+            _awaitingLine = s =>
+            {
+                if (path == null || block == null) { EndTool(); return; }
+                var parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0 || !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double spacing) || spacing <= 0) { Log("  type the spacing in drawing units"); return; }
+                bool keep = parts.Length > 1 && parts[1].Equals("R", StringComparison.OrdinalIgnoreCase);
+                var cmd = TieEditing.LineOfBlocks(block, path, spacing, !keep, out int count, out string why);
+                EndTool();
+                if (cmd == null) { Log("  " + why); return; }
+                AfterPickEdit(cmd);
+                Log("  " + Plural(count, "block", "blocks") + " placed  (Ctrl+Z undoes them)");
+            };
+        }
+
+        /// <summary>LINETABLE / CURVETABLE: tag the selected courses / arcs and table them where picked.</summary>
+        private void StartTable(bool curves)
+        {
+            if (!NeedDrawing()) return;
+            if (_activeTool.Length > 0) EndTool();
+            var sel = SelectedEntities();
+            string name = curves ? "CURVETABLE" : "LINETABLE";
+            if (sel.Count == 0) { Log(name + "  select the " + (curves ? "arcs" : "lines") + " to table first (click, Ctrl+click or drag a box), then " + name); return; }
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = GridToGround(std);
+            BeginTool(name);
+            Log(name + "  pick the table's top-left corner (scale from " + basis + ")");
+            _prompt.Text = (curves ? "Curve" : "Line") + " table - pick its top-left corner:";
+            _awaitingPoint = p =>
+            {
+                var model = ModelPick(p);
+                if (model == null) return;
+                var cmd = TieEditing.Table(curves, sel, CurrentEntityOwner(), model.Value, _doc!, std, mpm, g2g, GetOrCreateLayer, out int count, out string why);
+                EndTool();
+                if (cmd == null) { Log("  " + why); return; }
+                _canvas.Selected.Clear();
+                AfterPickEdit(cmd);
+                Log("  " + Plural(count, curves ? "curve" : "line", curves ? "curves" : "lines") + " tagged and tabled  (Ctrl+Z undoes it)");
+            };
+            _awaitingLine = s => EndTool();
         }
 
         /// <summary>The line, arc or polyline (or circle, with <paramref name="circles"/>) nearest a model point, within a few pixels.</summary>
@@ -821,6 +1055,16 @@ namespace FdDraft.App
                 case "CURVEON": StartCurveLabel(false); break;
                 case "CURVEOFF": StartCurveLabel(true); break;
                 case "ARCTEXT": case "TEXTONARC": StartTextOnArc(); break;
+                case "HOUSETIE": StartHouseTies(false); break;
+                case "HOUSETIEA": StartHouseTies(true); break;
+                case "MTIE": StartManualTie(false); break;
+                case "MTIEA": StartManualTie(true); break;
+                case "LEADERSCALE": BeginTool("LEADERSCALE"); AskLeaderScale(); break;
+                case "CLEADER": StartArrowLeader(true); break;
+                case "SLEADER": StartArrowLeader(false); break;
+                case "LINEBLOCKS": StartLineOfBlocks(); break;
+                case "LINETABLE": StartTable(false); break;
+                case "CURVETABLE": StartTable(true); break;
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
@@ -872,6 +1116,8 @@ namespace FdDraft.App
             Log("          BRGDIST bearing opposite distance · BRGDASH bearing before distance · DISTBRG distance before bearing");
             Log("          BRGDISTL bearing above distance · DISTBRGL distance above bearing · ANGLE angle between two lines · ARROWS arrows beside a line");
             Log("          CURVEON curve data along an arc · CURVEOFF curve data placed anywhere · ARCTEXT text following an arc or circle");
+            Log("  MS Ties toolbar: HOUSETIE / HOUSETIEA automatic house ties (A = with arrows) · MTIE / MTIEA manual tie · LEADERSCALE arrow size");
+            Log("          CLEADER curvy leader · SLEADER straight leader · LINEBLOCKS block repeated along a line · LINETABLE / CURVETABLE tag + table the selection");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");

@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  83 tests as of v0.4.33, all passing.
+  86 tests as of v0.4.34, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -269,7 +269,7 @@ on Windows; that's still Marc's job when he runs a build.
   (screenshot 4). Every button, its MSCAD help text and command are in
   **docs/MSCAD-TOOLBARS.md** - build MSCAD-style tools from that, not
   guesses.
-- **v0.4.33** (current): the rest of MS Labels 1, in MSCAD's order -
+- **v0.4.33**: the rest of MS Labels 1, in MSCAD's order -
   SPLITBRG ("split a bearing into deg - min - sec across line": FD-Draft
   puts the degrees on one side of the line and the minutes/seconds on the
   other - an interpretation, Marc to confirm), DISTBRG (distance before
@@ -280,6 +280,18 @@ on Windows; that's still Marc's job when he runs a build.
   following an arc or circle, one TEXT per letter). Tooltips are MSCAD's own
   help text. The viewer now fills LWPOLYLINE widths (arrowheads, donuts,
   wide borders) - before, only the centreline was drawn.
+- **v0.4.34** (current): the MS Ties toolbar (row 2, after the snaps) -
+  HOUSETIE / HOUSETIEA (pick the closed building polyline, then lot lines
+  or blank for every line: ties from the corners square to each lot line,
+  the two nearest corners per line, never through the house; A = arrows),
+  MTIE / MTIEA (manual: pick a corner, then the lot line), LEADERSCALE
+  (arrow length in paper mm, saved in app.ini), CLEADER curvy and SLEADER
+  straight arrow leaders, LINEBLOCKS (a block repeated along a line, arc or
+  polyline at a spacing, turned to follow it), LINETABLE / CURVETABLE
+  (tags L1.../C1... on the selection, numbered on from the drawing's
+  existing tags, and a ruled table). Skipped from that toolbar: MSCAD's
+  "Custom Posts Icons" (they insert MSCAD's own block library) and
+  "multities" (radial tie table) - not built yet.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

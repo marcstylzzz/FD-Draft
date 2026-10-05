@@ -2013,5 +2013,95 @@ namespace FdDraft.Tests
             undo.Push(CourseLabelling.TextOnArc(arc, new Vec2(0, 62), "AB", 2.5, "0", doc, 0.5, L, "", out _)!);
             Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Count() == 9, "text on the arc, a letter at a time");
         }
+
+        // ---- MS Ties (v0.4.34) ----------------------------------------------------------------
+
+        public static void TestAutomaticHouseTies()
+        {
+            // A 10 x 8 house in a 30 x 40 lot: front (south) 6 m back, east side 5 m in.
+            var house = new List<Vec2> { new Vec2(15, 6), new Vec2(25, 6), new Vec2(25, 14), new Vec2(15, 14) };
+            var lot = Construct.Spans(new List<Vec2> { new Vec2(0, 0), new Vec2(30, 0), new Vec2(30, 40), new Vec2(0, 40) }, null, true);
+            var ties = Ties.Automatic(house, lot);
+            Assert.Equal(8, ties.Count, "two corners to each of the four lot lines");
+            var south = ties.Where(t => Math.Abs(t.To.Y) < 1e-9).ToList();
+            Assert.True(south.Count == 2 && south.All(t => Math.Abs(t.Length - 6) < 1e-9 && Math.Abs(t.From.Y - 6) < 1e-9), "front ties from the two front corners, 6 m");
+            var east = ties.Where(t => Math.Abs(t.To.X - 30) < 1e-9).ToList();
+            Assert.True(east.All(t => Math.Abs(t.Length - 5) < 1e-9), "east ties 5 m");
+            Assert.True(ties.All(t => Math.Abs(Vec2.Dot(t.To - t.From, t.To - t.From) - t.Length * t.Length) < 1e-9), "lengths agree");
+            // A tie may not pass through the house: none from a back corner to the front line.
+            Assert.True(!south.Any(t => Math.Abs(t.From.Y - 14) < 1e-9), "back corners don't tie through the house");
+
+            var manual = Ties.Manual(new Vec2(25, 14), Construct.Span.Straight(new Vec2(30, 0), new Vec2(30, 40)))!.Value;
+            Assert.Near(5, manual.Length, 1e-9, "manual tie square to the line");
+            var drawn = Ties.Draw(manual, true, 2.5, FirmStandards.Default(), 0.5, 1.0, "TIES");
+            Assert.True(drawn.Line.EndWidths[0] > 0 && drawn.Line.StartWidths[2] > 0, "arrows both ends");
+            Assert.Equal("5.00", drawn.Text.Text, "its distance");
+        }
+
+        public static void TestLeadersBlocksAndTables()
+        {
+            var straight = Ties.StraightLeader(new[] { new Vec2(0, 0), new Vec2(10, 0), new Vec2(10, 5) }, 1.0, "L");
+            Assert.Equal(4, straight.Vertices.Count, "tip, back of head, bend, end");
+            Assert.True(straight.EndWidths[0] > 0, "an arrowhead at the tip");
+            var curvy = Ties.CurvyLeader(new Vec2(0, 0), new Vec2(5, 3), new Vec2(10, 0), 1.0, "L");
+            Assert.True(curvy.Vertices.Count == 3 && Math.Abs(curvy.Bulges[1]) > 0.01, "a head and then one arc");
+            Assert.True(curvy.Vertices[1].Y > 0, "the head follows the curve's start");
+
+            var path = Construct.Spans(new List<Vec2> { new Vec2(0, 0), new Vec2(10, 0), new Vec2(10, 10) }, null, false);
+            var spots = Ties.AlongPath(path, 4);
+            Assert.Equal(6, spots.Count, "0,4,8 then 2,6,10 up the second leg (20 m at 4 m)");
+            Assert.Near(10, spots[3].At.X, 1e-9, "carries round the corner");
+            Assert.Near(2, spots[3].At.Y, 1e-9, "the remainder carried over");
+            Assert.Near(Math.PI / 2, spots[3].Rotation, 1e-9, "turned to the second leg");
+
+            var std = FirmStandards.Default();
+            var rows = new List<string[]> { Ties.LineRow("L1", new Vec2(0, 0), new Vec2(0, 12.5), std, 1.0) };
+            Assert.True(rows[0][1].StartsWith("N00") && rows[0][2] == "12.50", "line row: tag, bearing, distance");
+            var (texts, rules) = Ties.Table("LINE TABLE", Ties.LineHeadings, rows, new Vec2(100, 100), 2.0, 0.5, "TBL", "");
+            Assert.Equal(1 + 3 + 3, texts.Count, "title, headings, one row");
+            Assert.True(rules[0].Closed && rules.Count == 1 + 2 + 2, "frame, two row rules, two column rules");
+            Assert.Equal(4, Ties.NextTag("L", new[] { "L1", "L3", "LOT 5", "C9" }), "numbering carries on from the drawing's tags");
+        }
+
+        public static void TestTieToolsOnDrawingEntities()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var undo = new UndoStack();
+            var house = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (15.0, 6.0), (25.0, 6.0), (25.0, 14.0), (15.0, 14.0) }) house.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            var front = Ln(0, 0, 30, 0);
+            doc.ModelSpace.Entities.Add(house); doc.ModelSpace.Entities.Add(front);
+            undo.Push(TieEditing.Automatic(house, new[] { front }, false, 2.5, doc, std, 0.5, 1.0, L, out int n, out _)!);
+            Assert.Equal(2, n, "two front ties");
+            Assert.Equal(2, doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Count(t => t.Value == "6.00"), "each labelled 6.00");
+            undo.Undo();
+            Assert.True(!doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(), "one undo removes them");
+
+            var arc = new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(0, 50, 0), Radius = 10, StartAngle = 0, EndAngle = Math.PI / 2 };
+            doc.ModelSpace.Entities.Add(arc);
+            undo.Push(TieEditing.Table(false, new ACadSharp.Entities.Entity[] { front, house }, doc.ModelSpace, new Vec2(60, 60), doc, std, 0.5, 1.0, L, out int lines, out _)!);
+            Assert.Equal(5, lines, "the front line and the house's four sides");
+            var tags = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Select(t => t.Value).ToList();
+            Assert.True(tags.Count(t => t == "L1") == 2 && tags.Contains("L5") && tags.Contains("LINE TABLE"), "tagged on the plan and in the table");
+            undo.Push(TieEditing.Table(false, new ACadSharp.Entities.Entity[] { front }, doc.ModelSpace, new Vec2(60, 30), doc, std, 0.5, 1.0, L, out _, out _)!);
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "L6"), "a second table numbers on");
+            undo.Push(TieEditing.Table(true, new ACadSharp.Entities.Entity[] { arc, front }, doc.ModelSpace, new Vec2(60, 0), doc, std, 0.5, 1.0, L, out int curves, out _)!);
+            Assert.Equal(1, curves, "curve table takes only the arc");
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "C1") , "tagged C1");
+
+            var block = new ACadSharp.Tables.BlockRecord("POST");
+            block.Entities.Add(new ACadSharp.Entities.Circle { Radius = 0.2 });
+            doc.BlockRecords.Add(block);
+            var ins = new ACadSharp.Entities.Insert(block) { InsertPoint = new CSMath.XYZ(0, 0, 0) };
+            doc.ModelSpace.Entities.Add(ins);
+            undo.Push(TieEditing.LineOfBlocks(ins, front, 5, true, out int posts, out _)!);
+            Assert.Equal(7, posts, "every 5 m along 30 m, both ends");
+            Assert.Equal(8, doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Insert>().Count(), "added beside the original");
+
+            undo.Push(TieEditing.Leader(doc.ModelSpace, new[] { new Vec2(0, 0), new Vec2(5, 3), new Vec2(10, 0) }, true, 2.5, 0.5, "0", L)!);
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Any(p => p.Vertices.Count == 3 && p.Vertices[0].EndWidth > 0), "a curvy leader with its head");
+        }
     }
 }
