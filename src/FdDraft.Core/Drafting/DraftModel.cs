@@ -67,6 +67,9 @@ namespace FdDraft.Core.Drafting
         public List<double> Bulges { get; } = new List<double>();
         public bool Closed { get; set; }
         public string Code { get; set; } = "";
+        /// <summary>Per-vertex start/end widths (drawing units) for arrowheads; empty = no width.</summary>
+        public List<double> StartWidths { get; } = new List<double>();
+        public List<double> EndWidths { get; } = new List<double>();
 
         public void Add(Vec2 p, double bulgeToNext = 0)
         {

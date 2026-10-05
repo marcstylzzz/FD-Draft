@@ -1918,5 +1918,100 @@ namespace FdDraft.Tests
             Assert.True(two.Count == 2 && two.All(t => t.AlignmentPoint.Y < 10), "bearing and distance both below the south line, where it was picked");
             Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single() == lot, "the lot is untouched");
         }
+
+        // ---- the rest of MS Labels 1 (v0.4.33) ------------------------------------------------
+
+        public static void TestSplitBearingAndDistanceBeforeBearing()
+        {
+            var std = FirmStandards.Default();
+            var a = new Vec2(0, 0); var b = new Vec2(30, 40);   // N36°52'12"E
+            var split = CourseAnnotation.Layout(a, b, new Vec2(20, 0), CourseLabelStyle.SplitBearing, std, 0.5).Texts;
+            Assert.Equal(2, split.Count, "degrees one side, minutes and seconds the other");
+            Assert.Equal("N36°", split[0].Text, "the degrees");
+            Assert.Equal("52'12\"E", split[1].Text, "the rest");
+            var up = new Vec2(-0.8, 0.6);
+            Assert.True(Vec2.Dot(split[0].Position - new Vec2(15, 20), up) > 0 && Vec2.Dot(split[1].Position - new Vec2(15, 20), up) < 0, "across the line, centred on it");
+            var db = CourseAnnotation.Layout(a, b, new Vec2(20, 0), CourseLabelStyle.DistanceBeforeBearing, std, 0.5).Texts.Single();
+            Assert.True(db.Text.StartsWith("50.") && db.Text.EndsWith("E"), "distance first, then bearing: " + db.Text);
+            Assert.True(Vec2.Dot(db.Position - new Vec2(15, 20), up) < 0, "on the picked side");
+        }
+
+        public static void TestAngleBetweenTwoLines()
+        {
+            var std = FirmStandards.Default();
+            // Lines along +X and at 60° through the origin; pick inside the 60° sector, then inside the 120° one.
+            var u1 = new Vec2(1, 0); var u2 = new Vec2(0.5, Math.Sqrt(3) / 2);
+            var r = SurveyLabels.Angle(new Vec2(0, 0), u1, u2, new Vec2(5, 1.5), std, 0.5, "ANG")!.Value;
+            Assert.Equal("60°00'00\"", r.Text.Text, "the sector picked");
+            Assert.Near(5.220, r.Text.Position.Length, 0.01, "text at the pick's distance from the corner");
+            var r2 = SurveyLabels.Angle(new Vec2(0, 0), u1, u2, new Vec2(-2, 3), std, 0.5, "ANG")!.Value;
+            Assert.Equal("120°00'00\"", r2.Text.Text, "the other side: the supplement");
+            Assert.Near(Math.Tan(Math.PI * 2 / 3 / 4), r2.Arc.Bulges[0], 1e-9, "its arc spans the angle");
+            Assert.True(r2.Arc.Vertices.All(v => v.Y >= -1e-9), "and sits in that sector");
+            Assert.Equal("45°00'00\"", SurveyLabels.Dms(Math.PI / 4 - 1e-12), "seconds carry, never 60\"");
+        }
+
+        public static void TestArrowsAlongALine()
+        {
+            var std = FirmStandards.Default();
+            var pl = SurveyLabels.ArrowsAlong(new Vec2(0, 0), new Vec2(40, 0), new Vec2(20, -5), std, 0.5, "ARR")!;
+            Assert.Equal(4, pl.Vertices.Count, "tip, back of head, back of head, tip");
+            Assert.True(pl.Vertices.All(v => v.Y < 0), "on the picked side");
+            Assert.Near(0, pl.Vertices[0].X, 1e-9, "from the start of the course");
+            Assert.Near(40, pl.Vertices[3].X, 1e-9, "to its end");
+            Assert.True(pl.StartWidths[0] == 0 && pl.EndWidths[0] > 0 && pl.StartWidths[2] > 0 && pl.EndWidths[2] == 0, "tapered heads at both ends");
+            Assert.True(SurveyLabels.ArrowsAlong(new Vec2(0, 0), new Vec2(1, 0), new Vec2(0, 1), std, 0.5, "ARR") == null, "no room for heads on a 1 m course at 1:500");
+        }
+
+        public static void TestCurveDataAndTextOnArc()
+        {
+            var std = FirmStandards.Default();
+            var arc = Arc.ThroughThreePoints(new Vec2(10, 0), new Vec2(0, 10), new Vec2(-10, 0))!; // half circle, R 10, CCW
+            var lines = SurveyLabels.CurveData(arc, std, 1.0);
+            Assert.True(lines[0].StartsWith("R=10.") && lines[1].StartsWith("A=31.4") && lines[2].StartsWith("C=20."), "R, A, C: " + string.Join(" ", lines));
+            Assert.True(lines[3].StartsWith("S90") || lines[3].StartsWith("N90"), "chord bearing: " + lines[3]);
+            Assert.Equal("Δ=180°00'00\"", lines[4], "delta");
+            var block = SurveyLabels.CurveDataBlock(arc, new Vec2(50, 50), std, 0.5, 1.0, "ARC");
+            Assert.True(block.Count == 5 && block.Zip(block.Skip(1), (x, y) => x.Position.Y > y.Position.Y).All(z => z), "a block of lines reading down");
+            Assert.Near(0.5, SurveyLabels.ParamOn(arc, new Vec2(0, 30)), 1e-9, "the top projects to halfway");
+
+            var text = SurveyLabels.TextOnArc(new Vec2(0, 0), 10, "CREEK", new Vec2(0, 12), 2.5, 0.5, "TXT", "");
+            Assert.Equal(5, text.Count, "one text per letter");
+            Assert.True(text.All(t => Math.Abs(t.Position.Length - 10) < 1e-9), "every letter on the arc");
+            Assert.True(text.Zip(text.Skip(1), (x, y) => x.Position.X < y.Position.X).All(z => z), "reading left to right over the top");
+            Assert.True(text[0].Position.X < 0 && text[4].Position.X > 0, "centred where picked");
+            var under = SurveyLabels.TextOnArc(new Vec2(0, 0), 10, "AB", new Vec2(0, -12), 2.5, 0.5, "TXT", "");
+            Assert.True(under[0].Position.X < under[1].Position.X, "and left to right underneath too");
+            Assert.True(Math.Abs(Math.Cos(under[0].Rotation)) > 0.9 && Math.Cos(under[0].Rotation) > 0, "upright under the arc");
+        }
+
+        public static void TestLabels1ToolsOnDrawingEntities()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var std = FirmStandards.Default();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var undo = new UndoStack();
+            var l1 = Ln(0, 0, 40, 0); var l2 = Ln(10, -10, 10, 30);
+            doc.ModelSpace.Entities.Add(l1); doc.ModelSpace.Entities.Add(l2);
+            undo.Push(CourseLabelling.AngleBetween(l1, new Vec2(30, 0), l2, new Vec2(10, 20), new Vec2(14, 4), doc, std, 0.5, L, out _)!);
+            var t = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Single();
+            Assert.Equal("90%%d00'00\"", t.Value, "a right angle, written with the DWG degree code");
+            Assert.Equal(1, doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Count(), "and its arc");
+            undo.Undo();
+            undo.Push(CourseLabelling.ArrowsOnLine(l1, new Vec2(20, 2), std, 0.5, L, out _)!);
+            var arrows = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single();
+            Assert.True(arrows.Vertices[0].EndWidth > 0 && arrows.Vertices.All(v => v.Location.Y > 0), "arrow polyline with widths, above the line");
+            var scene = new SceneBuilder(doc).Model();
+            Assert.True(scene.AllPrims().Count(p => p.Kind == PrimKind.Fill) == 2, "the viewer fills both heads");
+            var arc = new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(0, 50, 0), Radius = 10, StartAngle = 0, EndAngle = Math.PI };
+            doc.ModelSpace.Entities.Add(arc);
+            undo.Push(CourseLabelling.CurveLabel(arc, new Vec2(0, 61), null, doc, std, 0.5, L, out _)!);
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Count() == 2, "curve data on the arc: two lines");
+            undo.Push(CourseLabelling.CurveLabel(arc, new Vec2(0, 61), new Vec2(30, 70), doc, std, 0.5, L, out _)!);
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Count() == 7, "plus a five-line block placed off it");
+            Assert.True(CourseLabelling.CurveLabel(l1, new Vec2(20, 0), null, doc, std, 0.5, L, out string why) == null && why.Length > 0, "a straight line has no curve data");
+            undo.Push(CourseLabelling.TextOnArc(arc, new Vec2(0, 62), "AB", 2.5, "0", doc, 0.5, L, "", out _)!);
+            Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.TextEntity>().Count() == 9, "text on the arc, a letter at a time");
+        }
     }
 }

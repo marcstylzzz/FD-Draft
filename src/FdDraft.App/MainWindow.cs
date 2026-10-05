@@ -391,17 +391,23 @@ namespace FdDraft.App
             return bar;
         }
 
-        /// <summary>MSCAD's course annotate tools, by their MSCAD names, with FD-Draft command names.</summary>
+        /// <summary>
+        /// MSCAD's MS Labels 1 toolbar, in its order: the course-label styles (their MSCAD help
+        /// text as the name), with FD-Draft command names. The rest of the toolbar (angle,
+        /// arrows, curve labels, text on arc) follows in <see cref="BuildAnnotateBar"/>.
+        /// </summary>
         private static readonly (CourseLabelStyle Style, string Command, string Short, string Name)[] AnnotateTools =
         {
-            (CourseLabelStyle.BearingOnLine, "BRGON", "Brg ⊢⊣", "Auto split bearing / place bearing on centre of line"),
-            (CourseLabelStyle.BearingOffLine, "BRGOFF", "Brg ↑", "Auto bearing off line"),
-            (CourseLabelStyle.DistanceOnLine, "DISTON", "Dist ⊢⊣", "Auto distance (on centre of line)"),
+            (CourseLabelStyle.SplitBearing, "SPLITBRG", "Brg ÷", "Split a bearing into deg - min - sec across line"),
+            (CourseLabelStyle.BearingOnLine, "BRGON", "Brg ⊢⊣", "Place bearing on center of line"),
+            (CourseLabelStyle.BearingOffLine, "BRGOFF", "Brg ↑", "Place a line bearing anywhere on drawing (auto bearing off line)"),
+            (CourseLabelStyle.DistanceOnLine, "DISTON", "Dist ⊢⊣", "Place distance on center of a line"),
             (CourseLabelStyle.DistanceOffLine, "DISTOFF", "Dist ↑", "Auto distance off line"),
-            (CourseLabelStyle.BearingDistance, "BRGDIST", "Brg/Dist", "Auto bearing/distance (bearing one side, distance the other)"),
-            (CourseLabelStyle.BearingDashDistance, "BRGDASH", "Brg-Dist", "Auto bearing-distance (one line of text)"),
-            (CourseLabelStyle.BearingOverDistance, "BRGDISTL", "Brg/Dist ∥", "Auto bearing/distance // line (bearing over distance, picked side)"),
-            (CourseLabelStyle.DistanceOverBearing, "DISTBRGL", "Dist/Brg ∥", "Auto distance/bearing // line (distance over bearing, picked side)"),
+            (CourseLabelStyle.BearingDistance, "BRGDIST", "Brg/Dist", "Place bearing opposite distance on line"),
+            (CourseLabelStyle.BearingDashDistance, "BRGDASH", "Brg-Dist", "Place bearing before distance on same side of line"),
+            (CourseLabelStyle.DistanceBeforeBearing, "DISTBRG", "Dist-Brg", "Place distance before bearing on same side of line"),
+            (CourseLabelStyle.BearingOverDistance, "BRGDISTL", "Brg/Dist ∥", "Place bearing above distance on same side of line"),
+            (CourseLabelStyle.DistanceOverBearing, "DISTBRGL", "Dist/Brg ∥", "Place distance above bearing on same side of line"),
         };
 
         private ToolBar BuildAnnotateBar()
@@ -414,7 +420,41 @@ namespace FdDraft.App
                 b.Click += (s, e) => StartAnnotate(style);
                 bar.Items.Add(b);
             }
+            Button B(string text, string tip, Action a) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(6, 2, 6, 2) }; b.Click += (s, e) => a(); return b; }
+            bar.Items.Add(new Separator());
+            bar.Items.Add(B("∠", "Add angle between two lines (ANGLE) - pick the two lines, then where the angle goes (it picks which of the four angles)", StartAutoAngle));
+            bar.Items.Add(B("↔", "Add arrows to line offset equal to labels (ARROWS) - pick lines on the side the arrows go", StartArrowsOnLine));
+            bar.Items.Add(B("Crv ⌒", "Curve information follows arc only (CURVEON) - pick arcs where the label goes", () => StartCurveLabel(false)));
+            bar.Items.Add(B("Crv ↗", "Curve information placed anywhere in drawing (CURVEOFF) - pick the arc, then where the label goes", () => StartCurveLabel(true)));
+            bar.Items.Add(B("Txt ⌒", "Manually place any text to follow the curve (ARCTEXT) - pick an arc or circle where the text goes, then type it", StartTextOnArc));
             return bar;
+        }
+
+        /// <summary>The line, arc or polyline (or circle, with <paramref name="circles"/>) nearest a model point, within a few pixels.</summary>
+        private Entity? LineworkAt(Vec2 model, bool circles = false)
+        {
+            double tol = Math.Max(10 / _canvas.View.Zoom, 1e-6);
+            Entity? best = null; double bestD = tol;
+            foreach (var e in CurrentEntityOwner().Entities)
+            {
+                if (!(e is Line || e is Arc || e is LwPolyline || e is Polyline2D || circles && e is Circle)) continue;
+                foreach (var sp in EntityOps.SpansOf(e))
+                {
+                    double d = sp.DistanceAndSide(model, out _);
+                    if (d < bestD) { bestD = d; best = e; }
+                }
+            }
+            return best;
+        }
+
+        /// <summary>After an edit made by a pick tool: keep the view where it is.</summary>
+        private void AfterPickEdit(IEditCommand cmd)
+        {
+            _undo.Push(cmd);
+            _dirty = true; UpdateTitle();
+            var c = _canvas.View.Center; var z = _canvas.View.Zoom;
+            Rebuild(fit: false);
+            _canvas.ZoomTo(c, z);
         }
 
         /// <summary>
@@ -429,9 +469,9 @@ namespace FdDraft.App
             var info = AnnotateTools.First(t => t.Style == style);
             var std = LabelStandards();
             double mpm = LabelModelPerMm(std, out string basis);
-            double g2g = std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
+            double g2g = GridToGround(std);
             BeginTool(info.Command);
-            bool side = style != CourseLabelStyle.BearingOnLine && style != CourseLabelStyle.DistanceOnLine && style != CourseLabelStyle.BearingDistance;
+            bool side = style != CourseLabelStyle.BearingOnLine && style != CourseLabelStyle.DistanceOnLine && style != CourseLabelStyle.BearingDistance && style != CourseLabelStyle.SplitBearing;
             _prompt.Text = info.Name + " - pick a line" + (side ? " on the side the label goes" : "") + ":";
             Log(info.Name.ToUpperInvariant() + "  pick lines to label (scale from " + basis + "); Esc or right-click ends");
             int count = 0;
@@ -439,29 +479,141 @@ namespace FdDraft.App
             {
                 var model = _canvas.Scene!.ModelAt(p);
                 if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
-                double tol = Math.Max(10 / _canvas.View.Zoom, 1e-6);
-                Entity? best = null; double bestD = tol;
-                foreach (var e in CurrentEntityOwner().Entities)
-                {
-                    if (!(e is Line || e is Arc || e is LwPolyline || e is Polyline2D)) continue;
-                    foreach (var sp in EntityOps.SpansOf(e))
-                    {
-                        double d = sp.DistanceAndSide(model.Value, out _);
-                        if (d < bestD) { bestD = d; best = e; }
-                    }
-                }
+                var best = LineworkAt(model.Value);
                 if (best == null) { Log("  no line there - pick on a line or polyline"); return; }
                 var cmd = CourseLabelling.Annotate(best, model.Value, style, _doc!, std, mpm, GetOrCreateLayer, out string note, g2g);
                 if (cmd == null) { Log("  can't label that"); return; }
-                _undo.Push(cmd);
+                AfterPickEdit(cmd);
                 count++;
-                _dirty = true; UpdateTitle();
-                var c = _canvas.View.Center; var z = _canvas.View.Zoom;
-                Rebuild(fit: false);
-                _canvas.ZoomTo(c, z);
                 Log("  labelled" + (note.Length > 0 ? " (" + note + ")" : "") + "  (Ctrl+Z undoes it)");
             };
             _awaitingLine = s => { EndTool(); Log("  *" + count + " labelled*"); };
+        }
+
+        private double GridToGround(FirmStandards std) =>
+            std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
+
+        /// <summary>ANGLE: "Add Angle between two lines" - pick two lines, then the label's place; repeats.</summary>
+        private void StartAutoAngle()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            BeginTool("ANGLE");
+            Log("ANGLE  pick two lines, then where the angle goes (scale from " + basis + "); Esc or right-click ends");
+            _prompt.Text = "Angle - pick the first line:";
+            Entity? e1 = null, e2 = null; Vec2 p1 = default, p2 = default;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                if (e1 == null || e2 == null)
+                {
+                    var hit = LineworkAt(model.Value);
+                    if (hit == null) { Log("  no line there"); return; }
+                    if (e1 == null) { e1 = hit; p1 = model.Value; _prompt.Text = "Angle - pick the second line:"; }
+                    else { e2 = hit; p2 = model.Value; _prompt.Text = "Angle - pick where the angle goes:"; }
+                    return;
+                }
+                var cmd = CourseLabelling.AngleBetween(e1, p1, e2, p2, model.Value, _doc!, std, mpm, GetOrCreateLayer, out string why);
+                if (cmd == null) Log("  " + why);
+                else { AfterPickEdit(cmd); Log("  angle added  (Ctrl+Z undoes it)"); }
+                e1 = e2 = null;
+                _prompt.Text = "Angle - pick the first line:";
+            };
+            _awaitingLine = s => EndTool();
+        }
+
+        /// <summary>ARROWS: "Add arrows to line offset equal to labels" - pick lines on the side the arrows go.</summary>
+        private void StartArrowsOnLine()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            BeginTool("ARROWS");
+            Log("ARROWS  pick lines on the side the arrows go (scale from " + basis + "); Esc or right-click ends");
+            _prompt.Text = "Arrows on line - pick a line on the arrows' side:";
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                var hit = LineworkAt(model.Value);
+                if (hit == null) { Log("  no line there"); return; }
+                var cmd = CourseLabelling.ArrowsOnLine(hit, model.Value, std, mpm, GetOrCreateLayer, out string why);
+                if (cmd == null) Log("  " + why);
+                else { AfterPickEdit(cmd); Log("  arrows added  (Ctrl+Z undoes them)"); }
+            };
+            _awaitingLine = s => EndTool();
+        }
+
+        /// <summary>CURVEON / CURVEOFF: curve data along the arc where picked, or as a block placed anywhere.</summary>
+        private void StartCurveLabel(bool off)
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            double g2g = GridToGround(std);
+            string name = off ? "CURVEOFF" : "CURVEON";
+            BeginTool(name);
+            Log(name + "  pick arcs" + (off ? ", then where each label goes" : " where the label goes") + " (scale from " + basis + "); Esc or right-click ends");
+            string first = off ? "Curve label - pick the arc:" : "Curve label - pick the arc where the label goes:";
+            _prompt.Text = first;
+            Entity? arc = null; Vec2 onArc = default;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                if (arc == null)
+                {
+                    var hit = LineworkAt(model.Value);
+                    if (hit == null) { Log("  no arc there"); return; }
+                    if (off) { arc = hit; onArc = model.Value; _prompt.Text = "Curve label - pick where the label goes (its top-left corner):"; return; }
+                    var cmd = CourseLabelling.CurveLabel(hit, model.Value, null, _doc!, std, mpm, GetOrCreateLayer, out string why, g2g);
+                    if (cmd == null) Log("  " + why); else { AfterPickEdit(cmd); Log("  curve labelled  (Ctrl+Z undoes it)"); }
+                    return;
+                }
+                var c2 = CourseLabelling.CurveLabel(arc, onArc, model.Value, _doc!, std, mpm, GetOrCreateLayer, out string why2, g2g);
+                if (c2 == null) Log("  " + why2); else { AfterPickEdit(c2); Log("  curve labelled  (Ctrl+Z undoes it)"); }
+                arc = null; _prompt.Text = first;
+            };
+            _awaitingLine = s => EndTool();
+        }
+
+        /// <summary>ARCTEXT: "Manually place any text to follow the curve" - pick the arc/circle where the text centres, type the text.</summary>
+        private void StartTextOnArc()
+        {
+            if (_doc == null || _canvas.Scene == null) { Log("  open or draft a drawing first"); return; }
+            if (_activeTool.Length > 0) EndTool();
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out string basis);
+            BeginTool("ARCTEXT");
+            Log("ARCTEXT  pick an arc or circle where the text centres, then type the text (\"height text\" sets the paper height in mm, e.g. \"2.5 CREEK\")");
+            _prompt.Text = "Text on arc - pick the arc or circle:";
+            Entity? hit = null; Vec2 at = default;
+            _awaitingPoint = p =>
+            {
+                var model = _canvas.Scene!.ModelAt(p);
+                if (model == null) { Log("  pick inside a viewport (or on Model)"); return; }
+                hit = LineworkAt(model.Value, circles: true);
+                if (hit == null) { Log("  no arc there"); return; }
+                at = model.Value;
+                _prompt.Text = "Text on arc - type the text:";
+            };
+            _awaitingLine = s =>
+            {
+                if (hit == null) { if (s.Length == 0) EndTool(); else Log("  pick the arc first"); return; }
+                if (s.Length == 0) { EndTool(); return; }
+                double h = std.ArcTextMm;
+                var parts = s.Split(' ', 2);
+                if (parts.Length == 2 && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double hh) && hh > 0) { h = hh; s = parts[1]; }
+                var cmd = CourseLabelling.TextOnArc(hit, at, s, h, CurrentLayer(), _doc!, mpm, GetOrCreateLayer, std.TextStyle("arc"), out string why);
+                if (cmd == null) Log("  " + why); else { AfterPickEdit(cmd); Log("  text placed on the arc  (Ctrl+Z undoes it)"); }
+                hit = null;
+                _prompt.Text = "Text on arc - pick the arc or circle:";
+            };
         }
 
         private void SetSnapMode(SnapModes mode, bool on)
@@ -664,14 +816,11 @@ namespace FdDraft.App
                 case "VXDEL": StartVertexDelete(); break;
                 case "FLIP": case "FL": FlipSelectedLabels(); break;
                 case "LABEL": case "LB": LabelSelection(); break;
-                case "BRGON": StartAnnotate(CourseLabelStyle.BearingOnLine); break;
-                case "BRGOFF": StartAnnotate(CourseLabelStyle.BearingOffLine); break;
-                case "DISTON": StartAnnotate(CourseLabelStyle.DistanceOnLine); break;
-                case "DISTOFF": StartAnnotate(CourseLabelStyle.DistanceOffLine); break;
-                case "BRGDIST": StartAnnotate(CourseLabelStyle.BearingDistance); break;
-                case "BRGDASH": StartAnnotate(CourseLabelStyle.BearingDashDistance); break;
-                case "BRGDISTL": StartAnnotate(CourseLabelStyle.BearingOverDistance); break;
-                case "DISTBRGL": StartAnnotate(CourseLabelStyle.DistanceOverBearing); break;
+                case "ANGLE": case "AUTOANGLE": StartAutoAngle(); break;
+                case "ARROWS": StartArrowsOnLine(); break;
+                case "CURVEON": StartCurveLabel(false); break;
+                case "CURVEOFF": StartCurveLabel(true); break;
+                case "ARCTEXT": case "TEXTONARC": StartTextOnArc(); break;
                 case "SELALL": case "ALL": SelectAll(); break;
                 case "SELLAYER": case "SL": SelectByLayer(arg); break;
                 case "AREA": case "AA": StartArea(); break;
@@ -695,7 +844,13 @@ namespace FdDraft.App
                     else Log("  current layer: " + CurrentLayer());
                     break;
                 case "HELP": case "?": ShowHelp(); break;
-                default: Log("  unknown command - type HELP"); break;
+                default:
+                {
+                    var tool = AnnotateTools.FirstOrDefault(a => a.Command == verb);
+                    if (tool.Command != null) StartAnnotate(tool.Style);
+                    else Log("  unknown command - type HELP");
+                    break;
+                }
             }
         }
 
@@ -713,8 +868,10 @@ namespace FdDraft.App
             Log("  ROTATE  select entities, ROTATE, pick the pivot, type the angle in degrees (clockwise)");
             Log("  STRETCH select the line(s)/polyline sharing a vertex, STRETCH, pick the vertex then its new position");
             Log("  VXDEL / VXADD   select a polyline, then pick a vertex to remove / a spot on it to add one (also buttons in Properties)");
-            Log("  Annotate toolbar (MSCAD's auto labels): BRGON split bearing · BRGOFF bearing off line · DISTON split distance · DISTOFF distance off line");
-            Log("          BRGDIST bearing/distance · BRGDASH bearing-distance · BRGDISTL bearing/distance // line · DISTBRGL distance/bearing // line");
+            Log("  MS Labels 1 toolbar: SPLITBRG split bearing · BRGON bearing on line · BRGOFF bearing off line · DISTON distance on line · DISTOFF distance off line");
+            Log("          BRGDIST bearing opposite distance · BRGDASH bearing before distance · DISTBRG distance before bearing");
+            Log("          BRGDISTL bearing above distance · DISTBRGL distance above bearing · ANGLE angle between two lines · ARROWS arrows beside a line");
+            Log("          CURVEON curve data along an arc · CURVEOFF curve data placed anywhere · ARCTEXT text following an arc or circle");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");

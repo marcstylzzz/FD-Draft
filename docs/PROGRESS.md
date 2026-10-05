@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  78 tests as of v0.4.32, all passing.
+  83 tests as of v0.4.33, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -255,21 +255,31 @@ on Windows; that's still Marc's job when he runs a build.
   edit menu (and right-click = Enter during a command); View toolbar
   (Regen, Pan, Zoom Window/Previous/In/Out, Extents) and Object Snap
   toolbar (End/Mid/Int/Cen/Quad/Perp/Near/Node toggles, None).
-- **v0.4.32** (current): the Annotate toolbar - Marc named screenshot 3's
+- **v0.4.32**: the Annotate toolbar - Marc named screenshot 3's
   tools: auto split bearing (on centre of line), auto bearing off line,
   auto distance, auto distance off line, auto bearing/distance, auto
   bearing-distance, auto bearing/distance // line, auto distance/bearing //
   line. Built as BRGON/BRGOFF/DISTON/DISTOFF/BRGDIST/BRGDASH/BRGDISTL/
-  DISTBRGL with a pick loop. His screenshot 3 had 15 icons; the last 7
-  (after the eight he named) are unidentified.
-- **Open request**: the rest of Marc's MSCAD toolbars - screenshot 4 is
-  three toolbars, plus the right-hand groups of screenshot 5
-  (dimension/text/table/layer icons). The public MicroSurvey manuals don't
-  list toolbar buttons, and surveyinstrumentsales.com / s3.microsurvey.com
-  are blocked from the sandbox. Asked Marc for his `icad.cui` (MSCAD's
-  toolbar definitions, in `C:\Program Files\MicroSurvey\MSCAD20xx\` or
-  the `Program Files (x86)` equivalent): it names every button and its
-  command - build from that.
+  DISTBRGL with a pick loop.
+- **MSCAD toolbars identified**: Marc sent his MSCAD `icad.cui`,
+  `Default.CUI` and `Temp_Profile_Do_Not_Use.CUI`. The Default workspace
+  in `Default.CUI` lists the toolbars on his screen by row: row 1 = MS
+  Labels 1 (screenshot 3); row 2 = Zoom, Entity Snaps, MS Ties, MS
+  FieldGenius (screenshot 5); row 3 = MS Main Control, MS Defaults, Draw
+  (screenshot 4). Every button, its MSCAD help text and command are in
+  **docs/MSCAD-TOOLBARS.md** - build MSCAD-style tools from that, not
+  guesses.
+- **v0.4.33** (current): the rest of MS Labels 1, in MSCAD's order -
+  SPLITBRG ("split a bearing into deg - min - sec across line": FD-Draft
+  puts the degrees on one side of the line and the minutes/seconds on the
+  other - an interpretation, Marc to confirm), DISTBRG (distance before
+  bearing), ANGLE (angle between two lines, with a marking arc, in the
+  picked sector), ARROWS (a tapered-arrow polyline beside the course, clear
+  of a label row), CURVEON (curve data along the arc where picked), CURVEOFF
+  (R/A/C/chord bearing/delta as a block placed anywhere), ARCTEXT (text
+  following an arc or circle, one TEXT per letter). Tooltips are MSCAD's own
+  help text. The viewer now fills LWPOLYLINE widths (arrowheads, donuts,
+  wide borders) - before, only the centreline was drawn.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

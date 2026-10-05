@@ -174,6 +174,100 @@ namespace FdDraft.Cad.Editing
             }
         }
 
+        // ---- the rest of MS Labels 1 ------------------------------------------------------------
+
+        /// <summary>The span of <paramref name="e"/> nearest <paramref name="p"/>, if it has any.</summary>
+        public static Construct.Span? NearestSpan(Entity e, Vec2 p)
+        {
+            Construct.Span? best = null; double bestD = double.MaxValue;
+            foreach (var s in EntityOps.SpansOf(e))
+            {
+                double d = s.DistanceAndSide(p, out _);
+                if (d < bestD) { bestD = d; best = s; }
+            }
+            return best;
+        }
+
+        private static CoreArc ToCore(Construct.Span s) =>
+            ToCore(s.Center, s.Radius, Math.Atan2(s.A.Y - s.Center.Y, s.A.X - s.Center.X), s.Sweep);
+
+        /// <summary>
+        /// "Add Angle between two lines": the angle where the straight courses of
+        /// <paramref name="e1"/> and <paramref name="e2"/> picked at p1/p2 meet (extended if they
+        /// don't reach), in the sector <paramref name="at"/> is in, the text at <paramref name="at"/>'s
+        /// distance from the corner. Null when either pick isn't on a straight course or they're parallel.
+        /// </summary>
+        public static IEditCommand? AngleBetween(Entity e1, Vec2 p1, Entity e2, Vec2 p2, Vec2 at, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, out string why)
+        {
+            why = "";
+            if (!(e1.Owner is BlockRecord owner)) { why = "not in a drawing"; return null; }
+            var s1 = NearestSpan(e1, p1); var s2 = NearestSpan(e2, p2);
+            if (s1 == null || s2 == null || s1.Value.IsArc || s2.Value.IsArc) { why = "pick two straight lines"; return null; }
+            var u1 = s1.Value.B - s1.Value.A; var u2 = s2.Value.B - s2.Value.A;
+            var corner = Construct.LineLine(s1.Value.A, u1, s2.Value.A, u2);
+            if (corner == null) { why = "the lines are parallel"; return null; }
+            var r = SurveyLabels.Angle(corner.Value, u1, u2, at, std, modelPerMm, std.BearingLayer);
+            if (r == null) { why = "pick the label's place away from the corner"; return null; }
+            var entities = new List<Entity> { ToEntity(r.Value.Text, doc, modelPerMm, layer), ToPolyline(r.Value.Arc, layer) };
+            return new AddEntitiesCommand(owner, entities, "Angle");
+        }
+
+        /// <summary>"Add arrows to line offset equal to labels", for the course of <paramref name="e"/> picked at <paramref name="pick"/>.</summary>
+        public static IEditCommand? ArrowsOnLine(Entity e, Vec2 pick, FirmStandards std, double modelPerMm, Func<string, Layer> layer, out string why)
+        {
+            why = "";
+            if (!(e.Owner is BlockRecord owner)) { why = "not in a drawing"; return null; }
+            var s = NearestSpan(e, pick);
+            if (s == null || s.Value.IsArc) { why = "pick a straight line"; return null; }
+            var pl = SurveyLabels.ArrowsAlong(s.Value.A, s.Value.B, pick, std, modelPerMm, std.DistanceLayer);
+            if (pl == null) { why = "the line is too short for arrows at this scale"; return null; }
+            return new AddEntitiesCommand(owner, new Entity[] { ToPolyline(pl, layer) }, "Arrows");
+        }
+
+        /// <summary>
+        /// "Curve information follows arc only" (<paramref name="at"/> null): the curve data along the
+        /// arc where it was picked. "Curve information placed anywhere in drawing": as a block of
+        /// lines at <paramref name="at"/>.
+        /// </summary>
+        public static IEditCommand? CurveLabel(Entity e, Vec2 pick, Vec2? at, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, out string why, double gridToGround = 1.0)
+        {
+            why = "";
+            if (!(e.Owner is BlockRecord owner)) { why = "not in a drawing"; return null; }
+            var s = NearestSpan(e, pick);
+            if (s == null || !s.Value.IsArc) { why = "pick an arc (or an arc span of a polyline)"; return null; }
+            var arc = ToCore(s.Value);
+            var texts = at.HasValue
+                ? SurveyLabels.CurveDataBlock(arc, at.Value, std, modelPerMm, gridToGround, std.ArcLayer)
+                : Annotator.ArcCourseLabels(arc, SurveyLabels.ParamOn(arc, pick), std, modelPerMm, gridToGround, std.ArcLayer).ToList();
+            return new AddEntitiesCommand(owner, texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList(), "Curve label");
+        }
+
+        /// <summary>"Manually place any text to follow the curve": <paramref name="text"/> along the arc or circle of <paramref name="e"/>, centred where it was picked.</summary>
+        public static IEditCommand? TextOnArc(Entity e, Vec2 pick, string text, double heightMm, string layerName, CadDocument doc, double modelPerMm, Func<string, Layer> layer, string style, out string why)
+        {
+            why = "";
+            if (!(e.Owner is BlockRecord owner)) { why = "not in a drawing"; return null; }
+            var s = NearestSpan(e, pick);
+            if (s == null || !s.Value.IsArc) { why = "pick an arc or circle"; return null; }
+            var texts = SurveyLabels.TextOnArc(s.Value.Center, s.Value.Radius, text, pick, heightMm, modelPerMm, layerName, style);
+            if (texts.Count == 0) { why = "nothing to place"; return null; }
+            return new AddEntitiesCommand(owner, texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList(), "Text on arc");
+        }
+
+        /// <summary>A layout polyline as a DWG LWPOLYLINE, bulges and widths carried over.</summary>
+        public static LwPolyline ToPolyline(DraftPolyline p, Func<string, Layer> layer)
+        {
+            var pl = new LwPolyline { Layer = layer(p.Layer), IsClosed = p.Closed };
+            for (int i = 0; i < p.Vertices.Count; i++)
+                pl.Vertices.Add(new LwPolyline.Vertex(new XY(p.Vertices[i].X, p.Vertices[i].Y))
+                {
+                    Bulge = i < p.Bulges.Count ? p.Bulges[i] : 0,
+                    StartWidth = i < p.StartWidths.Count ? p.StartWidths[i] : 0,
+                    EndWidth = i < p.EndWidths.Count ? p.EndWidths[i] : 0,
+                });
+            return pl;
+        }
+
         /// <summary>A pipeline label as a DWG TEXT, aligned the way TemplateDrafter writes them.</summary>
         public static TextEntity ToEntity(DraftText t, CadDocument doc, double modelPerMm, Func<string, Layer> layer)
         {

@@ -6,25 +6,33 @@ using FdDraft.Core.Standards;
 
 namespace FdDraft.Core.Drafting
 {
-    /// <summary>The eight course-labelling styles of MSCAD's annotate toolbar.</summary>
+    /// <summary>
+    /// The course-labelling styles of MSCAD's MS Labels 1 toolbar (its help text quoted;
+    /// <c>bear_dist_label n</c> is the MSCAD LISP call behind each).
+    /// </summary>
     public enum CourseLabelStyle
     {
-        /// <summary>Auto split bearing: the bearing centred on the line, the line broken around it.</summary>
+        /// <summary>"Place Bearing on center of line" (5): the bearing centred on the line, the line broken around it.</summary>
         BearingOnLine,
-        /// <summary>Auto bearing off line: the bearing beside the line, on the picked side.</summary>
+        /// <summary>"Place a line bearing anywhere on drawing": the bearing beside the line, on the picked side.</summary>
         BearingOffLine,
-        /// <summary>Auto distance: the distance centred on the line, the line broken around it.</summary>
+        /// <summary>"Place Distance on center of a line" (6): the distance centred on the line, the line broken around it.</summary>
         DistanceOnLine,
         /// <summary>Auto distance off line: the distance beside the line, on the picked side.</summary>
         DistanceOffLine,
-        /// <summary>Auto bearing/distance: bearing on one side, distance on the other.</summary>
+        /// <summary>"Place bearing opposite distance on line" (4): bearing on one side, distance on the other.</summary>
         BearingDistance,
-        /// <summary>Auto bearing-distance: "bearing  distance" as one line of text, on the picked side.</summary>
+        /// <summary>"Place bearing before distance on same side of line" (2): "bearing  distance" as one line, picked side.</summary>
         BearingDashDistance,
-        /// <summary>Auto bearing/distance // line: bearing over distance, both on the picked side.</summary>
+        /// <summary>"Place bearing above distance on same side of line" (7).</summary>
         BearingOverDistance,
-        /// <summary>Auto distance/bearing // line: distance over bearing, both on the picked side.</summary>
+        /// <summary>"Place distance above bearing on same side of line" (3).</summary>
         DistanceOverBearing,
+        /// <summary>"Split a bearing into deg - min - sec across line": the degrees on one side of the
+        /// line, the minutes and seconds on the other, both centred on it.</summary>
+        SplitBearing,
+        /// <summary>"Place distance before bearing on same side of line" (1): "distance  bearing" as one line, picked side.</summary>
+        DistanceBeforeBearing,
     }
 
     /// <summary>What a course label comes to: its texts, and for the "on line" styles the part of
@@ -115,6 +123,24 @@ namespace FdDraft.Core.Drafting
                     result.Texts.Add(t);
                     break;
                 }
+                case CourseLabelStyle.DistanceBeforeBearing:
+                {
+                    var t = Distance(Beside(gapD), away);
+                    t.Text = distance + "  " + bearing;
+                    result.Texts.Add(t);
+                    break;
+                }
+                case CourseLabelStyle.SplitBearing:
+                {
+                    // N45°|10'20"E: the degrees read above the line, the rest below.
+                    int deg = bearing.IndexOf('°');
+                    string top = deg >= 0 ? bearing.Substring(0, deg + 1) : bearing;
+                    string bottom = deg >= 0 ? bearing.Substring(deg + 1) : "";
+                    var t1 = Bearing(mid + up * gapB, VAlign.Bottom); t1.Text = top;
+                    result.Texts.Add(t1);
+                    if (bottom.Length > 0) { var t2 = Bearing(mid - up * gapB, VAlign.Top); t2.Text = bottom; result.Texts.Add(t2); }
+                    break;
+                }
                 case CourseLabelStyle.BearingOverDistance:
                 case CourseLabelStyle.DistanceOverBearing:
                 {
@@ -140,15 +166,44 @@ namespace FdDraft.Core.Drafting
             return result;
         }
 
-        // Helvetica advance widths for the characters a bearing or distance uses (1/1000 em),
-        // at a cap height of 0.718 em - the same metrics the PDF plots with.
-        private static double TextWidth(string s, double capHeight)
+        /// <summary>
+        /// Width of <paramref name="s"/> at a text height (cap height) of <paramref name="capHeight"/>,
+        /// by Helvetica's advance widths (1/1000 em, cap height 0.718 em) - the metrics the PDF
+        /// plots with. Letters FD-Draft rarely draws fall back to an average width.
+        /// </summary>
+        public static double TextWidth(string s, double capHeight)
         {
             double em = 0;
-            foreach (char c in s)
-                em += c >= '0' && c <= '9' ? 556 : c == '.' ? 278 : c == ' ' ? 278 : c == '°' ? 400 : c == '\'' ? 191 : c == '"' ? 355
-                    : c == 'N' ? 722 : c == 'S' ? 667 : c == 'E' ? 667 : c == 'W' ? 944 : c == '-' ? 333 : 556;
+            foreach (char c in s) em += CharWidth(c);
             return em / 1000 * capHeight / 0.718;
+        }
+
+        /// <summary>One character's Helvetica advance width, 1/1000 em.</summary>
+        public static double CharWidth(char c)
+        {
+            if (c >= '0' && c <= '9') return 556;
+            switch (c)
+            {
+                case '.': case ' ': case ',': case 'I': return 278;
+                case 'i': case 'j': case 'l': return 222;
+                case '°': return 400;
+                case '\'': return 191;
+                case '"': return 355;
+                case '-': return 333;
+                case '=': return 584;
+                case 'f': case 't': return 278;
+                case 'r': return 333;
+                case 'm': return 833;
+                case 'w': return 722;
+                case 'W': return 944;
+                case 'M': return 833;
+                case 'N': case 'H': case 'D': case 'U': case 'C': case 'R': return 722;
+                case 'O': case 'Q': case 'G': return 778;
+                case 'S': case 'E': case 'B': case 'A': case 'K': case 'P': case 'V': case 'X': case 'Y': return 667;
+                case 'F': case 'T': case 'Z': return 611;
+                case 'L': case 'J': return 556;
+            }
+            return c >= 'A' && c <= 'Z' ? 667 : 556;
         }
     }
 }
