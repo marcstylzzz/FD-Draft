@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  86 tests as of v0.4.34, all passing.
+  88 tests as of v0.4.35, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -280,7 +280,7 @@ on Windows; that's still Marc's job when he runs a build.
   following an arc or circle, one TEXT per letter). Tooltips are MSCAD's own
   help text. The viewer now fills LWPOLYLINE widths (arrowheads, donuts,
   wide borders) - before, only the centreline was drawn.
-- **v0.4.34** (current): the MS Ties toolbar (row 2, after the snaps) -
+- **v0.4.34**: the MS Ties toolbar (row 2, after the snaps) -
   HOUSETIE / HOUSETIEA (pick the closed building polyline, then lot lines
   or blank for every line: ties from the corners square to each lot line,
   the two nearest corners per line, never through the house; A = arrows),
@@ -292,6 +292,16 @@ on Windows; that's still Marc's job when he runs a build.
   existing tags, and a ruled table). Skipped from that toolbar: MSCAD's
   "Custom Posts Icons" (they insert MSCAD's own block library) and
   "multities" (radial tie table) - not built yet.
+- **v0.4.35** (current): the Draw toolbar (row 3; new partial file
+  `MainWindow.Draw.cs` - MainWindow is now `partial`): PLINE (A arc span,
+  L straight, C close, U undo), CIRCLE flyout (centre-radius, centre-
+  diameter, 2P, 3P, convert arc to circle), ARC flyout (3-point,
+  centre-start-end), ELLIPSE (centre + axes), POINT, Polygon flyout
+  (RECTANGLE, POLYGON centre-vertex / centre-side / edge), REVCLOUD,
+  DONUT, SOLID (filled plane), INSERT (a block already in the drawing),
+  TEXT, MTEXT. Not built from MSCAD's Draw toolbar: ray / infinite line,
+  multiline, spline, freehand, helix, wipeout, traces, hatch/gradient,
+  elliptical arcs and the rarer arc variants.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

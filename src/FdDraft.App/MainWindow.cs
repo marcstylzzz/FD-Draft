@@ -38,7 +38,7 @@ namespace FdDraft.App
     /// point panels, a command line, and the survey commands (Draft FD-Pro job,
     /// Inverse), plus open/save DWG and plot to PDF.
     /// </summary>
-    public sealed class MainWindow : Window
+    public sealed partial class MainWindow : Window
     {
         private readonly AppSettings _settings = AppSettings.Load();
         private readonly DrawingCanvas _canvas = new DrawingCanvas();
@@ -339,6 +339,7 @@ namespace FdDraft.App
             tray.ToolBars.Add(BuildSnapBar());
             tray.ToolBars.Add(BuildAnnotateBar());
             tray.ToolBars.Add(BuildTiesBar());
+            tray.ToolBars.Add(BuildDrawBar());
             return tray;
         }
 
@@ -1034,7 +1035,7 @@ namespace FdDraft.App
                     if (arg.Length > 0) ShowSheet(arg); else Log("  sheets: " + string.Join(", ", _sheets.Items.Cast<string>()));
                     break;
                 case "LINE": case "L": StartLine(); break;
-                case "ARC": StartArc(); break;
+                case "ARC": case "A": if (arg.Equals("C", StringComparison.OrdinalIgnoreCase)) StartArcCenter(); else StartArc(); break;
                 case "TEXT": case "T": StartText(); break;
                 case "PALETTE": LoadPalette(); Log("  tool palette reloaded from " + PaletteFile); break;
                 case "LEADER": case "LE": StartLeader(); break;
@@ -1055,6 +1056,17 @@ namespace FdDraft.App
                 case "CURVEON": StartCurveLabel(false); break;
                 case "CURVEOFF": StartCurveLabel(true); break;
                 case "ARCTEXT": case "TEXTONARC": StartTextOnArc(); break;
+                case "PLINE": case "PL": case "POLYLINE": StartPolyline(); break;
+                case "CIRCLE": case "C": StartCircle(arg); break;
+                case "ELLIPSE": case "EL": StartEllipse(); break;
+                case "POINT": case "PO": StartPoint(); break;
+                case "RECTANGLE": case "RECTANG": case "REC": StartRectangle(); break;
+                case "POLYGON": case "POL": StartPolygon(arg.ToUpperInvariant() == "C" || arg.ToUpperInvariant() == "E" ? arg.ToUpperInvariant() : "I"); break;
+                case "REVCLOUD": StartRevCloud(); break;
+                case "DONUT": case "DO": StartDonut(); break;
+                case "SOLID": case "SO": case "PLANE": StartSolid(); break;
+                case "INSERT": case "IN": StartInsert(arg); break;
+                case "MTEXT": case "MT": StartMText(); break;
                 case "HOUSETIE": StartHouseTies(false); break;
                 case "HOUSETIEA": StartHouseTies(true); break;
                 case "MTIE": StartManualTie(false); break;
@@ -1118,6 +1130,8 @@ namespace FdDraft.App
             Log("          CURVEON curve data along an arc · CURVEOFF curve data placed anywhere · ARCTEXT text following an arc or circle");
             Log("  MS Ties toolbar: HOUSETIE / HOUSETIEA automatic house ties (A = with arrows) · MTIE / MTIEA manual tie · LEADERSCALE arrow size");
             Log("          CLEADER curvy leader · SLEADER straight leader · LINEBLOCKS block repeated along a line · LINETABLE / CURVETABLE tag + table the selection");
+            Log("  Draw toolbar: PLINE (A arc span, C close) · CIRCLE [D|2P|3P|A] · ARC [C] · ELLIPSE · POINT · RECTANGLE · POLYGON [C|E]");
+            Log("          REVCLOUD · DONUT · SOLID filled plane · INSERT [block] · TEXT · MTEXT");
             Log("  LABEL   select lines/arcs/polylines, LABEL adds bearing & distance (or curve data) the way Draft does");
             Log("  FLIP    select bearing/distance/curve labels, FLIP moves them to the other side of their course");
             Log("  COPY    select entities, COPY, pick the base point then each destination (blank ends)");
