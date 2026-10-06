@@ -543,7 +543,7 @@ namespace FdDraft.App
                     break;
                 case "HELP": case "?": ShowHelp(); break;
                 default:
-                    if (!ExecuteMsTool(verb, arg)) Log("  unknown command - type HELP");
+                    if (!ExecuteMsTool(verb, arg) && !ExecuteDrawTool(verb, arg)) Log("  unknown command - type HELP");
                     break;
             }
         }

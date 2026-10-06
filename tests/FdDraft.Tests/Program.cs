@@ -1930,5 +1930,107 @@ namespace FdDraft.Tests
             Assert.True(two.Count == 2 && two.All(t => t.AlignmentPoint.Y < 10), "bearing and distance both below the south line, where it was picked");
             Assert.True(doc.ModelSpace.Entities.OfType<ACadSharp.Entities.LwPolyline>().Single() == lot, "the lot is untouched");
         }
+
+        // ---- Draw toolbar (ported from the v0.4.35-40 branch) ----------------------------------
+
+        public static void TestDrawToolbarShapes()
+        {
+            var r = Shapes.Rectangle(new Vec2(5, 8), new Vec2(1, 2));
+            Assert.True(r[0].X == 1 && r[0].Y == 2 && r[2].X == 5 && r[2].Y == 8, "rectangle from any two opposite corners");
+            var hex = Shapes.RegularPolygon(6, new Vec2(0, 0), new Vec2(10, 0), true);
+            Assert.True(hex.Count == 6 && hex.All(v => Math.Abs(v.Length - 10) < 1e-9), "inscribed: vertices on the radius");
+            Assert.Near(10, Vec2.Distance(hex[0], hex[1]), 1e-9, "a hexagon's side equals its radius");
+            var sq = Shapes.RegularPolygon(4, new Vec2(0, 0), new Vec2(5, 0), false);
+            Assert.Near(10, Vec2.Distance(sq[0], sq[1]), 1e-9, "circumscribed: the pick is a side's midpoint");
+            var tri = Shapes.PolygonOnEdge(3, new Vec2(0, 0), new Vec2(10, 0));
+            Assert.True(tri[2].Y > 0 && Math.Abs(tri[2].X - 5) < 1e-9, "on an edge, built to its left");
+            var (pts, bulges) = Shapes.RevisionCloud(Shapes.Rectangle(new Vec2(0, 0), new Vec2(10, 5)), 2.5);
+            Assert.Equal(12, pts.Count, "4 + 2 + 4 + 2 arcs round a 10 x 5 box at 2.5");
+            Assert.True(bulges.All(b => b > 0), "positive bulges on a counter-clockwise outline");
+            var firstArc = Construct.Span.FromBulge(pts[0], pts[1], bulges[0]);
+            Assert.True(firstArc.Midpoint.Y < 0, "the scallops swing outward, below the bottom edge");
+            var (cwPts, cwB) = Shapes.RevisionCloud(Shapes.Rectangle(new Vec2(0, 0), new Vec2(10, 5)).AsEnumerable().Reverse().ToList(), 2.5);
+            Assert.True(Construct.Span.FromBulge(cwPts[0], cwPts[1], cwB[0]).Midpoint.X > 10 || Construct.Span.FromBulge(cwPts[0], cwPts[1], cwB[0]).Midpoint.Y > 5, "outward on a clockwise outline too");
+            var c3 = Shapes.CircleThreePoints(new Vec2(1, 0), new Vec2(0, 1), new Vec2(-1, 0))!.Value;
+            Assert.True(c3.Center.Length < 1e-9 && Math.Abs(c3.Radius - 1) < 1e-9, "circle through three points");
+            Assert.True(Shapes.CircleThreePoints(new Vec2(0, 0), new Vec2(1, 1), new Vec2(2, 2)) == null, "none through three in line");
+        }
+
+        public static void TestDonutWidthsAreFilledInTheViewer()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var pl = new ACadSharp.Entities.LwPolyline { IsClosed = true, ConstantWidth = 0.25 };
+            pl.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(-0.375, 0)) { Bulge = 1 });
+            pl.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(0.375, 0)) { Bulge = 1 });
+            doc.ModelSpace.Entities.Add(pl);
+            var fills = new SceneBuilder(doc).Model().AllPrims().Where(p => p.Kind == PrimKind.Fill).ToList();
+            Assert.Equal(2, fills.Count, "each half of the donut is a filled band");
+            double maxR = fills.SelectMany(f => f.Points).Max(p => p.Length), minR = fills.SelectMany(f => f.Points).Min(p => p.Length);
+            Assert.Near(0.5, maxR, 1e-6, "outside diameter 1");
+            Assert.Near(0.25, minR, 1e-6, "inside diameter 0.5");
+        }
+
+        public static void TestSplineThroughPicks()
+        {
+            var pts = new List<Vec2> { new Vec2(0, 0), new Vec2(10, 5), new Vec2(20, 0), new Vec2(30, 6) };
+            foreach (bool closed in new[] { false, true })
+            {
+                var sp = SplineEditing.Through(pts, closed);
+                Assert.True(sp.TryPolygonalVertexes(200, out var v) && v.Count > 10, "it tessellates (closed=" + closed + ")");
+                foreach (var p in pts)
+                    Assert.True(v.Min(q => Vec2.Distance(p, new Vec2(q.X, q.Y))) < 0.2, "passes through " + p + " (closed=" + closed + ")");
+                var doc = new ACadSharp.CadDocument();
+                doc.ModelSpace.Entities.Add(sp);
+                var prims = new SceneBuilder(doc).Model().AllPrims().ToList();
+                Assert.True(prims.Count == 1 && prims[0].Points.Count > 10, "the viewer draws it");
+            }
+        }
+
+        public static void TestNestedIslandsDontDependOnDrawingOrder()
+        {
+            ACadSharp.Entities.LwPolyline Sq(double a, double b)
+            {
+                var p = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+                foreach (var (x, y) in new[] { (a, a), (b, a), (b, b), (a, b) }) p.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+                return p;
+            }
+            var outer = Sq(0, 100); var mid = Sq(20, 80); var inner = Sq(40, 60);
+            foreach (var order in new[] { new[] { outer, mid, inner }, new[] { inner, mid, outer } })
+            {
+                var b = HatchEditing.BoundaryAt(new Vec2(10, 10), order)!;
+                Assert.True(b.Count == 2 && b[1].Source == mid, "the middle square is the island; the one inside it isn't");
+            }
+        }
+
+        public static void TestHatchBoundaryIslandsAndRendering()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var lot = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (0.0, 0.0), (30.0, 0.0), (30.0, 40.0), (0.0, 40.0) }) lot.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            var house = new ACadSharp.Entities.LwPolyline { IsClosed = true };
+            foreach (var (x, y) in new[] { (10.0, 10.0), (20.0, 10.0), (20.0, 20.0), (10.0, 20.0) }) house.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+            var well = new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(5, 35, 0), Radius = 1 };
+            foreach (var e in new ACadSharp.Entities.Entity[] { lot, house, well }) doc.ModelSpace.Entities.Add(e);
+
+            var inHouse = HatchEditing.BoundaryAt(new Vec2(15, 15), doc.ModelSpace.Entities)!;
+            Assert.True(inHouse.Count == 1 && inHouse[0].Source == house, "inside the house: just the house");
+            var inYard = HatchEditing.BoundaryAt(new Vec2(25, 30), doc.ModelSpace.Entities)!;
+            Assert.True(inYard.Count == 3 && inYard[0].Source == lot, "the yard: the lot, with the house and the well as islands");
+            Assert.True(HatchEditing.BoundaryAt(new Vec2(50, 50), doc.ModelSpace.Entities) == null, "outside everything: nothing");
+
+            var lines = HatchEditing.Create(inHouse, 1.0, Math.PI / 4, false, new ACadSharp.Tables.Layer("HATCH"));
+            doc.ModelSpace.Entities.Add(lines);
+            var path = Path.Combine(Path.GetTempPath(), "fdd-hatch-" + Guid.NewGuid().ToString("N") + ".dwg");
+            try
+            {
+                ACadSharp.IO.DwgWriter.Write(path, doc);
+                var back = ACadSharp.IO.DwgReader.Read(path);
+                var hb = back.ModelSpace.Entities.OfType<ACadSharp.Entities.Hatch>().Single();
+                Assert.True(!hb.IsSolid && hb.Paths.Count == 1 && hb.Pattern.Lines.Count == 1, "the HATCH command's hatch survives a DWG round trip");
+                Assert.Near(1.0, Math.Abs(hb.Pattern.Lines[0].LineOffset), 1e-6, "with its spacing");
+                Assert.True(new SceneBuilder(back).Model().AllPrims().Count(p => p.Handle == hb.Handle) > 5, "and the viewer draws its lines");
+            }
+            finally { File.Delete(path); }
+        }
     }
 }

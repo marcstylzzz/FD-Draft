@@ -222,6 +222,7 @@ namespace FdDraft.View
                     break;
                 case LwPolyline pl:
                     Bulged(pl.Vertices.Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), pl.IsClosed, t, rgb, lname, handle);
+                    WidePolyline(pl, t, rgb, lname, handle);
                     break;
                 case Polyline2D p2:
                     Bulged(DrawnVertices(p2).Select(v => (new Vec2(v.Location.X, v.Location.Y), v.Bulge)).ToList(), p2.IsClosed, t, rgb, lname, handle);
@@ -620,6 +621,42 @@ namespace FdDraft.View
         }
 
         // ---- geometry helpers -------------------------------------------------------------
+
+        /// <summary>
+        /// An LWPOLYLINE's widths, filled: each span with a start or end width (or the polyline's
+        /// constant width) becomes a band, tapered where the widths differ - arrowheads, donuts,
+        /// thick borders. Arc spans are banded along the arc.
+        /// </summary>
+        private void WidePolyline(LwPolyline pl, Affine t, uint rgb, string layer, ulong handle)
+        {
+            int n = pl.Vertices.Count, segs = pl.IsClosed ? n : n - 1;
+            for (int i = 0; i < segs; i++)
+            {
+                var v0 = pl.Vertices[i]; var v1 = pl.Vertices[(i + 1) % n];
+                double w0 = v0.StartWidth > 0 || v0.EndWidth > 0 ? v0.StartWidth : pl.ConstantWidth;
+                double w1 = v0.StartWidth > 0 || v0.EndWidth > 0 ? v0.EndWidth : pl.ConstantWidth;
+                if (w0 <= 0 && w1 <= 0) continue;
+                var span = Construct.Span.FromBulge(new Vec2(v0.Location.X, v0.Location.Y), new Vec2(v1.Location.X, v1.Location.Y), v0.Bulge);
+                var path = new List<Vec2>();
+                if (!span.IsArc) { path.Add(span.A); path.Add(span.B); }
+                else path.AddRange(ArcPoints(span.Center, span.Radius, Math.Atan2(span.A.Y - span.Center.Y, span.A.X - span.Center.X), span.Sweep));
+                if (path.Count < 2) continue;
+                var left = new List<Vec2>(); var right = new List<Vec2>();
+                double total = 0; var acc = new List<double> { 0 };
+                for (int k = 1; k < path.Count; k++) { total += Vec2.Distance(path[k - 1], path[k]); acc.Add(total); }
+                if (total < 1e-12) continue;
+                for (int k = 0; k < path.Count; k++)
+                {
+                    var dir = k == 0 ? path[1] - path[0] : k == path.Count - 1 ? path[k] - path[k - 1] : path[k + 1] - path[k - 1];
+                    var nrm = dir.Normalized().Left();
+                    double w = (w0 + (w1 - w0) * acc[k] / total) / 2;
+                    left.Add(t.Apply(path[k] + nrm * w)); right.Add(t.Apply(path[k] - nrm * w));
+                }
+                right.Reverse();
+                left.AddRange(right);
+                _group.Prims.Add(new Prim { Kind = PrimKind.Fill, Rgb = rgb, Layer = layer, Handle = handle, Closed = true, Points = left });
+            }
+        }
 
         private void Bulged(List<(Vec2 p, double bulge)> v, bool closed, Affine t, uint rgb, string layer, ulong handle)
         {

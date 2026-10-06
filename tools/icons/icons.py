@@ -425,6 +425,60 @@ def _():
     return [("l", 3.5, 20, 13, 9, "ink", {"w": 1.5}), ("l", 13, 9, 16, 9, "ink", {"w": 1.5})] + arrowhead(3.5, 20, 130, "ink", 4.2) + \
            [("l", 16.5, 6, 22.5, 6, "lbl", {"w": 1.8}), ("l", 16.5, 9.5, 22.5, 9.5, "lbl", {"w": 1.8}), ("l", 16.5, 13, 20.5, 13, "lbl", {"w": 1.8})]
 
+@icon("Draw", "pline", "Polyline")
+def _():
+    return [("p", "M3 19 L8 6 L15 12 A5 5 0 0 1 21 5", "new", {"w": 1.8})] + node(3, 19, "ink", 1.6) + node(8, 6, "ink", 1.6) + node(15, 12, "ink", 1.6) + node(21, 5, "ink", 1.6)
+
+@icon("Draw", "spline", "Spline")
+def _():
+    return [("p", "M3 18 C7 4 11 4 13 12 C15 20 19 20 21 6", "new", {"w": 1.8})] + node(3, 18, "ink", 1.6) + node(13, 12, "ink", 1.6) + node(21, 6, "ink", 1.6)
+
+@icon("Draw", "circle", "Circle (centre, radius)")
+def _():
+    return [("c", 12, 12, 8.5, "new", {"w": 1.8}), ("l", 12, 12, 20.5, 12, "lbl", {"w": 1.2, "dash": True})] + node(12, 12, "ink", 1.6)
+
+@icon("Draw", "circle_3p", "Circle (3 points)")
+def _():
+    return [("c", 12, 12, 8.5, "new", {"w": 1.8})] + node(3.5, 12, "ink", 1.8) + node(12, 3.5, "ink", 1.8) + node(18, 18, "ink", 1.8)
+
+@icon("Draw", "arc_cse", "Arc (centre, start, end)")
+def _():
+    return [("p", "M20 12 A8 8 0 0 0 6.3 6.3", "new", {"w": 1.8}), ("l", 12, 12, 20, 12, "ghost", {"dash": True, "w": 1.0}),
+            ("l", 12, 12, 6.3, 6.3, "ghost", {"dash": True, "w": 1.0})] + node(12, 12, "ink", 1.6) + node(20, 12, "ink", 1.6) + node(6.3, 6.3, "ink", 1.6)
+
+@icon("Draw", "ellipse", "Ellipse")
+def _():
+    return [("p", "M2.5 12 A9.5 5.5 0 1 0 21.5 12 A9.5 5.5 0 1 0 2.5 12", "new", {"w": 1.8})] + node(12, 12, "ink", 1.4)
+
+@icon("Draw", "point", "Point")
+def _():
+    return node(7, 15, "new", 2.2) + node(16, 8, "new", 2.2) + [("l", 14, 18, 20, 18, "ghost", {"w": 1.0}), ("l", 17, 15, 17, 21, "ghost", {"w": 1.0})]
+
+@icon("Draw", "rectangle", "Rectangle")
+def _():
+    return [("r", 3, 6, 18, 12, "new", {"w": 1.8})] + node(3, 18, "ink", 1.6) + node(21, 6, "ink", 1.6)
+
+@icon("Draw", "polygon", "Polygon")
+def _():
+    return [("p", "M12 3 L20.6 9.2 L17.3 19.3 L6.7 19.3 L3.4 9.2 Z", "new", {"w": 1.8})] + node(12, 12, "ink", 1.4)
+
+@icon("Draw", "revcloud", "Revision Cloud")
+def _():
+    return [("p", "M4 16 A3 3 0 0 1 4 10 A3 3 0 0 1 9 6 A3 3 0 0 1 15 6 A3 3 0 0 1 20 10 A3 3 0 0 1 20 16 A3 3 0 0 1 15 19 A3 3 0 0 1 9 19 A3 3 0 0 1 4 16", "lbl", {"w": 1.6})]
+
+@icon("Draw", "donut", "Donut")
+def _():
+    return [("c", 12, 12, 7.5, "new", {"w": 4.5})]
+
+@icon("Draw", "plane", "Plane (filled)")
+def _():
+    return [("p", "M3 19 L7 5 L20 7 L18 20 Z", "new", {"w": 1.2, "fill": "new"})]
+
+@icon("Draw", "hatch", "Hatch")
+def _():
+    return [("r", 3, 4, 18, 16, "ink", {"w": 1.6}), ("l", 3, 12, 11, 4, "new", {"w": 1.1}), ("l", 3, 20, 19, 4, "new", {"w": 1.1}),
+            ("l", 11, 20, 21, 10, "new", {"w": 1.1}), ("l", 19, 20, 21, 18, "new", {"w": 1.1})]
+
 @icon("Survey", "inverse", "Inverse")
 def _():
     return node(4, 19, "snap", 2.2) + node(20, 5, "snap", 2.2) + [("l", 5.6, 17.4, 18.4, 6.6, "new", {"w": 1.3, "dash": True}),

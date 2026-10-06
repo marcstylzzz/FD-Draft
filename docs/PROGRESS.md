@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  113 tests as of v0.6.5, all passing.
+  118 tests as of v0.6.6, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -435,7 +435,7 @@ on Windows; that's still Marc's job when he runs a build.
   - Text styles: face from ACAD xdata after an AnnotativeData group; file-name map
     (TEMPSITC -> Tempus Sans ITC, SourceSansPro...); a face that isn't installed
     falls back to SHX metrics as MSCAD does; oblique angle drawn (Prim.Oblique).
-- **v0.6.5** (current): MSCAD right-click parity.
+- **v0.6.5**: MSCAD right-click parity.
   - A selected TEXT / MTEXT outlines as one box (TextHit.Corners(list)) though it is
     drawn a word at a time; double-click edits the whole entity (MTEXT lines as
     lines, codes kept) - dimensions get their text editor, others Properties.
@@ -450,6 +450,24 @@ on Windows; that's still Marc's job when he runs a build.
 - **Open**: Marc's feedback on v0.5 in use; whether DELPOINTS should also
   delete from the FD-Pro job; then the dimmed buttons worth
   doing (arc-length dimension first - ACadSharp has `DimensionArc`).
+- **Parallel work merged.** A second session built v0.4.33-v0.4.42 from
+  v0.4.32 while this line went to v0.6.5 (both from Marc's icad.cui). That
+  work is kept on branch `claude/v0.4.33-v0.4.42`; main stays the base and
+  only what main lacked is ported over, adapted to main's helpers
+  (ToolbarCatalog, ExecuteMsTool, Commit, ModelOf, PickEntity). Where both
+  built the same thing (MS Labels / Ties, INFO, point import/export, CALC,
+  hatch drawing), main's version stands.
+- **v0.6.6** (current): MSCAD's Draw toolbar, ported - PLINE (A arc span,
+  L straight, C close, U undo), SPLINE (a fit-point SPLINE through the
+  picks; `Cad/SplineEditing.cs`), CIRCLE (centre-radius, D diameter, 2P,
+  3P, A arc-to-circle), ARCC (centre-start-end), ELLIPSE, POINT,
+  RECTANGLE, POLYGON (centre-vertex, C centre-side, E edge), REVCLOUD,
+  DONUT, SOLID (filled plane), HATCH S/L/X (pick inside: the smallest
+  closed polyline/circle round the pick, closed figures inside it left as
+  islands; `Cad/HatchEditing.cs`). Commands in `MainWindow.Draw.cs`
+  (`ExecuteDrawTool`, tried after ExecuteMsTool); buttons and new icons on
+  the Draw bar. The viewer now fills LWPOLYLINE widths (donuts, arrowheads,
+  wide borders; `SceneBuilder.WidePolyline`) - before, only the centreline.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
