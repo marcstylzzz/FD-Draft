@@ -144,7 +144,10 @@ namespace FdDraft.View.Toolbars
                 T("snap_quad", "Quadrant", "SNAPMODE QUA", "A circle's north, south, east or west point"),
                 T("snap_perp", "Perpendicular", "SNAPMODE PER", "Foot of the perpendicular from the last point"),
                 T("snap_near", "Nearest", "SNAPMODE NEA", "Nearest point on a line or circle"),
-                T("snap_node", "Node", "SNAPMODE NOD", "Survey points and point objects"),
+                T("snap_node", "Node", "SNAPMODE NOD", "Survey points, point objects and block insertion points"),
+                T("snap_ins", "Insertion", "SNAPMODE INS", "Insertion point of a text or multiline text"),
+                T("snap_tan", "Tangent", "SNAPMODE TAN", "Tangent to a circle or arc, from the last point"),
+                T("snap_ext", "Extension", "SNAPMODE EXT", "A line carried on past its end"),
                 B("snap_none", "Snaps Off", "SNAPMODE NONE", "Turn every object snap off (F3 still switches snapping on/off)")),
 
             // ---------------------------------------------------------------- band 1

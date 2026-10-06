@@ -424,7 +424,7 @@ namespace FdDraft.App
             string kind = mode == "S" ? "solid" : mode == "L" ? "lines" : "crossed lines";
             StartDrawTool("HATCH", kind + " - pick inside each area (blank ends)" + (mode == "S" ? "" : "; type \"spacing angle\" to change from 2 mm at 45° (scale from " + basis + ")"), "Hatch - pick inside an area:", (m, p) =>
             {
-                var raw = m;
+                var raw = _canvas.Scene?.ModelAt(_canvas.LastRawPick) ?? m; // where it was clicked, not the snap
                 var loops = HatchEditing.BoundaryAt(raw, CurrentEntityOwner().Entities);
                 if (loops == null) { Log("  no closed polyline or circle around that point"); return; }
                 var h = HatchEditing.Create(loops, mode == "S" ? 0 : spacingMm * mpm, angleDeg * Math.PI / 180, mode == "X", GetOrCreateLayer(layer));
@@ -446,5 +446,70 @@ namespace FdDraft.App
         }
 
         // ---- INSERT and MTEXT ---------------------------------------------------------------------
+
+        // ---- FROM / M2P point modifiers -----------------------------------------------------------
+
+        /// <summary>
+        /// FROM (pick a base point, then type an offset "dx,dy" or "bearing distance") and M2P /
+        /// MTP (the midpoint of two picks), typed while a tool waits for a point: the point they
+        /// make goes to the tool as if it had been picked. True when <paramref name="verb"/> was one.
+        /// </summary>
+        private bool TryPointModifier(string verb)
+        {
+            if (verb != "FROM" && verb != "'FROM" && verb != "M2P" && verb != "MTP") return false;
+            var target = _awaitingPoint!; var line = _awaitingLine; var prompt = _prompt.Text;
+            var canvasState = (_canvas.ToolActive, _canvas.RubberFrom);
+            void Restore() { _awaitingPoint = target; _awaitingLine = line; _prompt.Text = prompt; (_canvas.ToolActive, _canvas.RubberFrom) = canvasState; }
+            void Deliver(Vec2 scene) { Restore(); _canvas.SetRawPick(scene); target(scene); }
+            _canvas.ToolActive = true;
+            if (verb == "M2P" || verb == "MTP")
+            {
+                Vec2? first = null;
+                _prompt.Text = "Mid between 2 points - first point:";
+                _awaitingPoint = p => { if (first == null) { first = p; _prompt.Text = "Mid between 2 points - second point:"; } else Deliver((first.Value + p) * 0.5); };
+                _awaitingLine = s => Restore();
+                return true;
+            }
+            Vec2? basePt = null;
+            _prompt.Text = "From - base point:";
+            _awaitingPoint = p => { basePt = p; _canvas.ToolActive = false; _prompt.Text = "From - offset (dx,dy or bearing distance):"; };
+            _awaitingLine = s =>
+            {
+                if (basePt == null || s.Length == 0) { Restore(); return; }
+                double dx, dy;
+                var xy = s.TrimStart('@').Split(',');
+                if (xy.Length == 2 && Num(xy[0], out dx) && Num(xy[1], out dy)) { }
+                else if (Cogo.TryParseLeg(s, out double az, out double dist)) { dx = dist * Math.Sin(az); dy = dist * Math.Cos(az); }
+                else { Log("  type dx,dy (east, north) or a bearing and distance, e.g. N45-30-00E 12.5"); return; }
+                var at = SceneOffset(basePt.Value, dx, dy);
+                if (at == null) { Log("  that offset lands outside the viewport"); return; }
+                Deliver(at.Value);
+            };
+            return true;
+        }
+
+        /// <summary>The scene point dx, dy drawing units (east, north) from a scene point - through a viewport's scale and turn on a sheet.</summary>
+        private Vec2? SceneOffset(Vec2 baseScene, double dx, double dy)
+        {
+            var sc = _canvas.Scene!;
+            if (!sc.IsPaper) return baseScene + new Vec2(dx, dy);
+            var m0 = sc.ModelAt(baseScene);
+            if (m0 == null) return null;
+            double h = 1e-3;
+            Vec2? Step(Vec2 d, out double sign)
+            {
+                sign = 1;
+                var m = sc.ModelAt(baseScene + d);
+                if (m == null) { sign = -1; m = sc.ModelAt(baseScene - d); }
+                return m;
+            }
+            var mx = Step(new Vec2(h, 0), out double sx); var my = Step(new Vec2(0, h), out double sy);
+            if (mx == null || my == null) return null;
+            var a = (mx.Value - m0.Value) * (sx / h); var b = (my.Value - m0.Value) * (sy / h);
+            double det = Vec2.Cross(a, b);
+            if (Math.Abs(det) < 1e-18) return null;
+            var d = new Vec2(dx, dy);
+            return baseScene + new Vec2(Vec2.Cross(d, b) / det, Vec2.Cross(a, d) / det);
+        }
     }
 }

@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  118 tests as of v0.6.6, all passing.
+  121 tests as of v0.6.7, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -457,7 +457,7 @@ on Windows; that's still Marc's job when he runs a build.
   (ToolbarCatalog, ExecuteMsTool, Commit, ModelOf, PickEntity). Where both
   built the same thing (MS Labels / Ties, INFO, point import/export, CALC,
   hatch drawing), main's version stands.
-- **v0.6.6** (current): MSCAD's Draw toolbar, ported - PLINE (A arc span,
+- **v0.6.6**: MSCAD's Draw toolbar, ported - PLINE (A arc span,
   L straight, C close, U undo), SPLINE (a fit-point SPLINE through the
   picks; `Cad/SplineEditing.cs`), CIRCLE (centre-radius, D diameter, 2P,
   3P, A arc-to-circle), ARCC (centre-start-end), ELLIPSE, POINT,
@@ -468,6 +468,16 @@ on Windows; that's still Marc's job when he runs a build.
   (`ExecuteDrawTool`, tried after ExecuteMsTool); buttons and new icons on
   the Draw bar. The viewer now fills LWPOLYLINE widths (donuts, arrowheads,
   wide borders; `SceneBuilder.WidePolyline`) - before, only the centreline.
+- **v0.6.7** (current): more object snaps and the point modifiers, ported -
+  Insertion (TEXT/MTEXT insertion points; block insertion points stay
+  nodes), Tangent (exact on circles, to a chord vertex on arcs, from the
+  tool's last point) and Extension (a line carried on past an open end,
+  never beating the endpoint, ignoring hatch pattern lines - prims carry
+  `Hatch`) on the Object Snap bar (SNAPMODE INS/TAN/EXT). FROM and M2P/MTP
+  typed at any live point prompt (`TryPointModifier` in
+  MainWindow.Draw.cs; FROM takes dx,dy or bearing distance, converted
+  through a viewport on a sheet). The canvas keeps the unsnapped pick
+  (`DrawingCanvas.LastRawPick`) - HATCH picks its area with it.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

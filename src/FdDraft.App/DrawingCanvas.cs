@@ -65,6 +65,10 @@ namespace FdDraft.App
         public event Action<Vec2, SnapPoint?>? CursorMoved;
         /// <summary>A point picked while <see cref="ToolActive"/> is true.</summary>
         public event Action<Vec2>? Picked;
+        /// <summary>Where the cursor really was for the last pick (scene units), before object snap.</summary>
+        public Vec2 LastRawPick { get; private set; }
+        /// <summary>Sets <see cref="LastRawPick"/> for a point built by FROM / M2P.</summary>
+        public void SetRawPick(Vec2 p) => LastRawPick = p;
         /// <summary>The entity handle clicked while not tool-active (null on an empty click), and
         /// whether Ctrl was held (add/remove from the existing selection rather than replace it).</summary>
         public event Action<ulong?, bool>? EntityClicked;
@@ -468,6 +472,17 @@ namespace FdDraft.App
                     dc.DrawGeometry(null, pen, g);
                     break;
                 }
+                case SnapKind.Insertion:
+                    dc.DrawRectangle(null, pen, new WRect(c.X - r, c.Y - r, r * 1.2, r * 1.2));
+                    dc.DrawRectangle(null, pen, new WRect(c.X - r * 0.2, c.Y - r * 0.2, r * 1.2, r * 1.2));
+                    break;
+                case SnapKind.Tangent:
+                    dc.DrawEllipse(null, pen, c, r * 0.8, r * 0.8);
+                    dc.DrawLine(pen, new WPoint(c.X - r, c.Y - r * 0.8), new WPoint(c.X + r, c.Y - r * 0.8));
+                    break;
+                case SnapKind.Extension:
+                    for (int k = -2; k <= 2; k++) dc.DrawEllipse(pen.Brush, null, new WPoint(c.X + k * r * 0.6, c.Y), 1.2, 1.2);
+                    break;
                 default:
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y - r), new WPoint(c.X + r, c.Y + r));
                     dc.DrawLine(pen, new WPoint(c.X - r, c.Y + r), new WPoint(c.X + r, c.Y - r));
@@ -551,7 +566,8 @@ namespace FdDraft.App
                 var p = e.GetPosition(this);
                 if (ToolActive)
                 {
-                    var world = _snap.HasValue ? _snap.Value.Point : View.ToScene(p.X, p.Y);
+                    LastRawPick = View.ToScene(p.X, p.Y);
+                    var world = _snap.HasValue ? _snap.Value.Point : LastRawPick;
                     Picked?.Invoke(world);
                 }
                 else if (e.ClickCount == 2 && HitTest(p) is Prim dbl && dbl.Handle != 0 && DoubleClicked != null)

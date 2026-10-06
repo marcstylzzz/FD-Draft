@@ -57,6 +57,8 @@ namespace FdDraft.View
         public bool Closed;
         public Vec2 Center;
         public double Radius;
+        /// <summary>A hatch pattern line: drawn and clickable, but not something to snap along.</summary>
+        public bool Hatch;
         public string Text = "";
         /// <summary>Cap height of text, in scene units.</summary>
         public double Height;
@@ -130,7 +132,7 @@ namespace FdDraft.View
         public List<Prim> Prims { get; } = new List<Prim>();
     }
 
-    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant }
+    public enum SnapKind { Endpoint, Midpoint, Center, Node, Intersection, Perpendicular, Nearest, Quadrant, Insertion, Tangent, Extension }
 
     /// <summary>Which object snaps are on - the Object Snap toolbar's toggles.</summary>
     [Flags]
@@ -139,6 +141,12 @@ namespace FdDraft.View
         None = 0,
         Endpoint = 1, Midpoint = 2, Center = 4, Node = 8,
         Intersection = 16, Perpendicular = 32, Nearest = 64, Quadrant = 128,
+        /// <summary>Insertion point of a text or multiline text (block insertion points are nodes).</summary>
+        Insertion = 256,
+        /// <summary>Tangent to a circle or arc, from the tool's last point.</summary>
+        Tangent = 512,
+        /// <summary>On the extension of a line past its open end, near that end.</summary>
+        Extension = 1024,
         /// <summary>What FD-Draft snapped to before the modes could be chosen.</summary>
         Default = Endpoint | Midpoint | Center | Node | Intersection,
     }
@@ -243,7 +251,7 @@ namespace FdDraft.View
             {
                 double d = Vec2.Distance(at, p);
                 if (d > tolerance) return;
-                double score = d - (kind == SnapKind.Node ? tolerance * 0.25 : 0) + (kind == SnapKind.Nearest ? tolerance * 2 : 0);
+                double score = d - (kind == SnapKind.Node ? tolerance * 0.25 : 0) + (kind == SnapKind.Nearest || kind == SnapKind.Extension ? tolerance * 2 : 0);
                 if (score < bestD) { bestD = score; best = new SnapPoint(p, kind); }
             }
             foreach (var s in Snaps)
@@ -253,11 +261,12 @@ namespace FdDraft.View
                     SnapKind.Endpoint => SnapModes.Endpoint,
                     SnapKind.Midpoint => SnapModes.Midpoint,
                     SnapKind.Center => SnapModes.Center,
+                    SnapKind.Insertion => SnapModes.Insertion,
                     _ => SnapModes.Node,
                 };
                 if ((modes & need) != 0) Consider(s.Point, s.Kind);
             }
-            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant)) == 0) return best;
+            if ((modes & (SnapModes.Intersection | SnapModes.Perpendicular | SnapModes.Nearest | SnapModes.Quadrant | SnapModes.Tangent | SnapModes.Extension)) == 0) return best;
 
             // Linework within reach of the cursor: straight segments and circles.
             var segs = new List<(Vec2 A, Vec2 B)>();
@@ -315,6 +324,63 @@ namespace FdDraft.View
                     double t = Vec2.Dot(from.Value - a, d) / len2;
                     if (t >= -1e-9 && t <= 1 + 1e-9) Consider(a + d * t, SnapKind.Perpendicular);
                 }
+            if ((modes & SnapModes.Extension) != 0)
+            {
+                // Open ends of straight runs within a modest reach: the cursor near the line carried
+                // on past its end snaps onto it (AutoCAD's extension, without the hover). Right at
+                // the end, that's the endpoint's job.
+                double far = tolerance * 40;
+                foreach (var g in Groups)
+                {
+                    if (g.Clip.HasValue)
+                    {
+                        var c = g.Clip.Value;
+                        if (at.X < c.X1 || at.X > c.X2 || at.Y < c.Y1 || at.Y > c.Y2) continue;
+                    }
+                    foreach (var p in g.Prims)
+                    {
+                        if (p.Kind != PrimKind.Polyline || p.Closed || p.Hatch || p.Points.Count < 2) continue;
+                        if (!(p.Bounds.X1 <= at.X + far && at.X - far <= p.Bounds.X2 && p.Bounds.Y1 <= at.Y + far && at.Y - far <= p.Bounds.Y2)) continue;
+                        int n = p.Points.Count;
+                        foreach (var (end, prev) in new[] { (p.Points[0], p.Points[1]), (p.Points[n - 1], p.Points[n - 2]) })
+                        {
+                            double toEnd = Vec2.Distance(at, end);
+                            if (toEnd > far || toEnd <= tolerance) continue;
+                            var d = end - prev;
+                            double len2 = Vec2.Dot(d, d);
+                            if (len2 < 1e-24) continue;
+                            double t = Vec2.Dot(at - end, d) / len2;
+                            if (t <= 0) continue;
+                            Consider(end + d * t, SnapKind.Extension);
+                        }
+                    }
+                }
+            }
+            if ((modes & SnapModes.Tangent) != 0 && from.HasValue)
+            {
+                // Exact for circles: where a line from "from" just touches.
+                foreach (var (c, r) in circles)
+                {
+                    double d = Vec2.Distance(from.Value, c);
+                    if (d <= r + 1e-12) continue;
+                    double ang = Math.Atan2(from.Value.Y - c.Y, from.Value.X - c.X), half = Math.Acos(r / d);
+                    Consider(new Vec2(c.X + r * Math.Cos(ang + half), c.Y + r * Math.Sin(ang + half)), SnapKind.Tangent);
+                    Consider(new Vec2(c.X + r * Math.Cos(ang - half), c.Y + r * Math.Sin(ang - half)), SnapKind.Tangent);
+                }
+                // Arcs are drawn as short chords: the tangent point is the vertex where the sight
+                // line from "from" stops crossing into the curve and starts crossing out.
+                for (int i = 0; i < segs.Count; i++)
+                    for (int j = 0; j < segs.Count; j++)
+                    {
+                        if (i == j || Vec2.Distance(segs[i].B, segs[j].A) > 1e-12) continue;
+                        var v = segs[i].B;
+                        var d1 = segs[i].B - segs[i].A; var d2 = segs[j].B - segs[j].A;
+                        double turn = Math.Abs(Vec2.Cross(d1.Normalized(), d2.Normalized()));
+                        if (turn < 1e-6 || turn > 0.5) continue; // a corner of straight lines isn't a curve
+                        double c1 = Vec2.Cross(d1, v - from.Value), c2 = Vec2.Cross(d2, v - from.Value);
+                        if (Math.Sign(c1) != Math.Sign(c2)) Consider(v, SnapKind.Tangent);
+                    }
+            }
             if ((modes & SnapModes.Nearest) != 0)
             {
                 foreach (var (a, b) in segs) { Construct.DistanceToSegment(at, a, b, out var q); Consider(q, SnapKind.Nearest); }

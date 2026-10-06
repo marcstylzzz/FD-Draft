@@ -296,9 +296,16 @@ namespace FdDraft.View
                     break;
                 case TextEntity te:
                     Text(te, t, rgb, lname, handle);
+                    if (depth == 0)
+                    {
+                        bool aligned = te.HorizontalAlignment != TextHorizontalAlignment.Left || te.VerticalAlignment != TextVerticalAlignmentType.Baseline;
+                        var ip = aligned ? te.AlignmentPoint : te.InsertPoint;
+                        AddSnap(t.Apply(ip.X, ip.Y), SnapKind.Insertion);
+                    }
                     break;
                 case MText mt:
                     MTextLines(mt, t, rgb, lname, handle);
+                    if (depth == 0) AddSnap(t.Apply(mt.InsertPoint.X, mt.InsertPoint.Y), SnapKind.Insertion);
                     break;
                 case Insert ins:
                     InsertBlock(ins, t, layer, rgb, handle, depth);
@@ -344,8 +351,10 @@ namespace FdDraft.View
                 });
                 return;
             }
+            int first = _group.Prims.Count;
             foreach (var (a, b) in HatchShapes.PatternSegments(h, loops))
                 Poly(new List<Vec2> { t.Apply(flip ? -a.X : a.X, a.Y), t.Apply(flip ? -b.X : b.X, b.Y) }, false, rgb, layer, handle, snapVertices: false);
+            for (int i = first; i < _group.Prims.Count; i++) _group.Prims[i].Hatch = true;
         }
 
         /// <summary>A POLYLINE's vertices as drawn: a spline-fit polyline also keeps its spline's

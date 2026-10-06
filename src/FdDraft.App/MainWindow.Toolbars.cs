@@ -47,7 +47,7 @@ namespace FdDraft.App
         private static readonly SolidColorBrush OnBrush = Frozen(0x27, 0x4D, 0x7A);
         private static readonly SolidColorBrush OnBorder = Frozen(0x5A, 0xA2, 0xFF);
 
-        private static readonly HashSet<string> SnapModeNames = new HashSet<string> { "END", "MID", "INT", "CEN", "QUA", "PER", "NEA", "NOD" };
+        private static readonly HashSet<string> SnapModeNames = new HashSet<string> { "END", "MID", "INT", "CEN", "QUA", "PER", "NEA", "NOD", "INS", "TAN", "EXT" };
 
         private static SnapModes SnapModeOf(string name) => name switch
         {
@@ -59,6 +59,9 @@ namespace FdDraft.App
             "PER" => SnapModes.Perpendicular,
             "NEA" => SnapModes.Nearest,
             "NOD" => SnapModes.Node,
+            "INS" => SnapModes.Insertion,
+            "TAN" => SnapModes.Tangent,
+            "EXT" => SnapModes.Extension,
             _ => SnapModes.None,
         };
 
@@ -246,7 +249,7 @@ namespace FdDraft.App
                 return;
             }
             if (name.Length > 3) name = name.Substring(0, 3);
-            if (!SnapModeNames.Contains(name)) { Log("  SNAPMODE END, MID, INT, CEN, QUA, PER, NEA, NOD or NONE"); return; }
+            if (!SnapModeNames.Contains(name)) { Log("  SNAPMODE END, MID, INT, CEN, QUA, PER, NEA, NOD, INS, TAN, EXT or NONE"); return; }
             var mode = SnapModeOf(name);
             bool on = (_canvas.SnapModes & mode) == 0;
             if (_snapButtons.TryGetValue(mode, out var t)) t.IsChecked = on; else SetSnapMode(mode, on);

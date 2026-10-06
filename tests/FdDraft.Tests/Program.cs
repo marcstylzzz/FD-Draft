@@ -2032,5 +2032,45 @@ namespace FdDraft.Tests
             }
             finally { File.Delete(path); }
         }
+
+        // ---- extra object snaps (ported) ---------------------------------------------------
+
+        public static void TestInsertionAndTangentSnaps()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "LOT 1", InsertPoint = new CSMath.XYZ(50, 50, 0), Height = 1 });
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Circle { Center = new CSMath.XYZ(0, 0, 0), Radius = 5 });
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Arc { Center = new CSMath.XYZ(100, 0, 0), Radius = 5, StartAngle = 0, EndAngle = Math.PI });
+            var scene = new SceneBuilder(doc).Model();
+            var ins = scene.Snap(new Vec2(50.3, 50.2), 1, SnapModes.Insertion, null);
+            Assert.True(ins.HasValue && ins.Value.Kind == SnapKind.Insertion && Vec2.Distance(ins.Value.Point, new Vec2(50, 50)) < 1e-9, "text insertion point");
+            Assert.True(!scene.Snap(new Vec2(50.3, 50.2), 1, SnapModes.Endpoint, null).HasValue, "only when Ins is on");
+            // From (0, 10) the tangents to a radius-5 circle at the origin touch at 30° above horizontal.
+            var tan = scene.Snap(new Vec2(4.3, 2.5), 1, SnapModes.Tangent, new Vec2(0, 10));
+            Assert.True(tan.HasValue && tan.Value.Kind == SnapKind.Tangent, "a tangent point on the circle");
+            Assert.Near(4.330, tan.Value.Point.X, 0.001, "exact on a circle (x)");
+            Assert.Near(2.5, tan.Value.Point.Y, 0.001, "exact on a circle (y)");
+            var arcTan = scene.Snap(new Vec2(104.3, 2.5), 1, SnapModes.Tangent, new Vec2(100, 10));
+            Assert.True(arcTan.HasValue && Vec2.Distance(arcTan.Value.Point, new Vec2(104.330, 2.5)) < 0.2, "close on an arc's chords: " + (arcTan.HasValue ? arcTan.Value.Point.ToString() : "none"));
+        }
+
+        public static void TestExtensionSnap()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(Ln(0, 0, 10, 0));
+            var scene = new SceneBuilder(doc).Model();
+            var s = scene.Snap(new Vec2(13, 0.3), 1, SnapModes.Extension, null);
+            Assert.True(s.HasValue && s.Value.Kind == SnapKind.Extension && Math.Abs(s.Value.Point.X - 13) < 1e-9 && Math.Abs(s.Value.Point.Y) < 1e-9, "on the line carried past its end");
+            Assert.True(!scene.Snap(new Vec2(5, 0.3), 1, SnapModes.Extension, null).HasValue, "not on the line itself");
+            Assert.True(!scene.Snap(new Vec2(13, 3), 1, SnapModes.Extension, null).HasValue, "not when off the extension");
+        }
+
+        public static void TestExtensionNeverBeatsTheEndpoint()
+        {
+            var doc = new ACadSharp.CadDocument();
+            doc.ModelSpace.Entities.Add(Ln(0, 0, 10, 0));
+            var s = new SceneBuilder(doc).Model().Snap(new Vec2(10.2, 0.05), 1, SnapModes.Endpoint | SnapModes.Extension, null);
+            Assert.True(s.HasValue && s.Value.Kind == SnapKind.Endpoint, "just past the end, the end itself wins");
+        }
     }
 }

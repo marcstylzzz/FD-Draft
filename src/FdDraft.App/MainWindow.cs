@@ -453,6 +453,8 @@ namespace FdDraft.App
             if (_awaitingLine != null)
             {
                 Log("Command: " + t);
+                // At a live point prompt, FROM / M2P build the point instead (AutoCAD's snap modifiers).
+                if (_awaitingPoint != null && _canvas.ToolActive && TryPointModifier(t.ToUpperInvariant())) return;
                 _awaitingLine(t);
                 return;
             }

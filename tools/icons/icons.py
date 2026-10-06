@@ -552,6 +552,18 @@ def _():
 def _():
     return [("l", 2, 19, 22, 7, "ink", {"w": 1.4}), ("p", "M8 7 L16 7 L8 19 L16 19 Z", "snap", {"w": 1.7})]
 
+@icon("Snaps", "snap_ins", "Insertion")
+def _():
+    return [("t", 13, 19, "A", "lbl", 11, "middle"), ("r", 3, 13, 6, 6, "snap", {"w": 1.6}), ("r", 6, 16, 6, 6, "snap", {"w": 1.6})]
+
+@icon("Snaps", "snap_tan", "Tangent")
+def _():
+    return [("c", 12, 13, 7.5, "ink", {"w": 1.4}), ("l", 2, 5.5, 22, 5.5, "snap", {"w": 1.8}), ("c", 12, 5.5, 1.6, "snap", {"fill": True})]
+
+@icon("Snaps", "snap_ext", "Extension")
+def _():
+    return [("l", 2, 19, 12, 12, "ink", {"w": 1.6}), ("l", 12, 12, 22, 5, "snap", {"w": 1.6, "dash": True}), ("c", 18, 7.8, 1.6, "snap", {"fill": True})]
+
 @icon("Snaps", "snap_none", "Snaps Off")
 def _():
     return [("r", 5, 5, 14, 14, "ghost", {"w": 1.3, "dash": True})] + badge_x(12, 12, "lbl", 5)
