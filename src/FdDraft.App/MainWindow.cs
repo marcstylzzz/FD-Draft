@@ -640,8 +640,19 @@ namespace FdDraft.App
                 _settings.Save();
                 bool isTemplate = path.EndsWith(".dwt", StringComparison.OrdinalIgnoreCase);
                 SetDocument(doc, isTemplate ? null : path, dirty: false);
-                _job = null; _points.ItemsSource = null; FillCodes();
+                _job = null; _points.ItemsSource = null;
+                // The drawing's own survey points (MSCAD's, or a saved FD-Draft plan's) fill the
+                // Points and Codes lists, so point clicks and point tools work without the FD-Pro job.
+                string pointSource = "";
+                var found = isTemplate ? null : DrawingPoints.Read(doc, path, out pointSource);
+                if (found != null)
+                {
+                    _job = found;
+                    _points.ItemsSource = found.Points.Select(p => new PointRow(p)).ToList();
+                }
+                FillCodes();
                 Log("  " + System.IO.Path.GetFileName(path) + ": " + doc.Layers.Count + " layers, " + doc.ModelSpace.Entities.Count() + " model entities");
+                if (found != null) Log("  " + Plural(found.Points.Count, "survey point", "survey points") + " and " + Plural(found.Codes.Count, "code", "codes") + " read from the drawing (" + pointSource + ") - see the Points and Codes tabs");
                 LogSheetContents(doc);
                 SuggestJobFolder(path);
             }
@@ -665,7 +676,7 @@ namespace FdDraft.App
             string? path = _path;
             if (saveAs || path == null)
             {
-                string suggested = _job != null ? System.IO.Path.Combine(_job.Folder, "export", "fd-draft") : _settings.LastDrawingFolder;
+                string suggested = _job != null && _job.Folder.Length > 0 ? System.IO.Path.Combine(_job.Folder, "export", "fd-draft") : _settings.LastDrawingFolder;
                 var d = new SaveFileDialog
                 {
                     Title = "Save drawing", Filter = "Drawing (*.dwg)|*.dwg",
@@ -781,7 +792,7 @@ namespace FdDraft.App
                 {
                     Title = "Print to PDF", Filter = "PDF (*.pdf)|*.pdf",
                     FileName = (_job != null ? SafeName(_job.Settings.Name) : System.IO.Path.GetFileNameWithoutExtension(_path ?? "Drawing")) + (_sheet == "Model" ? "" : " " + _sheet) + ".pdf",
-                    InitialDirectory = EnsureDir(_job != null ? System.IO.Path.Combine(_job.Folder, "export", "fd-draft") : _settings.LastDrawingFolder),
+                    InitialDirectory = EnsureDir(_job != null && _job.Folder.Length > 0 ? System.IO.Path.Combine(_job.Folder, "export", "fd-draft") : _settings.LastDrawingFolder),
                 };
                 if (d.ShowDialog(this) != true) return;
                 try
@@ -2764,7 +2775,7 @@ namespace FdDraft.App
             Northing = p.Northing.ToString("F3", CultureInfo.InvariantCulture);
             Easting = p.Easting.ToString("F3", CultureInfo.InvariantCulture);
             Elevation = p.Elevation.ToString("F3", CultureInfo.InvariantCulture);
-            Code = p.Code; Note = p.Note;
+            Code = p.Code; Note = p.Name.Length > 0 ? (p.Note.Length > 0 ? p.Name + " - " + p.Note : p.Name) : p.Note;
         }
         public int Point { get; }
         public string Northing { get; }

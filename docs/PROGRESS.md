@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  127 tests as of v0.6.8, all passing.
+  129 tests as of v0.6.9, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -478,7 +478,7 @@ on Windows; that's still Marc's job when he runs a build.
   MainWindow.Draw.cs; FROM takes dx,dy or bearing distance, converted
   through a viewport on a sheet). The canvas keeps the unsnapped pick
   (`DrawingCanvas.LastRawPick`) - HATCH picks its area with it.
-- **v0.6.8** (current): labels follow their course, ported. `Cad/CourseLinks.cs`:
+- **v0.6.8**: labels follow their course, ported. `Cad/CourseLinks.cs`:
   each bearing/distance/curve label carries XData "COURSE" = course handle |
   span | kind (B, D, BD, DB, SB1/SB2, A0/A1) | span ends | b=bulge | R if
   it reads the span backwards. Linked: Draft's own labels (TemplateDrafter
@@ -495,6 +495,18 @@ on Windows; that's still Marc's job when he runs a build.
   (Editing.cs) restores the old handle (internal setter via reflection) for
   all add/remove/replace commands. RELABEL updates every linked label.
   Not linked: main's CURVEOFF blocks, labels in older or foreign drawings.
+- **v0.6.9** (current): survey points read from an opened drawing
+  (`Cad/DrawingPoints.cs`). MSCAD stores each point as a POINT on an
+  MSPOINT-* layer with MSCAD_PRO_MSI extended data (description, point
+  number, elevation) - checked on 17 Empire Blvd: 166 points, every point
+  number label leads back to its point. A saved FD-Draft plan's tagged
+  points read back too. Opening a DWG now fills the Points and Codes tabs
+  from them (codes grouped by the description's first word, "CT-NOELEV
+  D0.30 R4" -> CT-NOELEV), so point clicks, list syncing and the point tools
+  work on old MSCAD jobs without the FD-Pro job. The drawing is only read.
+  Such a job has no Folder, so Save/Plot fall back to the drawing's folder.
+  Non-numeric point names (CP1) get an Id from 900001 and keep the name
+  (`SurveyPoint.Name`, shown in the Points list's note column).
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 

@@ -2235,5 +2235,57 @@ namespace FdDraft.Tests
             Assert.Near(off0, new Vec2(outer.AlignmentPoint.X, outer.AlignmentPoint.Y).Length - 20, 1e-6, "the same gap off the curve");
             Assert.Near(Math.PI / 4, Math.Atan2(outer.AlignmentPoint.Y, outer.AlignmentPoint.X), 0.02, "at the same place round it");
         }
+
+        // ---- points read from an opened drawing (v0.6.9) ----------------------------------------
+
+        public static void TestReadsMscadPointsFromADrawing()
+        {
+            var doc = new ACadSharp.CadDocument();
+            var layer = new ACadSharp.Tables.Layer("MSPOINT-MONUMENT");
+            doc.Layers.Add(layer);
+            void Mscad(double e, double n, double z, string desc, string num)
+            {
+                var pt = new ACadSharp.Entities.Point(new CSMath.XYZ(e, n, z)) { Layer = layer };
+                doc.ModelSpace.Entities.Add(pt);
+                var xd = new ACadSharp.XData.ExtendedData();
+                xd.Records.Add(new ACadSharp.XData.ExtendedDataString(desc));
+                xd.Records.Add(new ACadSharp.XData.ExtendedDataString(num));
+                xd.Records.Add(new ACadSharp.XData.ExtendedDataReal(z));
+                pt.ExtendedData.Add(DrawingPoints.MscadApp, xd);
+            }
+            Mscad(309689.861, 4869234.205, 90.784, "FDIB", "1");
+            Mscad(309675.843, 4869229.765, 91.068, "FDSIB", "2");
+            Mscad(309600.0, 4869200.0, 92.0, "BM", "CP1");
+            Mscad(309610.0, 4869210.0, 92.5, "FDIB 6", "7");
+            doc.ModelSpace.Entities.Add(new ACadSharp.Entities.Point(new CSMath.XYZ(0, 0, 0))); // a plain point isn't a survey point
+            var job = DrawingPoints.Read(doc, @"C:\jobs\17 Empire.dwg", out string source)!;
+            Assert.Equal(4, job.Points.Count, "the four MSCAD points");
+            Assert.True(source.Contains("MicroSurvey"), "says where they came from");
+            var p1 = job.Point(1)!;
+            Assert.True(Math.Abs(p1.Northing - 4869234.205) < 1e-6 && Math.Abs(p1.Easting - 309689.861) < 1e-6 && Math.Abs(p1.Elevation - 90.784) < 1e-6 && p1.Code == "FDIB", "N, E, Z and code");
+            var cp = job.Points.Single(p => p.Name == "CP1");
+            Assert.True(cp.Id > 900000, "a named point keeps its name");
+            Assert.True(job.Codes.Count == 3 && job.Codes.All(c => c.LayerName == "MSPOINT-MONUMENT"), "a code per description's first word, with its layer");
+            Assert.Equal("FDIB 6", job.Point(7)!.Code, "the point keeps its whole description");
+            Assert.Equal("17 Empire", job.Settings.Name, "named after the drawing");
+
+            // Clicking the point number text finds the point.
+            var label = new ACadSharp.Entities.TextEntity { Value = "2", InsertPoint = new CSMath.XYZ(309676.2, 4869230.0, 0), Height = 0.5 };
+            doc.ModelSpace.Entities.Add(label);
+            Assert.Equal(2, PointLinks.Find(label, job.Points)!.Id, "its number label leads back to it");
+        }
+
+        public static void TestReadsFdDraftsOwnTaggedPoints()
+        {
+            var doc = new ACadSharp.CadDocument();
+            ACadSharp.Tables.Layer L(string n) { if (!doc.Layers.TryGetValue(n, out var l)) { l = new ACadSharp.Tables.Layer(n); doc.Layers.Add(l); } return l; }
+            var pts = new List<SurveyPoint> { new SurveyPoint { Id = 101, Northing = 5000, Easting = 1000, Elevation = 100, Code = "IB" } };
+            new AddEntitiesCommand(doc.ModelSpace, new ACadSharp.Entities.Entity[] { new ACadSharp.Entities.Point(new CSMath.XYZ(1000, 5000, 100)) { Layer = L("PTS") } }, "pt");
+            var pt = doc.ModelSpace.Entities.OfType<ACadSharp.Entities.Point>().Single();
+            PointLinks.Tag(pt, 101); PointLinks.TagCode(pt, "IB");
+            var job = DrawingPoints.Read(doc, "plan.dwg", out string source)!;
+            Assert.True(job.Points.Single().Id == 101 && job.Points[0].Code == "IB" && source.Contains("FD-Draft"), "FD-Draft's tagged points read back");
+            Assert.True(DrawingPoints.Read(new ACadSharp.CadDocument(), "x.dwg", out _) == null, "no points, no job");
+        }
     }
 }
