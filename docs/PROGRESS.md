@@ -498,11 +498,9 @@ on Windows; that's still Marc's job when he runs a build.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
-- **Course relabeling after STRETCH**: moving a vertex keeps connected
-  lines joined, but their bearing/distance/area labels don't update.
-  Deliberately not attempted - there's no persisted link between a course
-  and its label text yet, and a heuristic guess risks silently mislabeling
-  a legal survey document. Needs a real course<->label data model first.
+- **Course relabeling** is done (v0.6.8, CourseLinks) for linked labels;
+  labels in drawings drafted before v0.6.8 or made outside FD-Draft carry
+  no link and stay as they are.
 - **LEADER<->MTEXT association**: `Leader.AssociatedAnnotation`'s setter is
   `internal` to ACadSharp, not reachable from FD-Draft. The leader's text is
   a separate, unassociated TEXT entity next to a real Leader. Likely not
