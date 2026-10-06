@@ -2287,5 +2287,71 @@ namespace FdDraft.Tests
             Assert.True(job.Points.Single().Id == 101 && job.Points[0].Code == "IB" && source.Contains("FD-Draft"), "FD-Draft's tagged points read back");
             Assert.True(DrawingPoints.Read(new ACadSharp.CadDocument(), "x.dwg", out _) == null, "no points, no job");
         }
+
+        // ---- CHANGESHEET (v0.6.10) ----------------------------------------------------------------
+
+        private static ACadSharp.CadDocument TinyTemplate()
+        {
+            var t = new ACadSharp.CadDocument();
+            foreach (var (name, w, h) in new[] { ("17X22", 558.8, 431.8), ("22X34", 863.6, 558.8) })
+            {
+                var lay = new ACadSharp.Objects.Layout(name) { PaperWidth = w, PaperHeight = h, PaperSize = name + "_SIZE" };
+                t.Layouts.Add(lay);
+                var frame = new ACadSharp.Entities.LwPolyline { IsClosed = true, Layer = new ACadSharp.Tables.Layer("BORDER") };
+                foreach (var (x, y) in new[] { (18.0, 15.0), (w - 18, 15.0), (w - 18, h - 15), (18.0, h - 15) }) frame.Vertices.Add(new ACadSharp.Entities.LwPolyline.Vertex(new CSMath.XY(x, y)));
+                lay.AssociatedBlock.Entities.Add(frame);
+                lay.AssociatedBlock.Entities.Add(new ACadSharp.Entities.TextEntity { Value = "JOB NUMBER: XXXX", InsertPoint = new CSMath.XYZ(w - 100, 40, 0), Height = 3, Style = new ACadSharp.Tables.TextStyle("TITLES") });
+                var mt = new ACadSharp.Entities.MText { Value = "SCALE 1:500", InsertPoint = new CSMath.XYZ(w - 100, 60, 0), Height = 3 };
+                lay.AssociatedBlock.Entities.Add(mt);
+            }
+            return t;
+        }
+
+        public static void TestChangeSheetCopiesTheTemplateSheetAndFitsThePlan()
+        {
+            var std = ProVision;
+            var template = TinyTemplate();
+            var doc = new ACadSharp.CadDocument();
+            var lot = Ln(1000, 5000, 1060, 5000);
+            doc.ModelSpace.Entities.Add(lot);
+            doc.ModelSpace.Entities.Add(Ln(1060, 5000, 1060, 5040));
+            var plan = new Extents(); plan.Add(new Vec2(1000, 5000)); plan.Add(new Vec2(1060, 5040));
+            var job = new JobSettings { Name = "24-0123" };
+            var r = SheetChange.Apply(doc, template, std, "22X34", plan, null,
+                (scale, sheet) => new TitleBlockFiller(std, job, scale, sheet, "t.dwg", new DateTime(2026, 10, 5), 863.6, 558.8), out string why)!;
+            Assert.True(r != null, "applied: " + why);
+            var lay = doc.Layouts.Single(l => l.Name == "22X34");
+            Assert.Near(863.6, lay.PaperWidth, 1e-9, "the template sheet's paper");
+            Assert.Equal("22X34_SIZE", lay.PaperSize, "and plot settings");
+            var ents = lay.AssociatedBlock.Entities.ToList();
+            Assert.True(ents.OfType<ACadSharp.Entities.LwPolyline>().Any(p => p.Layer.Name == "BORDER") && doc.Layers.Contains("BORDER"), "its frame, with its layer brought across");
+            Assert.True(doc.TextStyles.Contains("TITLES"), "and text style");
+            Assert.True(ents.OfType<ACadSharp.Entities.TextEntity>().Any(t => t.Value == "JOB NUMBER: 24-0123"), "the title block filled for this job");
+            var vp = ents.OfType<ACadSharp.Entities.Viewport>().Single(v => v.Id != 1 && !(v.Width > 863));
+            Assert.True(Math.Abs(vp.ViewCenter.X - 1030) < 1e-9 && Math.Abs(vp.ViewCenter.Y - 5020) < 1e-9, "the plan centred in the viewport");
+            Assert.True(r.Scale.Denominator <= 250, "the largest scale that fits a 60 x 40 m plan on 22x34: 1:" + r.Scale.Denominator);
+            Assert.True(r.Area.X2 <= 716 + 1e-9, "the viewport stays out of the title column");
+            Assert.Near(vp.Height * r.Scale.ModelPerPaper, vp.ViewHeight, 1e-9, "at that scale");
+
+            var path = Path.Combine(Path.GetTempPath(), "fdd-sheet-" + Guid.NewGuid().ToString("N") + ".dwg");
+            try
+            {
+                ACadSharp.IO.DwgWriter.Write(path, doc);
+                var back = ACadSharp.IO.DwgReader.Read(path);
+                var sheet = new SceneBuilder(back).Layout("22X34");
+                Assert.True(sheet.IsPaper && sheet.Groups.Any(g => g.Clip.HasValue && g.ToModel.HasValue), "reopened, the new sheet shows model space through its viewport");
+            }
+            finally { File.Delete(path); }
+
+            // A second one of the same sheet gets its own name; undo takes a sheet back out.
+            var r2 = SheetChange.Apply(doc, template, std, "22X34", plan, std.Scales.First(s => s.Denominator == 500), null, out _)!;
+            Assert.Equal("22X34 (2)", r2.Layout.Name, "named apart");
+            Assert.Equal(500.0, r2.Scale.Denominator, "a forced scale is kept");
+            r2.Command.Undo();
+            Assert.True(!doc.Layouts.Any(l => l.Name == "22X34 (2)"), "undone");
+            r2.Command.Redo();
+            Assert.True(doc.Layouts.Any(l => l.Name == "22X34 (2)"), "and redone");
+            Assert.True(SheetChange.Apply(doc, template, std, "36X48", plan, null, null, out string none) == null && none.Contains("no sheet"), "a sheet the template lacks is refused");
+        }
     }
 }

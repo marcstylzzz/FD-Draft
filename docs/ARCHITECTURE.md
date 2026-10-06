@@ -571,8 +571,8 @@ alongside `_undo`.
   LABEL and the FD Labels tools are linked; edits that reshape linework rewrite
   and carry their labels in the same undo step; RELABEL does the whole drawing.
   `HandleKeeper` keeps entity handles across undo/redo so links don't break.
-- A sheet setup panel for page size/layout changes (VPSCALE now covers
-  scale-only changes in place).
+- ~~A sheet setup panel for page size/layout changes~~ - CHANGESHEET (v0.6.10)
+  copies another template sheet in and fits the plan; VPSCALE changes scale in place.
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
   a real Leader, not linked as its `AssociatedAnnotation` (that setter is
   `internal` to ACadSharp - not reachable from FD-Draft) or an MTEXT with a

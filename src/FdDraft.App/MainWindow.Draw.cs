@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using ACadSharp;
+using FdDraft.Core.Standards;
+using System.IO;
 using System.Windows;
 using ACadSharp.Entities;
 using ACadSharp.Tables;
@@ -46,6 +49,7 @@ namespace FdDraft.App
                 case "SOLID": case "SO": case "PLANE": StartSolid(); return true;
                 case "HATCH": case "H": case "BHATCH": StartHatch(arg); return true;
                 case "RELABEL": RelabelAll(); return true;
+                case "CHANGESHEET": case "SHEETSETUP": case "RESHEET": StartChangeSheet(arg); return true;
             }
             return false;
         }
@@ -552,6 +556,139 @@ namespace FdDraft.App
             var cmd = RelabelFor(new List<Entity>(), out int n, all: true);
             if (cmd == null) { Log("RELABEL  every linked label already matches its course (Draft's labels, LABEL and the FD Labels tools are linked; older and foreign ones aren't)"); return; }
             Commit(cmd, "RELABEL  " + Plural(n, "label", "labels") + " rewritten from their courses  (Ctrl+Z undoes it)");
+        }
+
+        // ---- CHANGESHEET --------------------------------------------------------------------------
+
+        /// <summary>
+        /// Brings the sheet tabs in line with the drawing's layouts (after CHANGESHEET or its undo).
+        /// True when the current sheet was gone and Model was shown instead (already redrawn).
+        /// </summary>
+        private bool RefreshSheetTabs()
+        {
+            if (_doc == null) return false;
+            var names = SheetNames(_doc).ToList();
+            if (names.SequenceEqual(_sheets.Items.Cast<string>())) return false;
+            _sheets.Items.Clear();
+            foreach (var n in names) _sheets.Items.Add(n);
+            if (names.Any(n => n.Equals(_sheet, StringComparison.OrdinalIgnoreCase))) { _sheets.SelectedItem = _sheet; return false; }
+            _sheet = "";
+            ShowSheet("Model");
+            return true;
+        }
+
+        /// <summary>
+        /// CHANGESHEET [sheet] [1:n]: the plan onto another of the firm template's sheets - the
+        /// sheet copied from the template, a viewport fitted at the largest scale that holds the
+        /// plan (or the one given), north arrow and title block filled. Without a sheet name it
+        /// lists the template's sheets and the scale each would take.
+        /// </summary>
+        private void StartChangeSheet(string arg)
+        {
+            if (!NeedDrawing()) return;
+            string templatePath = _settings.TemplatePath;
+            if (templatePath.Length == 0 || !File.Exists(templatePath))
+            {
+                var d = new Microsoft.Win32.OpenFileDialog { Title = "The firm template (.dwt) to take the sheet from", Filter = "Drawing template (*.dwt;*.dwg)|*.dwt;*.dwg" };
+                if (d.ShowDialog(this) != true) return;
+                templatePath = d.FileName;
+                _settings.TemplatePath = templatePath; _settings.Save();
+            }
+            CadDocument template;
+            try { template = ACadSharp.IO.DwgReader.Read(templatePath); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is InvalidDataException || e is NotSupportedException || e is ArgumentException)
+            { Log("  couldn't read the template " + templatePath + ": " + e.Message); return; }
+            var std = LabelStandards();
+            var plan = PlanExtents();
+            if (plan.IsEmpty) { Log("  nothing in model space to put on a sheet"); return; }
+            var sheets = template.Layouts.Where(l => l.IsPaperSpace).OrderBy(l => l.TabOrder).Select(l => l.Name).ToList();
+
+            void Run(string sheet, ScaleOption? scale)
+            {
+                Func<ScaleOption, string, FdDraft.Core.Layout.TitleBlockFiller?>? filler = null;
+                if (_job != null)
+                    filler = (sc, name) =>
+                    {
+                        std.Sheets.TryGetValue(sheet, out var def);
+                        return new FdDraft.Core.Layout.TitleBlockFiller(std, _job.Settings, sc, sheet,
+                            System.IO.Path.GetFileName(_path ?? (SafeName(_job.Settings.Name) + ".dwg")), DateTime.Today, def?.PaperWidth ?? 0, def?.PaperHeight ?? 0);
+                    };
+                var r = SheetChange.Apply(_doc!, template, std, sheet, plan, scale, filler, out string why);
+                if (r == null) { Log("  " + why); return; }
+                _undo.Push(r.Command);
+                _dirty = true; UpdateTitle();
+                RefreshSheetTabs();
+                ShowSheet(r.Layout.Name);
+                foreach (var line in r.Report) Log("  " + line);
+                Log("  the plan is on " + r.Layout.Name + " at " + r.Scale.Label + " - the old sheet is still there (delete its tab when you're happy); Ctrl+Z takes the new one out");
+            }
+
+            var parts = arg.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+            ScaleOption? Scale(string s)
+            {
+                var t = s.Trim().Replace("1:", "");
+                return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double den)
+                    ? std.Scales.FirstOrDefault(o => Math.Abs(o.Denominator - den) < 1e-9) ?? new ScaleOption { Label = "1:" + Fm(den), Denominator = den, ModelPerPaper = den / (1000 * std.PaperUnitsPerMm) }
+                    : null;
+            }
+            if (parts.Count > 0)
+            {
+                var name = sheets.FirstOrDefault(n => n.Equals(parts[0], StringComparison.OrdinalIgnoreCase));
+                if (name == null) { Log("  the template has no sheet " + parts[0] + " - it has " + string.Join(", ", sheets)); return; }
+                Run(name, parts.Count > 1 ? Scale(parts[1]) : null);
+                return;
+            }
+            if (_activeTool.Length > 0) EndTool();
+            BeginTool("CHANGESHEET");
+            _canvas.ToolActive = false;
+            Log("CHANGESHEET  the plan is " + Fm(plan.Width) + " x " + Fm(plan.Height) + "; the template's sheets:");
+            foreach (var s in sheets)
+            {
+                var fit = SheetChange.Fit(std, s, plan, null);
+                Log("    " + s.PadRight(14) + (fit != null ? "fits at " + fit.Value.Scale.Label : std.Sheets.ContainsKey(s) ? "too small at the firm's scales" : "(no frame in the standards)"));
+            }
+            _prompt.Text = "Change sheet - sheet name [scale, e.g. 1:250]:";
+            _awaitingPoint = null;
+            _awaitingLine = s =>
+            {
+                if (s.Trim().Length == 0) { EndTool(); return; }
+                var p = s.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                var name = sheets.FirstOrDefault(n => n.Equals(p[0], StringComparison.OrdinalIgnoreCase));
+                if (name == null) { Log("  type one of: " + string.Join(", ", sheets)); return; }
+                EndTool();
+                Run(name, p.Length > 1 ? Scale(p[1]) : null);
+            };
+        }
+
+        /// <summary>
+        /// What the plan covers in model space: the view of the current (or first) sheet's plan
+        /// viewport when there is one - what was on the sheet - else everything drawn in model space.
+        /// </summary>
+        private Extents PlanExtents()
+        {
+            var ext = new Extents();
+            var model = new SceneBuilder(_doc!).Model();
+            var layouts = _doc!.Layouts.Where(l => l.IsPaperSpace).OrderBy(l => l.Name.Equals(_sheet, StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(l => l.TabOrder);
+            foreach (var l in layouts)
+            {
+                var vp = SheetScale.PlanViewport(l);
+                if (vp == null || vp.ViewHeight <= 0 || vp.Height <= 0) continue;
+                double k = vp.ViewHeight / vp.Height;
+                double x1 = vp.ViewCenter.X - vp.Width * k / 2, x2 = vp.ViewCenter.X + vp.Width * k / 2;
+                double y1 = vp.ViewCenter.Y - vp.ViewHeight / 2, y2 = vp.ViewCenter.Y + vp.ViewHeight / 2;
+                // What's actually drawn inside that view - the plan, not the empty paper round it.
+                foreach (var p in model.AllPrims())
+                {
+                    var b = p.Bounds;
+                    if (b.X2 < x1 || b.X1 > x2 || b.Y2 < y1 || b.Y1 > y2) continue;
+                    ext.Add(new Vec2(Math.Max(b.X1, x1), Math.Max(b.Y1, y1)));
+                    ext.Add(new Vec2(Math.Min(b.X2, x2), Math.Min(b.Y2, y2)));
+                }
+                if (!ext.IsEmpty) return ext;
+            }
+            var mb = model.Bounds;
+            if (mb.Width > 0 || mb.Height > 0) { ext.Add(new Vec2(mb.X1, mb.Y1)); ext.Add(new Vec2(mb.X2, mb.Y2)); }
+            return ext;
         }
     }
 }

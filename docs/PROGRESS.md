@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  129 tests as of v0.6.9, all passing.
+  130 tests as of v0.6.10, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -495,7 +495,7 @@ on Windows; that's still Marc's job when he runs a build.
   (Editing.cs) restores the old handle (internal setter via reflection) for
   all add/remove/replace commands. RELABEL updates every linked label.
   Not linked: main's CURVEOFF blocks, labels in older or foreign drawings.
-- **v0.6.9** (current): survey points read from an opened drawing
+- **v0.6.9**: survey points read from an opened drawing
   (`Cad/DrawingPoints.cs`). MSCAD stores each point as a POINT on an
   MSPOINT-* layer with MSCAD_PRO_MSI extended data (description, point
   number, elevation) - checked on 17 Empire Blvd: 166 points, every point
@@ -507,6 +507,25 @@ on Windows; that's still Marc's job when he runs a build.
   Such a job has no Folder, so Save/Plot fall back to the drawing's folder.
   Non-numeric point names (CP1) get an Id from 900001 and keep the name
   (`SurveyPoint.Name`, shown in the Points list's note column).
+- **v0.6.10** (current): CHANGESHEET (View > Change sheet size; also
+  SHEETSETUP / RESHEET) - the long-open "different sheet size without
+  re-drafting". `Cad/SheetChange.cs` copies the chosen layout from the firm
+  template (Settings' template path, asked for once if unset) into the
+  drawing as a new tab - plot settings by reflection over PlotSettings, then
+  every paper-space entity except viewports, each cloned with
+  `CloneForTransfer` (ACadSharp's clone keeps MTEXT field dictionaries that
+  can't join a second document - stripped via the private `_xdictionary`
+  field; layers, line types, styles and blocks come across by name). The
+  viewport goes in the standards' free area at the largest firm scale that
+  holds the plan (same margin/label-room rule as Draft's SheetPicker) or a
+  typed 1:n; north arrow and title block filled like Draft (title-block
+  filling is now `TemplateDrafter.FillTitleBlockText`, shared). The plan is
+  what's drawn inside the current sheet's plan viewport, else all of model
+  space. Model space isn't touched (labels, links, handles intact); the old
+  tab stays; Ctrl+Z removes the new one (`AddLayoutCommand`; sheet tabs
+  refresh on undo/redo). Checked on 17 Empire Blvd: 17X22 at 1:250, 22X34
+  and RPLAN-22X34 at 1:150, 11X17 at 1:400, each copied with every entity
+  and drawing identically.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -519,8 +538,8 @@ on Windows; that's still Marc's job when he runs a build.
   solvable without a change on the ACadSharp side.
 - **Dimensions**: aligned, linear, radius, diameter and 3-point angular.
   No ordinate or 2-line angular (pick two lines) yet.
-- No sheet-size/layout change without re-drafting (scale-only changes
-  are VPSCALE since v0.4.14). Vertex
+- Sheet size/layout changes are CHANGESHEET since v0.6.10 (scale-only
+  changes are VPSCALE). Vertex
   insert/delete covers both polyline kinds since v0.4.20.
 - **North-up viewports only** (no twist for a rotated lot); splines written
   as dense polylines; label collisions handled by local sliding, not a
@@ -531,8 +550,8 @@ on Windows; that's still Marc's job when he runs a build.
 
 1. ~~Flip labels~~ - done in v0.4.10.
 2. ~~Partial polyline-vertex erase~~ - done in v0.4.9 (LwPolyline).
-3. ~~Scale-only sheet setup~~ - VPSCALE in v0.4.14. Still open: moving a
-   plan to a different sheet size/layout without re-drafting.
+3. ~~Sheet setup~~ - VPSCALE (v0.4.14) for scale, CHANGESHEET (v0.6.10)
+   for a different sheet size/layout.
 4. ~~A real DIMENSION entity~~ - aligned (v0.4.13), linear and radius
    (v0.4.18). Angular and diameter in v0.4.19 - done.
 5. ~~The course-relabeling-after-STRETCH problem~~ - done in v0.6.8 with a

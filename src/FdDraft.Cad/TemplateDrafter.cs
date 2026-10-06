@@ -321,20 +321,32 @@ namespace FdDraft.Cad
         /// </summary>
         private void FillTitleBlock(ACadSharp.Objects.Layout layout, TitleBlockFiller filler, ScaleOption scale)
         {
+            int changed = FillTitleBlockText(_doc, layout, _std, filler, scale, out int ticks);
+            _report.Add("Title block: " + changed + " text(s) filled in" + (ticks > 0 ? ", scale bar relabelled (" + ticks + " ticks)." : "."));
+        }
+
+        /// <summary>
+        /// Rewrites a sheet's title-block text: the scale-bar tick labels first (they need the
+        /// template's original scale, read from its "SCALE 1:n" text), then every
+        /// [titleblock-replace] rule over every TEXT and MTEXT on the sheet and the spare title
+        /// blocks. Returns how many texts were filled; <paramref name="ticks"/> the relabelled ticks.
+        /// </summary>
+        public static int FillTitleBlockText(CadDocument doc, ACadSharp.Objects.Layout layout, FirmStandards std, TitleBlockFiller filler, ScaleOption scale, out int ticks)
+        {
             var ents = layout.AssociatedBlock.Entities;
             var texts = ents.OfType<TextEntity>().Where(t => !(t is AttributeDefinition) && !(t is AttributeEntity)).ToList();
             var mtexts = ents.OfType<MText>().ToList();
             // The spare title blocks beside the sheet get the same job details, ready to swap in.
-            foreach (var b in _doc.BlockRecords.Where(b => b.Name.StartsWith(TitleBlocks.BlockPrefix, StringComparison.OrdinalIgnoreCase)))
+            foreach (var b in doc.BlockRecords.Where(b => b.Name.StartsWith(TitleBlocks.BlockPrefix, StringComparison.OrdinalIgnoreCase)))
             {
                 texts.AddRange(b.Entities.OfType<TextEntity>().Where(t => !(t is AttributeDefinition)));
                 mtexts.AddRange(b.Entities.OfType<MText>());
             }
-            int ticks = 0, changed = 0;
-
-            if (_std.ScaleBarRelabel)
+            int changed = 0;
+            ticks = 0;
+            if (std.ScaleBarRelabel)
             {
-                var anchor = SimplePattern.ToRegex(_std.ScaleBarAnchor);
+                var anchor = SimplePattern.ToRegex(std.ScaleBarAnchor);
                 foreach (var a in texts.Where(t => anchor.IsMatch(t.Value)).ToList())
                 {
                     var oldDen = TitleBlockFiller.DenominatorIn(a.Value);
@@ -360,7 +372,7 @@ namespace FdDraft.Cad
                 var s = filler.Apply(m.Value);
                 if (s != null) { m.Value = AcadText(s); changed++; }
             }
-            _report.Add("Title block: " + changed + " text(s) filled in" + (ticks > 0 ? ", scale bar relabelled (" + ticks + " ticks)." : "."));
+            return changed;
         }
 
         /// <summary>The standards' [title-blocks] beside the sheet, outside the paper.</summary>

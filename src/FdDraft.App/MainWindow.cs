@@ -296,6 +296,7 @@ namespace FdDraft.App
             view.Items.Add(Item("_Snap on/off", "F3", ToggleSnap));
             view.Items.Add(new Separator());
             view.Items.Add(Item("Sheet s_cale…", "VPSCALE", () => StartSheetScale("")));
+            view.Items.Add(Item("C_hange sheet size…", "CHANGESHEET", () => StartChangeSheet("")));
             view.Items.Add(Item("Add _viewport to sheet", "MVIEW", StartMview));
             view.Items.Add(new Separator());
             view.Items.Add(Item("Edit tool _palette…", "", EditPalette));
@@ -1318,7 +1319,7 @@ namespace FdDraft.App
             SyncTwistFromDrawing(announce: false);
             _canvas.Selected.Clear();
             _dirty = true; UpdateTitle();
-            Rebuild(fit: false);
+            if (!RefreshSheetTabs()) Rebuild(fit: false);
             UpdateProperties();
             Log("  undid: " + d);
         }
@@ -1330,7 +1331,7 @@ namespace FdDraft.App
             SyncTwistFromDrawing(announce: false);
             _canvas.Selected.Clear();
             _dirty = true; UpdateTitle();
-            Rebuild(fit: false);
+            if (!RefreshSheetTabs()) Rebuild(fit: false);
             UpdateProperties();
             Log("  redid: " + d);
         }
