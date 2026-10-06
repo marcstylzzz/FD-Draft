@@ -1112,7 +1112,7 @@ namespace FdDraft.App
             var cmds = new List<IEditCommand>();
             if (inModel.Count > 0) cmds.Add(TransformEntitiesCommand.Move(inModel, modelDelta.X, modelDelta.Y, "Move"));
             if (onPaper.Count > 0) cmds.Add(TransformEntitiesCommand.Move(onPaper, paperDelta.X, paperDelta.Y, "Move"));
-            _undo.Push(cmds.Count == 1 ? cmds[0] : new CompositeCommand(cmds, "Move"));
+            PushEdit(cmds.Count == 1 ? cmds[0] : new CompositeCommand(cmds, "Move"), entities);
             // The moved entities stay selected, so they can be nudged again.
             _canvas.Selected.Clear();
             foreach (var h in handles) _canvas.Selected.Add(h);
@@ -1380,7 +1380,7 @@ namespace FdDraft.App
                 edits.Add(new SetPropertyCommand<double>(row.Current, value, row.Set, row.Description));
             }
             if (edits.Count == 0) return;
-            _undo.Push(edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Edit properties"));
+            PushEdit(edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Edit properties"), SelectedEntities());
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
             UpdateProperties();
@@ -1465,7 +1465,13 @@ namespace FdDraft.App
         /// swaps in a rebuilt entity, so the selection moves to that.</summary>
         private void AfterVertexEdit(Entity poly, IEditCommand cmd, int showIndex)
         {
-            _undo.Push(cmd);
+            if (cmd is ReplacePolyline2DCommand rp && rp.Replacement.Owner is BlockRecord ob)
+            {
+                // The rebuilt polyline is a new entity: its labels move their link over first.
+                var relink = CourseLinks.Rehome(ob.Entities.OfType<TextEntity>().ToList(), new Dictionary<ulong, IList<Entity>> { [HandleKeeper.HandleOf(poly)] = new List<Entity> { rp.Replacement } });
+                PushEdit(relink == null ? cmd : new CompositeCommand(new[] { cmd, relink }, cmd.Description), new Entity[] { rp.Replacement });
+            }
+            else PushEdit(cmd, new[] { poly });
             if (cmd is ReplacePolyline2DCommand r && _canvas.Selected.Remove(poly.Handle)) _canvas.Selected.Add(r.Replacement.Handle);
             _propertiesVertexIndex = showIndex;
             _dirty = true; UpdateTitle();
@@ -2033,7 +2039,7 @@ namespace FdDraft.App
                     return;
                 }
                 double dx = model.Value.X - basePt.Value.X, dy = model.Value.Y - basePt.Value.Y;
-                _undo.Push(TransformEntitiesCommand.Move(entities, dx, dy, "Move " + entities.Count));
+                PushEdit(TransformEntitiesCommand.Move(entities, dx, dy, "Move " + entities.Count), entities);
                 _dirty = true; UpdateTitle();
                 EndTool();
                 _canvas.Selected.Clear();
@@ -2067,7 +2073,7 @@ namespace FdDraft.App
                     }
                     // Survey angles turn clockwise from north; the drawing's X/Y (East/North) plane
                     // rotates counter-clockwise for a positive angle, so clockwise input is negated.
-                    _undo.Push(TransformEntitiesCommand.Rotate(entities, pivot, -deg * Math.PI / 180.0, "Rotate " + entities.Count));
+                    PushEdit(TransformEntitiesCommand.Rotate(entities, pivot, -deg * Math.PI / 180.0, "Rotate " + entities.Count), entities);
                     _dirty = true; UpdateTitle();
                     EndTool();
                     _canvas.Selected.Clear();
@@ -2102,7 +2108,7 @@ namespace FdDraft.App
                     Log("  vertex " + NE(model.Value) + " (" + verts.Count + " endpoint" + (verts.Count == 1 ? "" : "s") + ") - pick its new position");
                     return;
                 }
-                _undo.Push(new StretchVertexCommand(verts, pt, "Stretch"));
+                PushEdit(new StretchVertexCommand(verts, pt, "Stretch"), verts.Select(v => v.Entity).Distinct().ToList());
                 _dirty = true; UpdateTitle();
                 EndTool();
                 _canvas.Selected.Clear();
@@ -2485,10 +2491,13 @@ namespace FdDraft.App
             double mpm = LabelModelPerMm(std, out string basis);
             double g2g = std.GridToGround && _job != null && _job.Settings.ScaleFactor > 0 ? 1.0 / _job.Settings.ScaleFactor : 1.0;
             var pairs = new List<(Entity Source, Entity Copy)>();
+            var links = new List<(Entity Label, Entity Course, int Span, string Kind)>();
             foreach (var c in courses)
-                foreach (var t in CourseLabelling.For(c, _doc, std, mpm, GetOrCreateLayer, g2g)) pairs.Add((c, t));
+                foreach (var (t, span, kind) in CourseLabelling.ForLinked(c, _doc, std, mpm, GetOrCreateLayer, g2g)) { pairs.Add((c, t)); links.Add((t, c, span, kind)); }
             var cmd = EntityOps.AddBesideSources(pairs, "Label " + courses.Count);
             if (cmd == null) { Log("  nothing to label"); return; }
+            // Linked once they're in the drawing, so they follow their course from now on.
+            foreach (var (t, c, span, kind) in links) CourseLinks.Tag(t, c, span, kind);
             _undo.Push(cmd);
             _dirty = true; UpdateTitle();
             Rebuild(fit: false);
@@ -2551,7 +2560,7 @@ namespace FdDraft.App
                 var edges = all ? CurrentEntityOwner().Entities.ToList() : chosen;
                 var cmd = cut ? EntityOps.Trim(line, model.Value, edges) : EntityOps.Extend(line, model.Value, edges);
                 if (cmd == null) { Log(cut ? "  nothing crosses that line to trim it at" : "  nothing lies ahead of that end to extend to"); return; }
-                _undo.Push(cmd);
+                PushEdit(cmd, new Entity[] { line });
                 _dirty = true; UpdateTitle();
                 Rebuild(fit: false);
                 Log("  " + (cut ? "trimmed" : "extended") + " - " + (line.Owner != null
@@ -2597,7 +2606,7 @@ namespace FdDraft.App
                 var cmd = EntityOps.Fillet(first, firstPick, line, model.Value, radius, out var arc);
                 EndTool();
                 if (cmd == null) { Log("  can't fillet those - they're parallel, or too short for that radius"); return; }
-                _undo.Push(cmd);
+                PushEdit(cmd, new Entity[] { first, line });
                 _dirty = true; UpdateTitle();
                 Rebuild(fit: false);
                 Log(arc != null
@@ -2615,9 +2624,14 @@ namespace FdDraft.App
             var sel = SelectedEntities();
             if (sel.Count == 0) { Log("  select the lines/arcs/polylines to join first (a crossing box is quickest), then type JOIN"); return; }
             // Ends within a millimetre count as meeting - tighter than any plan shows, looser than rounding noise.
+            var handles = sel.Select(e => e.Handle).Distinct().ToList();
+            var owners = sel.Select(e => e.Owner).OfType<BlockRecord>().Distinct().ToList();
             var cmd = EntityOps.Join(sel, 0.001, out var made);
             if (cmd == null) { Log("  nothing to join - the selected pieces don't meet end to end"); return; }
-            _undo.Push(cmd);
+            // Labels on the joined pieces now belong to the polyline their span is in.
+            var map = handles.ToDictionary(h => h, h => (IList<Entity>)made.Cast<Entity>().ToList());
+            var relinked = CourseLinks.Rehome(owners.SelectMany(o => o.Entities).OfType<TextEntity>().ToList(), map);
+            _undo.Push(relinked == null ? cmd : new CompositeCommand(new[] { cmd, relinked }, cmd.Description));
             _canvas.Selected.Clear();
             foreach (var pl in made) _canvas.Selected.Add(pl.Handle);
             _dirty = true; UpdateTitle();

@@ -4,7 +4,9 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using ACadSharp.Entities;
+using ACadSharp.Tables;
 using CSMath;
+using FdDraft.Cad;
 using FdDraft.Cad.Editing;
 using FdDraft.Core.Geometry;
 using FdDraft.View;
@@ -43,6 +45,7 @@ namespace FdDraft.App
                 case "DONUT": case "DO": StartDonut(); return true;
                 case "SOLID": case "SO": case "PLANE": StartSolid(); return true;
                 case "HATCH": case "H": case "BHATCH": StartHatch(arg); return true;
+                case "RELABEL": RelabelAll(); return true;
             }
             return false;
         }
@@ -510,6 +513,45 @@ namespace FdDraft.App
             if (Math.Abs(det) < 1e-18) return null;
             var d = new Vec2(dx, dy);
             return baseScene + new Vec2(Vec2.Cross(d, b) / det, Vec2.Cross(a, d) / det);
+        }
+
+        // ---- labels follow their course ----------------------------------------------------------
+
+        /// <summary>
+        /// Records an edit that changed <paramref name="touched"/>: any bearing/distance/curve label
+        /// linked to a reshaped course is rewritten and carried with it, in the same undo step
+        /// (labels that were themselves in the edit just get their text brought up to date).
+        /// </summary>
+        private void PushEdit(IEditCommand cmd, IEnumerable<Entity> touched)
+        {
+            var rel = RelabelFor(touched.ToList(), out int n);
+            _undo.Push(rel == null ? cmd : new CompositeCommand(new[] { cmd, rel }, cmd.Description));
+            if (n > 0) Log("  " + Plural(n, "label follows", "labels follow") + " the change");
+        }
+
+        private IEditCommand? RelabelFor(List<Entity> touched, out int count, bool all = false)
+        {
+            count = 0;
+            if (_doc == null || touched.Count == 0 && !all) return null;
+            var courses = all ? null : new HashSet<ulong>(touched.Where(e => e is Line || e is Arc || e is LwPolyline || e is Polyline2D).Select(e => e.Handle));
+            if (courses != null && courses.Count == 0) return null;
+            var moved = new HashSet<ulong>(touched.Select(e => e.Handle));
+            // Labels sit with their course: only the blocks the edit touched are searched (all of them for RELABEL).
+            var blocks = all ? _doc.BlockRecords.ToList() : touched.Select(e => e.Owner).OfType<BlockRecord>().Distinct().ToList();
+            var labels = blocks.SelectMany(b => b.Entities).OfType<TextEntity>().Cast<Entity>().ToList();
+            if (labels.Count == 0) return null;
+            var std = LabelStandards();
+            double mpm = LabelModelPerMm(std, out _);
+            return CourseLinks.Relabel(_doc, labels, courses, std, mpm, GridToGround(std), out count, moved);
+        }
+
+        /// <summary>RELABEL: brings every linked label in the drawing up to date with its course.</summary>
+        private void RelabelAll()
+        {
+            if (!NeedDrawing()) return;
+            var cmd = RelabelFor(new List<Entity>(), out int n, all: true);
+            if (cmd == null) { Log("RELABEL  every linked label already matches its course (Draft's labels, LABEL and the FD Labels tools are linked; older and foreign ones aren't)"); return; }
+            Commit(cmd, "RELABEL  " + Plural(n, "label", "labels") + " rewritten from their courses  (Ctrl+Z undoes it)");
         }
     }
 }

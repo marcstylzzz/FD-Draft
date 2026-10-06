@@ -25,6 +25,36 @@ namespace FdDraft.Cad.Editing
         /// standards' paper millimetres times <paramref name="modelPerMm"/>. Layers are created
         /// on the fly through <paramref name="layer"/> when the drawing lacks them.
         /// </summary>
+        /// <summary>
+        /// <see cref="For"/>, with each label's span index and what it says, for
+        /// <see cref="CourseLinks.Tag"/> once the labels are in the drawing.
+        /// </summary>
+        public static List<(Entity Label, int Span, string Kind)> ForLinked(Entity e, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, double gridToGround = 1.0)
+        {
+            var result = new List<(Entity, int, string)>();
+            if (!(e is Line || e is ACadSharp.Entities.Arc || e is LwPolyline || e is Polyline2D)) return result;
+            int i = 0;
+            foreach (var s in EntityOps.SpansOf(e))
+            {
+                int span = i++;
+                if (Vec2.Distance(s.A, s.B) < 1e-9) continue;
+                if (!s.IsArc)
+                {
+                    var t = Annotator.StraightCourseLabels(s.A, s.B, 0.5, std, modelPerMm, gridToGround, std.BearingLayer, std.DistanceLayer);
+                    result.Add((ToEntity(t[0], doc, modelPerMm, layer), span, CourseLinks.Kinds.Bearing));
+                    result.Add((ToEntity(t[1], doc, modelPerMm, layer), span, CourseLinks.Kinds.Distance));
+                }
+                else
+                {
+                    double start = Math.Atan2(s.A.Y - s.Center.Y, s.A.X - s.Center.X);
+                    var t = Annotator.ArcCourseLabels(ToCore(s.Center, s.Radius, start, s.Sweep), 0.5, std, modelPerMm, gridToGround, std.ArcLayer);
+                    result.Add((ToEntity(t[0], doc, modelPerMm, layer), span, CourseLinks.Kinds.ArcOuter));
+                    result.Add((ToEntity(t[1], doc, modelPerMm, layer), span, CourseLinks.Kinds.ArcInner));
+                }
+            }
+            return result;
+        }
+
         public static List<Entity> For(Entity e, CadDocument doc, FirmStandards std, double modelPerMm, Func<string, Layer> layer, double gridToGround = 1.0)
         {
             var texts = new List<DraftText>();
@@ -109,12 +139,32 @@ namespace FdDraft.Cad.Editing
                 {
                     var g0 = span.A + (span.B - span.A) * r.GapFrom.Value;
                     var g1 = span.A + (span.B - span.A) * r.GapTo.Value;
+                    var before = new HashSet<Entity>(owner.Entities);
                     var split = Split(e, owner, si, g0, g1, out note);
-                    if (split != null) edits.Add(split);
+                    if (split != null)
+                    {
+                        edits.Add(split);
+                        // Other labels on this course follow the pieces their span ended up in.
+                        var pieces = owner.Entities.Where(x => !before.Contains(x)).ToList();
+                        if (e.Owner == owner) pieces.Insert(0, e);
+                        var relink = CourseLinks.Rehome(owner.Entities.OfType<TextEntity>().ToList(), new Dictionary<ulong, IList<Entity>> { [HandleKeeper.HandleOf(e)] = pieces });
+                        if (relink != null) edits.Add(relink);
+                    }
                 }
             }
             var entities = texts.Select(t => (Entity)ToEntity(t, doc, modelPerMm, layer)).ToList();
             edits.Insert(0, new AddEntitiesCommand(owner, entities, "Label"));
+            // Labels beside an unbroken course are linked to it, so they follow it (CourseLinks).
+            if (edits.Count == 1)
+                for (int k = 0; k < entities.Count; k++)
+                {
+                    string kind = span.IsArc ? (k == 0 ? CourseLinks.Kinds.ArcOuter : CourseLinks.Kinds.ArcInner)
+                        : style == CourseLabelStyle.BearingDashDistance ? CourseLinks.Kinds.BearingDistance
+                        : style == CourseLabelStyle.DistanceDashBearing ? CourseLinks.Kinds.DistanceBearing
+                        : style == CourseLabelStyle.SplitBearing ? (k == 0 ? CourseLinks.Kinds.SplitTop : CourseLinks.Kinds.SplitBottom)
+                        : texts[k].Kind == TextKind.Distance ? CourseLinks.Kinds.Distance : CourseLinks.Kinds.Bearing;
+                    CourseLinks.Tag(entities[k], e, si, kind);
+                }
             return edits.Count == 1 ? edits[0] : new CompositeCommand(edits, "Label");
         }
 

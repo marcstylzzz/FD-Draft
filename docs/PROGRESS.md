@@ -61,7 +61,7 @@ on Windows; that's still Marc's job when he runs a build.
   from `Circle` in ACadSharp.
 - Add a `tests/FdDraft.Tests/Program.cs` test for new non-UI logic (it's a
   plain reflection-based runner - any public static void `Test*` method).
-  121 tests as of v0.6.7, all passing.
+  127 tests as of v0.6.8, all passing.
 
 ## History this project (chronological, most recent last)
 
@@ -468,7 +468,7 @@ on Windows; that's still Marc's job when he runs a build.
   (`ExecuteDrawTool`, tried after ExecuteMsTool); buttons and new icons on
   the Draw bar. The viewer now fills LWPOLYLINE widths (donuts, arrowheads,
   wide borders; `SceneBuilder.WidePolyline`) - before, only the centreline.
-- **v0.6.7** (current): more object snaps and the point modifiers, ported -
+- **v0.6.7**: more object snaps and the point modifiers, ported -
   Insertion (TEXT/MTEXT insertion points; block insertion points stay
   nodes), Tangent (exact on circles, to a chord vertex on arcs, from the
   tool's last point) and Extension (a line carried on past an open end,
@@ -478,6 +478,23 @@ on Windows; that's still Marc's job when he runs a build.
   MainWindow.Draw.cs; FROM takes dx,dy or bearing distance, converted
   through a viewport on a sheet). The canvas keeps the unsnapped pick
   (`DrawingCanvas.LastRawPick`) - HATCH picks its area with it.
+- **v0.6.8** (current): labels follow their course, ported. `Cad/CourseLinks.cs`:
+  each bearing/distance/curve label carries XData "COURSE" = course handle |
+  span | kind (B, D, BD, DB, SB1/SB2, A0/A1) | span ends | b=bulge | R if
+  it reads the span backwards. Linked: Draft's own labels (TemplateDrafter
+  matches each DraftText's CourseA/B to a drawn span), LABEL, the FD Labels
+  styles beside an unbroken line, CURVEON. `PushEdit` (MainWindow.Draw.cs)
+  wraps STRETCH, MOVE, ROTATE, drag-move, Properties edits, VXADD/VXDEL,
+  TRIM/EXTEND and FILLET: linked labels get new text and are carried to the
+  same place relative to the span (arcs by angle and gap off the curve), in
+  the same undo step; labels moved with their course only get their link
+  refreshed. `CourseLinks.Rehome` hands links over when a course is replaced
+  (Polyline2D rebuild, JOIN, the split round an on-line label). ACadSharp
+  zeroes a handle when an entity leaves a block and gives a new one on
+  re-add, which would cut links on every undo/redo - `HandleKeeper`
+  (Editing.cs) restores the old handle (internal setter via reflection) for
+  all add/remove/replace commands. RELABEL updates every linked label.
+  Not linked: main's CURVEOFF blocks, labels in older or foreign drawings.
 
 ## Known limits / deliberately deferred (don't re-litigate these)
 
@@ -508,8 +525,8 @@ on Windows; that's still Marc's job when he runs a build.
    plan to a different sheet size/layout without re-drafting.
 4. ~~A real DIMENSION entity~~ - aligned (v0.4.13), linear and radius
    (v0.4.18). Angular and diameter in v0.4.19 - done.
-5. The course-relabeling-after-STRETCH problem - but only once a real
-   course<->label link is designed; don't guess at this with heuristics.
+5. ~~The course-relabeling-after-STRETCH problem~~ - done in v0.6.8 with a
+   persisted course<->label link (CourseLinks).
 6. **Phase 2**: the in-app document assistant (reads R-plans, registered
    plans, PIN/parcel-register pages, deeds; matches record courses to
    surveyed ones; fills the R-plan schedule and title block). Not started.

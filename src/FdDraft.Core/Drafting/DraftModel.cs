@@ -184,6 +184,11 @@ namespace FdDraft.Core.Drafting
         /// <summary>The survey point this label belongs to (point number, elevation, monument
         /// text), so the DWG entity can be tagged with it.</summary>
         public int? PointId { get; set; }
+        /// <summary>For a course label: what it says ("B", "D", "A0", "A1" - see the CAD layer's
+        /// CourseLinks) and the course it was made for, so it can be linked to the drawn linework.</summary>
+        public string CourseKind { get; set; } = "";
+        public Vec2 CourseA { get; set; }
+        public Vec2 CourseB { get; set; }
         /// <summary>Template text style name; empty = the drawing's current style.</summary>
         public string Style { get; set; } = "";
         public override void AddTo(Extents e) => e.Add(Position);

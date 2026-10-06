@@ -161,6 +161,7 @@ namespace FdDraft.App
             Log("  Layers: LAYISO LAYUNISO LAYOFF LAYON LAYFRZ LAYTHW LAYLCK LAYULK LAYMCH LAYMCUR LAYCUR LAYCOPY LAYDEL LAYWHAT LAYERSTATE LAYERP SETBYLAYER");
             Log("  Dimensioning: QDIM DIMLIN DIM DIMANG DIMBASELINE DIMCONTINUE CENTERMARK CENTERLINE DIMTEXT DIMROTATE DIMTEDIT DIMHOME DIMSTYLE DIMSTATUS DIMUPDATE");
             Log("  FD Calcs: PTSONOBJ TURNANGLE STAOFF TANLINE JOINDESC BESTLINE BESTCURVE CURVECALC CURVETAN TRAVERSE (or INFO on a line > Traverse)   FD Coordinate: PTEXPORT PTIMPORT DELPOINTS LISTP SCALEP ZOOMP");
+            Log("  Labels made by Draft, LABEL and the FD Labels tools follow their line through STRETCH, MOVE, ROTATE, vertex/property edits, TRIM, EXTEND, FILLET, JOIN · RELABEL updates them all");
             Log("  At any point prompt: FROM (base point, then dx,dy or bearing distance) · M2P (midpoint of two picks) · snaps also INS TAN EXT");
             Log("  Draw: PLINE (A arc span, C close) SPLINE CIRCLE [D|2P|3P|A] ARC ARCC ELLIPSE POINT RECTANGLE POLYGON [C|E] REVCLOUD DONUT SOLID HATCH [S|L|X]");
             Log("  Main: INFO ADDPOINTS CONFIG LOGFILE CALC   (every toolbar button is one of these - hover a button to see its command)");

@@ -564,9 +564,13 @@ alongside `_undo`.
   lines, dimension breaks and spacing, reverse/compound curves, and MSCAD's
   named layer groups.
 
-- Relabel courses after a STRETCH (the vertex moves and connected lines stay
-  joined, but their bearing/distance/area labels are not yet re-derived -
-  there is still no persisted link between a course and its label text).
+- ~~Relabel courses after a STRETCH~~ - done in v0.6.8: course labels carry a
+  persisted link (FD-Draft XData "COURSE": course handle, span index, what the
+  label says, the span's ends and bulge when labelled, and whether it reads the
+  span backwards) - `FdDraft.Cad.CourseLinks`. Draft's labels (TemplateDrafter),
+  LABEL and the FD Labels tools are linked; edits that reshape linework rewrite
+  and carry their labels in the same undo step; RELABEL does the whole drawing.
+  `HandleKeeper` keeps entity handles across undo/redo so links don't break.
 - A sheet setup panel for page size/layout changes (VPSCALE now covers
   scale-only changes in place).
 - LEADER's annotation is still a separate, unassociated TEXT entity next to
